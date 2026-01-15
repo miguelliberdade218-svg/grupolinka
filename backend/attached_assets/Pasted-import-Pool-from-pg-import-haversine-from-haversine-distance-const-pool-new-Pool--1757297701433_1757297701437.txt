@@ -1,0 +1,270 @@
+import { Pool } from 'pg';
+import haversine from 'haversine-distance';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+export const billingService = {
+  // Retorna taxa da plataforma (default 11%)
+  getPlatformFeePercentage: async (): Promise<number> => {
+    const res = await pool.query('SELECT value FROM settings WHERE key = $1', ['platform_fee']);
+    return res.rows[0] ? parseFloat(res.rows[0].value) : 0.11;
+  },
+
+  updatePlatformFeePercentage: async (percentage: number, adminUserId: string): Promise<void> => {
+    if (percentage < 0 || percentage > 0.5) throw new Error('Percentage must be 0-50%');
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = $2`,
+      ['platform_fee', percentage.toString()]
+    );
+    console.log(`Fee updated to ${percentage * 100}% by admin ${adminUserId}`);
+  },
+
+  // Calcula preço de boleia baseado em distância
+  calculateRidePrice: async (
+    fromLat: number, fromLng: number,
+    toLat: number, toLng: number,
+    pricePerKm: number = 15
+  ): Promise<number> => {
+    const distanceMeters = haversine({ lat: fromLat, lon: fromLng }, { lat: toLat, lon: toLng });
+    const distanceKm = distanceMeters / 1000;
+    return Math.round(distanceKm * pricePerKm);
+  },
+
+  // Calcula preço de hotel por número de noites
+  calculateHotelBookingPrice: async (nights: number, pricePerNight: number): Promise<number> => {
+    return nights * pricePerNight;
+  },
+
+  /**
+   * Cria fatura para prestador (driver ou hotel)
+   * O cliente já pagou diretamente ao prestador.
+   * O sistema cria uma fee pendente que o prestador deve pagar à plataforma.
+   */
+  createFeeForProvider: async (data: {
+    providerId: string,
+    type: 'ride' | 'hotel' | 'event',
+    totalAmount: number,
+    clientId: string
+  }): Promise<void> => {
+    const feePercentage = await billingService.getPlatformFeePercentage();
+    const feeAmount = data.totalAmount * feePercentage;
+
+    await pool.query(
+      `INSERT INTO fees (provider_id, amount, paid, billing_type, client_id, created_at)
+       VALUES ($1, $2, false, $3, $4, NOW())`,
+      [data.providerId, feeAmount, data.type, data.clientId]
+    );
+
+    console.log(`Fee created for provider ${data.providerId}: total ${data.totalAmount}, platform fee ${feeAmount}`);
+  },
+
+  // Retorna fees pendentes de um prestador
+  getPendingFees: async (providerId: string): Promise<any[]> => {
+    const res = await pool.query(
+      `SELECT * FROM fees WHERE provider_id = $1 AND paid = false`,
+      [providerId]
+    );
+    return res.rows;
+  },
+
+  // Marca fee como paga
+  markFeeAsPaid: async (feeId: string, paymentMethod: string): Promise<void> => {
+    await pool.query(
+      `UPDATE fees SET paid = true, payment_method = $1, paid_at = NOW() WHERE id = $2`,
+      [paymentMethod, feeId]
+    );
+    console.log(`Fee ${feeId} marked as paid via ${paymentMethod}`);
+  },
+
+  // Relatório financeiro: total de fees pendentes, pagos e receitas da plataforma
+  getFinancialReport: async (start: Date, end: Date): Promise<any> => {
+    const feePercentage = await billingService.getPlatformFeePercentage();
+
+    const resFees = await pool.query(
+      `SELECT 
+          SUM(amount) AS total_fees,
+          SUM(CASE WHEN paid = true THEN amount ELSE 0 END) AS total_paid,
+          SUM(CASE WHEN paid = false THEN amount ELSE 0 END) AS total_pending,
+          COUNT(*) AS total_transactions
+       FROM fees
+       WHERE created_at BETWEEN $1 AND $2`,
+      [start, end]
+    );
+
+    const row = resFees.rows[0];
+    return {
+      totalFees: parseFloat(row.total_fees) || 0,
+      totalPaid: parseFloat(row.total_paid) || 0,
+      totalPending: parseFloat(row.total_pending) || 0,
+      totalTransactions: parseInt(row.total_transactions) || 0,
+      platformFeePercentage: feePercentage,
+      period: { start, end }
+    };
+  },
+
+  // Configura pricing automático (opcional)
+  setAutomaticPricing: async (enable: boolean, basePrice: number, pricePerKm: number): Promise<void> => {
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = $2`,
+      ['automatic_pricing', JSON.stringify({ enable, basePrice, pricePerKm })]
+    );
+    console.log(`Automatic pricing: ${enable}, Base: ${basePrice}, Per Km: ${pricePerKm}`);
+  }
+};
+📌 Tabelas necessárias
+sql
+Copiar código
+CREATE TABLE settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE fees (
+  id SERIAL PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  paid BOOLEAN DEFAULT false,
+  payment_method TEXT,
+  billing_type TEXT, -- ride / hotel / event
+  client_id TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  paid_at TIMESTAMP
+);
+✅ Fluxo agora é:
+
+Cliente paga diretamente ao prestador
+
+Sistema cria fee pendente (fatura) para prestador pagar plataforma
+
+Prestador visualiza no dashboard e paga via método disponível (M-Pesa, cartão, transferência)
+
+Plataforma gera relatórios financeiros com total fees pagos/pendentes
+
+Se quiser, posso criar funções helper para integração direta com rides e hotéis:
+
+Para rides: createRideFee(fromLat, fromLng, toLat, toLng, driverId, clientId)
+
+Para hotéis: createHotelFee(nights, pricePerNight, hotelId, clientId)
+
+Isso deixa o serviço pronto para usar no frontend sem cálculos manuais.
+
+Quer que eu faça isso agora?
+
+
+
+
+
+
+
+Dito por si:
+tenho esta configuracao em outro ficheiro ! e sim pode criar essas funcoes que referiu! mas ao criar o que eu devo fazer? tem alguma mudanca por fazer no back ou frontend? se sim, quais?
+
+
+Dito pelo ChatGPT:
+Perfeito! Vamos organizar isso de forma prática e segura. Vou criar funções helper para gerar as fees diretamente a partir de rides e hotéis. Depois explico exatamente o que muda no backend e frontend.
+
+1️⃣ Funções helper no billingService
+ts
+Copiar código
+// Helper para criar fee de ride automaticamente
+export const createRideFee = async (
+  fromLat: number, fromLng: number,
+  toLat: number, toLng: number,
+  driverId: string,
+  clientId: string,
+  pricePerKm: number = 15
+) => {
+  const ridePrice = await billingService.calculateRidePrice(fromLat, fromLng, toLat, toLng, pricePerKm);
+
+  await billingService.createFeeForProvider({
+    providerId: driverId,
+    type: 'ride',
+    totalAmount: ridePrice,
+    clientId
+  });
+
+  return ridePrice;
+};
+
+// Helper para criar fee de hotel automaticamente
+export const createHotelFee = async (
+  nights: number,
+  pricePerNight: number,
+  hotelId: string,
+  clientId: string
+) => {
+  const hotelPrice = await billingService.calculateHotelBookingPrice(nights, pricePerNight);
+
+  await billingService.createFeeForProvider({
+    providerId: hotelId,
+    type: 'hotel',
+    totalAmount: hotelPrice,
+    clientId
+  });
+
+  return hotelPrice;
+};
+2️⃣ Como usar na prática
+No backend
+Quando um cliente faz uma reserva ou ride:
+
+Ao confirmar o pagamento direto ao prestador, chame createRideFee ou createHotelFee.
+
+Isso vai automaticamente criar a fatura (fee pendente) para o prestador pagar a plataforma.
+
+Exemplo em um endpoint de rides:
+
+ts
+Copiar código
+app.post('/rides/complete', async (req, res) => {
+  const { driverId, clientId, fromLat, fromLng, toLat, toLng } = req.body;
+
+  const ridePrice = await createRideFee(fromLat, fromLng, toLat, toLng, driverId, clientId);
+
+  res.json({ success: true, ridePrice, message: 'Ride fee created for driver.' });
+});
+Para hotéis:
+
+ts
+Copiar código
+app.post('/hotels/booking', async (req, res) => {
+  const { hotelId, clientId, nights, pricePerNight } = req.body;
+
+  const bookingPrice = await createHotelFee(nights, pricePerNight, hotelId, clientId);
+
+  res.json({ success: true, bookingPrice, message: 'Hotel fee created for provider.' });
+});
+3️⃣ Mudanças necessárias no backend
+Criar novos endpoints para chamar essas funções, caso ainda não existam.
+
+Garantir que o backend tenha conexão com Postgres e as tabelas fees e settings criadas.
+
+Talvez criar uma tabela de rides e bookings se quiser registrar histórico completo (opcional, mas recomendável).
+
+4️⃣ Mudanças no frontend
+Clientes não precisam pagar nada diferente, continuam pagando direto ao prestador.
+
+No dashboard do prestador, criar uma tela que mostra:
+
+Fees pendentes (getPendingFees)
+
+Botão para marcar como pago (markFeeAsPaid)
+
+Para admins, o frontend pode usar:
+
+getFinancialReport para mostrar relatórios completos
+
+getPlatformFeePercentage / updatePlatformFeePercentage para configurar comissões
+
+5️⃣ Fluxo final resumido
+Cliente paga diretamente ao prestador (ride ou hotel)
+
+Backend cria fee pendente para a plataforma
+
+Prestador visualiza e paga a plataforma quando possível
+
+Admins podem gerar relatórios de fees pagas/pendentes

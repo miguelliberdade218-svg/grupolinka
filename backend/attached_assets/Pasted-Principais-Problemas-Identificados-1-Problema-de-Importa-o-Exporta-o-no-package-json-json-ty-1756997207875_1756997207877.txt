@@ -1,0 +1,112 @@
+Principais Problemas Identificados:
+1. Problema de Importação/Exportação no package.json
+json
+"type": "module",
+"main": "index.js",
+Mas você está usando index.ts nos scripts. O main deve apontar para o arquivo compilado.
+
+2. Conflito de Nomes de Arquivos
+Você tem index.ts mas o main aponta para index.js
+
+O script start executa dist/index.js mas o build gera a partir de index.ts
+
+3. Problemas no Código Principal (index.ts)
+Erro 1: Importação duplicada do express
+
+typescript
+import express from "express";
+// ... código ...
+export default app; // ← Isso exporta o app ANTES das rotas serem registradas
+Erro 2: A função registerRoutes parece ser assíncrona mas não está sendo tratada como tal:
+
+typescript
+const server = await registerRoutes(app); // ← Isso pode não retornar um servidor HTTP
+4. Problema de Configuração do Drizzle
+O arquivo de configuração do Drizzle parece estar incompleto/mal formatado.
+
+Soluções Propostas:
+1. Corrija o package.json:
+json
+{
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "NODE_ENV=development tsx watch index.ts",
+    "build": "esbuild index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
+    "start": "NODE_ENV=production node dist/index.js"
+  }
+}
+2. Reestruture o index.ts:
+typescript
+import express from "express";
+import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+import { registerRoutes } from "./routes/index";
+
+const app = express();
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
+
+// Configurações do app...
+app.use(cors({ /* configuração */ }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "OK" });
+});
+
+async function startServer() {
+  try {
+    // Registrar rotas PRIMEIRO
+    await registerRoutes(app);
+    
+    // Depois configurar fallbacks
+    app.all("/api/*", (req, res) => {
+      res.status(404).json({ error: "API endpoint não encontrado" });
+    });
+    
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, "../frontend/dist", "index.html"));
+    });
+
+    // Iniciar servidor
+    const server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🌐 Servidor rodando na porta ${PORT}`);
+    });
+
+    // Configurar graceful shutdown
+    const gracefulShutdown = (signal: string) => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(1), 5000);
+    };
+    
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+  } catch (error) {
+    console.error("❌ Erro ao inicializar servidor:", error);
+    process.exit(1);
+  }
+}
+
+startServer();
+3. Verifique a função registerRoutes:
+Certifique-se de que registerRoutes retorna uma Promise ou trata corretamente as operações assíncronas.
+
+4. Configure corretamente o Drizzle:
+Crie um arquivo separado para a configuração do banco de dados.
+
+Comandos para Testar:
+Verificar TypeScript:
+
+bash
+npm run check
+Build:
+
+bash
+npm run build
+Testar localmente:
+
+bash
+npm run dev

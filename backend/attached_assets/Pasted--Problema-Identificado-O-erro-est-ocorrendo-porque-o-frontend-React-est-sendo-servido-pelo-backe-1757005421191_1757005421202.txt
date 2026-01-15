@@ -1,0 +1,116 @@
+ Problema Identificado:
+O erro está ocorrendo porque o frontend React está sendo servido pelo backend Express, mas as rotas do React Router não estão sendo reconhecidas quando o usuário acessa URLs diretamente (como /rides/search?from=Maputo&to=Tofo&date=2025-10-10).
+
+🔍 Causa Raiz:
+O Express está servindo o arquivo index.html do frontend para qualquer rota que não seja /api/*
+
+Porém, quando o browser recebe o index.html, o React Router no cliente tenta interpretar a URL /rides/search
+
+Se essa rota não estiver definida no React Router, ele mostra o componente NotFoundPage
+
+🛠️ Soluções Imediatas:
+Solução 1: Configurar Fallback Correto no Express
+No seu index.ts do backend, modifique a ordem dos middlewares:
+
+typescript
+// 1. Primeiro registre todas as rotas API
+await registerRoutes(app);
+
+// 2. Depois a health check (já está ok)
+app.get("/api/health", (req, res) => {
+  res.json({ status: "OK" });
+});
+
+// 3. Rota para arquivos estáticos (CSS, JS, imagens)
+app.use(express.static(staticPath));
+
+// 4. PARA ROTAS API NÃO ENCONTRADAS - retorne JSON
+app.all("/api/*", (req, res) => {
+  res.status(404).json({
+    error: "API endpoint não encontrado",
+    path: req.path,
+  });
+});
+
+// 5. PARA TODAS AS OUTRAS ROTAS - sirva o index.html (SPA)
+app.get("*", (req, res) => {
+  // Verifique se é uma rota de API pela URL
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({
+      error: "API endpoint não encontrado",
+      path: req.path,
+    });
+  }
+  
+  // Para todas as outras rotas, sirva o SPA
+  res.sendFile(path.join(staticPath, "index.html"));
+});
+Solução 2: Verificar o React Router no Frontend
+No seu AppRouter.tsx, certifique-se de que a rota /rides/search está definida:
+
+typescript
+// AppRouter.tsx - Certifique-se desta estrutura
+function AppRouter() {
+  return (
+    <Switch>
+      {/* ... outras rotas ... */}
+      <Route path="/rides/search" component={RideSearch} />
+      <Route path="/rides/create" component={RideCreate} />
+      {/* ... outras rotas ... */}
+      
+      {/* Rota 404 deve ser a ÚLTIMA */}
+      <Route component={NotFoundPage} />
+    </Switch>
+  );
+}
+Solução 3: Configurar o Vite para History API
+No vite.config.ts do frontend, adicione:
+
+typescript
+// vite.config.ts
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    historyApiFallback: true,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
+});
+📋 Verificação Rápida:
+Para testar se o problema é do backend ou frontend:
+
+Acesse diretamente a API:
+
+text
+https://link-amzapp-production.up.railway.app/api/health
+Se a API responder, o problema é no frontend/react-router
+
+Se a API não responder, o problema é no backend/Express
+
+🚀 Solução Definitiva:
+Crie um arquivo vercel.json ou configure o Railway para fazer rewrites:
+
+json
+// vercel.json (se usando Vercel) ou configure no Railway
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}
+🔧 Teste Imediato:
+Adicione este logging no seu backend para debug:
+
+typescript
+app.get("*", (req, res) => {
+  console.log(`📦 Servindo SPA para rota: ${req.path}`);
+  res.sendFile(path.join(staticPath, "index.html"));
+});

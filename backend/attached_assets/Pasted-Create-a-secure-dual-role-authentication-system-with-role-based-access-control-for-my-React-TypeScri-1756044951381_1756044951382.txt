@@ -1,0 +1,39 @@
+Create a secure dual-role authentication system with role-based access control for my React/TypeScript Firebase app. The system must:
+
+1. **Support multiple roles per user**: Users can have roles like ['client', 'driver', 'hotel_manager', 'admin'] in an array
+
+2. **Implement secure backend checks**:
+   - Firebase Security Rules that check ALL user roles, not just current role
+   - Function-based rules that verify user has required role before data access
+   - Prevent any data access loopholes through UI role switching
+
+3. **Create frontend role management**:
+   - useUserRoles hook that returns { roles: string[], currentRole: string, hasRole: (role: string) => boolean }
+   - RoleSwitcher component that only shows roles the user actually possesses
+   - UI that adapts to currentRole but respects backend permissions
+
+4. **Ensure security requirements**:
+   - Backend MUST validate all role access regardless of frontend state
+   - Users can only switch to roles they actually have
+   - Admin features completely hidden from non-admin users
+   - Driver data inaccessible to users without driver role
+   - No security loopholes through UI manipulation
+
+5. **Implement real examples**:
+   - Driver can switch to client role to book hotels/rides
+   - Hotel manager can switch to client role to travel
+   - But drivers cannot access admin data even if they try to manipulate UI
+   - Clients cannot see driver features without driver role
+
+6. **Include Firebase Security Rules**:
+   - hasAnyRole() function that checks multiple roles
+   - Collection-specific rules based on role requirements
+   - Admin-only data protection
+   - Driver-specific data protection
+
+7. **Create testing utilities**:
+   - Mock users with different role combinations
+   - Security test cases to verify no loopholes
+   - Role switching validation
+
+The system must be production-ready with no security vulnerabilities while providing seamless role switching for legitimate multi-role users.

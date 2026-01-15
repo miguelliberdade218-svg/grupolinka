@@ -1,0 +1,2 @@
+$filePath = "C:\Users\User\Downloads\LinkA\linka-fullstack-mainzip\linka-fullstack-main\backend\backend\todas_funcoes_problematicas.sql"
+Get-Content $filePath -TotalCount 1000 | Out-File -FilePath "primeiras_linhas.txt"

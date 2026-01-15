@@ -1,0 +1,55 @@
+[11:00:38.248] Running build in Washington, D.C., USA (East) – iad1
+[11:00:38.249] Build machine configuration: 2 cores, 8 GB
+[11:00:38.265] Cloning github.com/edsondaniel8-source/Link-AMZAPP (Branch: main, Commit: 12fbfa5)
+[11:00:38.395] Previous build caches not available
+[11:00:39.472] Cloning completed: 1.207s
+[11:00:39.878] Running "vercel build"
+[11:00:40.266] Vercel CLI 47.0.5
+[11:00:40.880] Warning: Detected "engines": { "node": ">=18" } in your `package.json` that will automatically upgrade when a new major Node.js Version is released. Learn More: http://vercel.link/node-version
+[11:00:40.887] Running "install" command: `npm install`...
+[11:00:53.556] 
+[11:00:53.557] added 463 packages, and audited 465 packages in 12s
+[11:00:53.557] 
+[11:00:53.558] 57 packages are looking for funding
+[11:00:53.558]   run `npm fund` for details
+[11:00:53.558] 
+[11:00:53.559] found 0 vulnerabilities
+[11:00:53.879] 
+[11:00:53.880] > link-a-frontend@1.0.0 build
+[11:00:53.880] > vite build
+[11:00:53.880] 
+[11:00:54.214] [36mvite v7.1.4 [32mbuilding for production...[36m[39m
+[11:00:54.556] transforming...
+[11:00:56.856] [32m✓[39m 116 modules transformed.
+[11:00:56.857] [31m✗[39m Build failed in 2.62s
+[11:00:56.857] [31merror during build:
+[11:00:56.857] [31m[vite:esbuild] Transform failed with 1 error:
+[11:00:56.857] /vercel/path0/frontend/src/apps/drivers-app/pages/route-publisher.tsx:183:1: ERROR: Expected "finally" but found ";"[31m
+[11:00:56.857] file: [36m/vercel/path0/frontend/src/apps/drivers-app/pages/route-publisher.tsx:183:1[31m
+[11:00:56.857] [33m
+[11:00:56.858] [33mExpected "finally" but found ";"[33m
+[11:00:56.858] 181 |          setIsLoading(false);
+[11:00:56.858] 182 |        }
+[11:00:56.858] 183 |  };
+[11:00:56.858]     |   ^
+[11:00:56.858] 184 |  
+[11:00:56.858] 185 |    // Cidades removidas - agora usando LocationAutocomplete com lista completa de locais
+[11:00:56.858] [31m
+[11:00:56.858]     at failureErrorWithLog (/vercel/path0/node_modules/esbuild/lib/main.js:1467:15)
+[11:00:56.858]     at /vercel/path0/node_modules/esbuild/lib/main.js:736:50
+[11:00:56.858]     at responseCallbacks.<computed> (/vercel/path0/node_modules/esbuild/lib/main.js:603:9)
+[11:00:56.858]     at handleIncomingPacket (/vercel/path0/node_modules/esbuild/lib/main.js:658:12)
+[11:00:56.858]     at Socket.readFromStdout (/vercel/path0/node_modules/esbuild/lib/main.js:581:7)
+[11:00:56.859]     at Socket.emit (node:events:518:28)
+[11:00:56.859]     at addChunk (node:internal/streams/readable:561:12)
+[11:00:56.859]     at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+[11:00:56.859]     at Readable.push (node:internal/streams/readable:392:5)
+[11:00:56.859]     at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)[39m
+[11:00:56.895] npm error Lifecycle script `build` failed with error:
+[11:00:56.896] npm error code 1
+[11:00:56.896] npm error path /vercel/path0/frontend
+[11:00:56.897] npm error workspace link-a-frontend@1.0.0
+[11:00:56.897] npm error location /vercel/path0/frontend
+[11:00:56.897] npm error command failed
+[11:00:56.897] npm error command sh -c vite build
+[11:00:56.905] Error: Command "npm run build" exited with 1

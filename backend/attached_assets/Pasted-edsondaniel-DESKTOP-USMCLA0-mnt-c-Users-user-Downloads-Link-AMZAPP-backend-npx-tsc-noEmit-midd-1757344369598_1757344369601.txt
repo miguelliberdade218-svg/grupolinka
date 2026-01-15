@@ -1,0 +1,582 @@
+edsondaniel@DESKTOP-USMCLA0:/mnt/c/Users/user/Downloads/Link-AMZAPP/backend$  npx tsc --noEmit
+middleware/role-auth.ts:2:19 - error TS2307: Cannot find module '../config/firebase-admin' or its corresponding type declarations.
+
+2 import admin from '../config/firebase-admin';
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+profileRoutes.ts:142:7 - error TS2353: Object literal may only specify known properties, and 'userType' does not exist in type '{ id?: string | undefined; email?: string | null | undefined; firstName?: string | null | undefined; lastName?: string | null | undefined; profileImageUrl?: string | null | undefined; }'.
+
+142       userType: newRole,
+          ~~~~~~~~
+
+profileRoutes.ts:284:11 - error TS2353: Object literal may only specify known properties, and 'vehicleRegistration' does not exist in type '{ identityDocument: boolean; profilePhoto: boolean; }'.
+
+284           vehicleRegistration: !!driverDocs.vehicleRegistrationUrl,
+              ~~~~~~~~~~~~~~~~~~~
+
+routes/billing.ts:19:7 - error TS2717: Subsequent property declarations must have the same type.  Property 'user' must be of type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; } | undefined', but here has type 'UserWithId | undefined'.
+
+19       user?: UserWithId;
+         ~~~~
+
+  middleware/role-auth.ts:8:7
+    8       user?: {
+            ~~~~
+    'user' was also declared here.
+
+routes/billing.ts:45:35 - error TS2339: Property 'id' does not exist on type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+45     const adminUserId = req.user?.id;
+                                     ~~
+
+routes/chat.ts:12:30 - error TS2339: Property 'id' does not exist on type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+12     const userId = req.user?.id;
+                                ~~
+
+routes/chat.ts:34:30 - error TS2339: Property 'id' does not exist on type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+34     const userId = req.user?.id;
+                                ~~
+
+routes/chat.ts:61:30 - error TS2339: Property 'id' does not exist on type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+61     const userId = req.user?.id;
+                                ~~
+
+routes/chat.ts:88:30 - error TS2339: Property 'id' does not exist on type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+88     const userId = req.user?.id;
+                                ~~
+
+routes/chat.ts:114:30 - error TS2339: Property 'id' does not exist on type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+114     const userId = req.user?.id;
+                                 ~~
+
+routes/geo.ts:79:14 - error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ capital: number; city: number; town: number; }'.
+  No index signature with a parameter of type 'string' was found on type '{ capital: number; city: number; town: number; }'.
+
+79       return typeOrder[a.type] - typeOrder[b.type];
+                ~~~~~~~~~~~~~~~~~
+
+routes/geo.ts:79:34 - error TS7053: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ capital: number; city: number; town: number; }'.
+  No index signature with a parameter of type 'string' was found on type '{ capital: number; city: number; town: number; }'.
+
+79       return typeOrder[a.type] - typeOrder[b.type];
+                                    ~~~~~~~~~~~~~~~~~
+
+routes/index.ts:12:28 - error TS2307: Cannot find module './bookings' or its corresponding type declarations.
+
+12 import bookingsRoutes from './bookings';
+                              ~~~~~~~~~~~~
+
+routes/provider/dashboard.ts:41:41 - error TS2345: Argument of type '{ type: string; description: string; time: string; amount: number; }' is not assignable to parameter of type 'never'.
+
+ 41       dashboardData.recentActivity.push({
+                                            ~
+ 42         type: 'ride_completed',
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+ 45         amount: 350
+    ~~~~~~~~~~~~~~~~~~~
+ 46       });
+    ~~~~~~~
+
+routes/provider/dashboard.ts:63:41 - error TS2345: Argument of type '{ type: string; description: string; time: string; amount: number; }' is not assignable to parameter of type 'never'.
+
+ 63       dashboardData.recentActivity.push({
+                                            ~
+ 64         type: 'booking_received',
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+...
+ 67         amount: 4500
+    ~~~~~~~~~~~~~~~~~~~~
+ 68       });
+    ~~~~~~~
+
+routes/shared/health.ts:42:14 - error TS18046: 'error' is of type 'unknown'.
+
+42       error: error.message,
+                ~~~~~
+
+routes/shared/health.ts:109:14 - error TS18046: 'error' is of type 'unknown'.
+
+109       error: error.message
+                 ~~~~~
+
+searchRoutes.ts:2:25 - error TS2307: Cannot find module './src/shared/storage' or its corresponding type declarations.
+
+2 import { storage } from "./src/shared/storage";
+                          ~~~~~~~~~~~~~~~~~~~~~~
+
+services/chatService.ts:96:15 - error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { message: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<...> | Placeholder<...> | null | undefined; ... 4 more ...; isRead?: boolean | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'chatRoomId' does not exist in type '{ message: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<...> | Placeholder<...> | null | undefined; ... 4 more ...; isRead?: boolean | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { message: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<...> | Placeholder<...> | null | undefined; ... 4 more ...; isRead?: boolean | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'chatRoomId' does not exist in type '{ message: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; createdAt?: Date | SQL<...> | Placeholder<...> | null | undefined; ... 4 more ...; isRead?: boolean | ... 3 more ... | undefined; }[]'.
+
+96               chatRoomId,
+                 ~~~~~~~~~~
+
+
+services/chatService.ts:106:21 - error TS2552: Cannot find name 'chatRooms'. Did you mean 'chatRoomId'?
+
+106             .update(chatRooms)
+                        ~~~~~~~~~
+
+  services/chatService.ts:77:19
+    77           const { chatRoomId, message, messageType = 'text' } = data;
+                         ~~~~~~~~~~
+    'chatRoomId' is declared here.
+
+services/chatService.ts:111:23 - error TS2552: Cannot find name 'chatRooms'. Did you mean 'chatRoomId'?
+
+111             .where(eq(chatRooms.id, chatRoomId));
+                          ~~~~~~~~~
+
+  services/chatService.ts:77:19
+    77           const { chatRoomId, message, messageType = 'text' } = data;
+                         ~~~~~~~~~~
+    'chatRoomId' is declared here.
+
+services/chatService.ts:151:27 - error TS2339: Property 'chatRoomId' does not exist on type 'PgTableWithColumns<{ name: "chat_messages"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "chat_messages"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, { ...; }>; ... 6 more ...; createdAt: PgColumn<....'.
+
+151               eq(messages.chatRoomId, chatRoomId),
+                              ~~~~~~~~~~
+
+services/chatService.ts:152:27 - error TS2339: Property 'senderId' does not exist on type 'PgTableWithColumns<{ name: "chat_messages"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "chat_messages"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; ... 7 more ...; generated: undefined; }, {}, { ...; }>; ... 6 more ...; createdAt: PgColumn<....'.
+
+152               eq(messages.senderId, userId)
+                              ~~~~~~~~
+
+services/chatService.ts:191:27 - error TS2339: Property 'userId' does not exist on type '{ id: string; rideId: string | null; passengerId: string | null; seatsBooked: number; totalPrice: string; status: string | null; createdAt: Date | null; }'.
+
+191       fromUserId: booking.userId!,
+                              ~~~~~~
+
+services/chatService.ts:192:25 - error TS2339: Property 'providerId' does not exist on type '{ id: string; rideId: string | null; passengerId: string | null; seatsBooked: number; totalPrice: string; status: string | null; createdAt: Date | null; }'.
+
+192       toUserId: booking.providerId!,
+                            ~~~~~~~~~~
+
+services/chatService.ts:293:13 - error TS2552: Cannot find name 'chatRooms'. Did you mean 'chatRoomId'?
+
+293       .from(chatRooms)
+                ~~~~~~~~~
+
+  services/chatService.ts:289:26
+    289   async notifyNewMessage(chatRoomId: string, senderId: string, message: string) {
+                                 ~~~~~~~~~~~~~~~~~~
+    'chatRoomId' is declared here.
+
+services/chatService.ts:294:17 - error TS2552: Cannot find name 'chatRooms'. Did you mean 'chatRoomId'?
+
+294       .where(eq(chatRooms.id, chatRoomId))
+                    ~~~~~~~~~
+
+  services/chatService.ts:289:26
+    289   async notifyNewMessage(chatRoomId: string, senderId: string, message: string) {
+                                 ~~~~~~~~~~~~~~~~~~
+    'chatRoomId' is declared here.
+
+services/chatService.ts:317:15 - error TS2552: Cannot find name 'chatRooms'. Did you mean 'chatRoomId'?
+
+317       .update(chatRooms)
+                  ~~~~~~~~~
+
+  services/chatService.ts:315:28
+    315   async deactivateChatRoom(chatRoomId: string): Promise<void> {
+                                   ~~~~~~~~~~~~~~~~~~
+    'chatRoomId' is declared here.
+
+services/chatService.ts:319:17 - error TS2552: Cannot find name 'chatRooms'. Did you mean 'chatRoomId'?
+
+319       .where(eq(chatRooms.id, chatRoomId));
+                    ~~~~~~~~~
+
+  services/chatService.ts:315:28
+    315   async deactivateChatRoom(chatRoomId: string): Promise<void> {
+                                   ~~~~~~~~~~~~~~~~~~
+    'chatRoomId' is declared here.
+
+services/chatService.ts:328:13 - error TS2304: Cannot find name 'chatRooms'.
+
+328       .from(chatRooms)
+                ~~~~~~~~~
+
+services/chatService.ts:329:17 - error TS2304: Cannot find name 'chatRooms'.
+
+329       .where(eq(chatRooms.isActive, true));
+                    ~~~~~~~~~
+
+services/chatService.ts:337:13 - error TS2304: Cannot find name 'chatRooms'.
+
+337       .from(chatRooms)
+                ~~~~~~~~~
+
+services/chatService.ts:339:12 - error TS2304: Cannot find name 'chatRooms'.
+
+339         eq(chatRooms.isActive, true),
+               ~~~~~~~~~
+
+services/pmsService.ts:173:11 - error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type '{ name?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; type?: string | SQL<unknown> | PgColumn<...> | undefined; ... 16 more ...; partnershipBadgeVisible?: boolean | ... 3 more ... | undefined; }'.
+
+173           updatedAt: new Date()
+              ~~~~~~~~~
+
+services/pmsService.ts:280:11 - error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { totalPrice: string | SQL<unknown> | Placeholder<string, any>; seatsBooked: number | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; status?: string | ... 3 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; rideId?: string | ... 3 more ... | undefined; passengerId?: string | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'type' does not exist in type '{ totalPrice: string | SQL<unknown> | Placeholder<string, any>; seatsBooked: number | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; status?: string | ... 3 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; rideId?: string | ... 3 more ... | und...'.
+  Overload 2 of 2, '(values: { totalPrice: string | SQL<unknown> | Placeholder<string, any>; seatsBooked: number | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; status?: string | ... 3 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; rideId?: string | ... 3 more ... | undefined; passengerId?: string | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'type' does not exist in type '{ totalPrice: string | SQL<unknown> | Placeholder<string, any>; seatsBooked: number | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; status?: string | ... 3 more ... | undefined; createdAt?: Date | ... 3 more ... | undefined; rideId?: string | ... 3 more ... | und...'.
+
+280           type: 'stay',
+              ~~~~
+
+
+services/pmsService.ts:381:31 - error TS2339: Property 'type' does not exist on type '{ id: string; rideId: string | null; passengerId: string | null; seatsBooked: number; totalPrice: string; status: string | null; createdAt: Date | null; }'.
+
+381       if (!booking || booking.type !== 'stay') {
+                                  ~~~~
+
+services/pmsService.ts:387:25 - error TS2339: Property 'accommodationId' does not exist on type '{ id: string; rideId: string | null; passengerId: string | null; seatsBooked: number; totalPrice: string; status: string | null; createdAt: Date | null; }'.
+
+387         roomId: booking.accommodationId!,
+                            ~~~~~~~~~~~~~~~
+
+services/pmsService.ts:388:23 - error TS2339: Property 'checkInDate' does not exist on type '{ id: string; rideId: string | null; passengerId: string | null; seatsBooked: number; totalPrice: string; status: string | null; createdAt: Date | null; }'.
+
+388         date: booking.checkInDate!.toISOString().split('T')[0],
+                          ~~~~~~~~~~~
+
+services/pmsService.ts:394:53 - error TS2339: Property 'accommodationId' does not exist on type '{ id: string; rideId: string | null; passengerId: string | null; seatsBooked: number; totalPrice: string; status: string | null; createdAt: Date | null; }'.
+
+394       await this.syncAvailabilityToChannels(booking.accommodationId!, availability);
+                                                        ~~~~~~~~~~~~~~~
+
+shared/database-schema.ts:184:34 - error TS2344: Type 'ZodObject<{ userType: ZodOptional<ZodNullable<ZodString>>; email: ZodOptional<ZodNullable<ZodString>>; ... 9 more ...; isVerified: ZodOptional<...>; }, { ...; }>' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ userType: ZodOptional<ZodNullable<ZodString>>; email: ZodOptional<ZodNullable<ZodString>>; ... 9 more ...; isVerified: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+184 export type InsertUser = z.infer<typeof insertUserSchema>;
+                                     ~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/database-schema.ts:185:34 - error TS2344: Type 'ZodObject<{ isActive: ZodOptional<ZodNullable<ZodBoolean>>; route: ZodOptional<ZodNullable<ZodArray<ZodString>>>; ... 22 more ...; departureDate: ZodOptional<...>; }, { ...; }>' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ isActive: ZodOptional<ZodNullable<ZodBoolean>>; route: ZodOptional<ZodNullable<ZodArray<ZodString>>>; ... 22 more ...; departureDate: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+185 export type InsertRide = z.infer<typeof insertRideSchema>;
+                                     ~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/database-schema.ts:186:37 - error TS2344: Type 'ZodObject<{ userId: ZodOptional<ZodNullable<ZodString>>; status: ZodOptional<ZodNullable<ZodString>>; type: ZodOptional<...>; ... 12 more ...; paymentMethod: ZodOptional<...>; }, { ...; }>' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ userId: ZodOptional<ZodNullable<ZodString>>; status: ZodOptional<ZodNullable<ZodString>>; type: ZodOptional<...>; ... 12 more ...; paymentMethod: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+186 export type InsertBooking = z.infer<typeof insertBookingSchema>;
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/database-schema.ts:187:43 - error TS2344: Type 'ZodObject<{ name: ZodString; rating: ZodOptional<ZodNullable<ZodString>>; type: ZodString; address: ZodString; lat: ZodOptional<...>; ... 8 more ...; isAvailable: ZodOptional<...>; }, { ...; }>' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ name: ZodString; rating: ZodOptional<ZodNullable<ZodString>>; type: ZodString; address: ZodString; lat: ZodOptional<...>; ... 8 more ...; isAvailable: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+187 export type InsertAccommodation = z.infer<typeof insertAccommodationSchema>;
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:541:34 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "users"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; isAutoincrement: false; ... 4 more ...; generated: undefined; }, {}, { ...; }>; ... 25 more ...; badgeEarnedDate:...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; email: ZodOptional<ZodNullable<ZodString>>; firstName: ZodOptional<ZodNullable<ZodString>>; ... 23 more ...; badgeEarnedDate: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+541 export type InsertUser = z.infer<typeof insertUserSchema>;
+                                     ~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:542:34 - error TS2344: Type 'ZodObject<{ id: ZodOptional<ZodString>; email: ZodOptional<ZodNullable<ZodString>>; firstName: ZodOptional<ZodNullable<ZodString>>; lastName: ZodOptional<...>; profileImageUrl: ZodOptional<...>; }, { ...; }>' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; email: ZodOptional<ZodNullable<ZodString>>; firstName: ZodOptional<ZodNullable<ZodString>>; lastName: ZodOptional<...>; profileImageUrl: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+542 export type UpsertUser = z.infer<typeof upsertUserSchema>;
+                                     ~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:543:37 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "bookings"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; isAutoincrement: false; ... 4 more ...; generated: undefined; }, {}, { ...; }>; ... 5 more ...; createdAt: PgC...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; rideId: ZodOptional<ZodNullable<ZodString>>; passengerId: ZodOptional<ZodNullable<ZodString>>; seatsBooked: ZodInt; totalPrice: ZodString; status: ZodOptional<...>; createdAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+543 export type InsertBooking = z.infer<typeof insertBookingSchema>;
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:544:34 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "rides"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; isAutoincrement: false; ... 4 more ...; generated: undefined; }, {}, { ...; }>; ... 10 more ...; createdAt: PgCol...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; driverId: ZodOptional<ZodNullable<ZodString>>; fromLocation: ZodString; ... 8 more ...; createdAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+544 export type InsertRide = z.infer<typeof insertRideSchema>;
+                                     ~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:545:43 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "accommodations"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, { ...; }>; ... 17 more ...; partnershipBadgeVisible: PgColu...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; name: ZodString; type: ZodString; hostId: ZodOptional<ZodNullable<ZodString>>; ... 14 more ...; partnershipBadgeVisible: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+545 export type InsertAccommodation = z.infer<typeof insertAccommodationSchema>;
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:546:49 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "partnership_proposals"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, { ...; }>; ... 29 more ...; updatedAt: PgColumn<...>...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; hotelId: ZodString; title: ZodString; description: ZodString; proposalType: ZodString; ... 25 more ...; updatedAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+546 export type InsertPartnershipProposal = z.infer<typeof insertPartnershipProposalSchema>;
+                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:547:39 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "hotel_rooms"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, { ...; }>; ... 21 more ...; updatedAt: PgColumn<...>; }, undef...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; accommodationId: ZodString; roomNumber: ZodString; roomType: ZodString; description: ZodOptional<ZodNullable<...>>; ... 17 more ...; updatedAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+547 export type InsertHotelRoom = z.infer<typeof insertHotelRoomSchema>;
+                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:548:50 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "hotel_financial_reports"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, { ...; }>; ... 17 more ...; createdAt: PgColumn<.....' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; accommodationId: ZodString; reportDate: ZodDate; reportType: ZodString; totalRevenue: ZodString; ... 13 more ...; createdAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+548 export type InsertHotelFinancialReport = z.infer<typeof insertHotelFinancialReportSchema>;
+                                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:581:46 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "price_negotiations"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, { ...; }>; ... 10 more ...; updatedAt: PgColumn<...>; }...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; rideId: ZodOptional<ZodNullable<ZodString>>; passengerId: ZodOptional<ZodNullable<ZodString>>; ... 8 more ...; updatedAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+581 export type InsertPriceNegotiation = z.infer<typeof insertPriceNegotiationSchema>;
+                                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:586:43 - error TS2344: Type 'BuildSchema<"insert", { id: PgColumn<{ name: "id"; tableName: "pickup_requests"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; isPrimaryKey: true; ... 5 more ...; generated: undefined; }, {}, { ...; }>; ... 15 more ...; updatedAt: PgColumn<...>; }, u...' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ id: ZodOptional<ZodString>; rideId: ZodOptional<ZodNullable<ZodString>>; passengerId: ZodOptional<ZodNullable<ZodString>>; ... 13 more ...; updatedAt: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+586 export type InsertPickupRequest = z.infer<typeof insertPickupRequestSchema>;
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+shared/schema.ts:595:41 - error TS2344: Type 'ZodObject<{ driverId: ZodOptional<ZodNullable<ZodString>>; totalRides: ZodOptional<ZodNullable<ZodInt>>; totalDistance: ZodOptional<...>; ... 5 more ...; lastRideDate: ZodOptional<...>; }, { ...; }>' does not satisfy the constraint 'ZodType<any, any, any>'.
+  Type 'ZodObject<{ driverId: ZodOptional<ZodNullable<ZodString>>; totalRides: ZodOptional<ZodNullable<ZodInt>>; totalDistance: ZodOptional<...>; ... 5 more ...; lastRideDate: ZodOptional<...>; }, { ...; }>' is missing the following properties from type 'ZodType<any, any, any>': _type, _parse, _getType, _getOrReturnCtx, and 7 more.
+
+595 export type InsertDriverStats = z.infer<typeof insertDriverStatsSchema>;
+                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/admin/adminController.ts:3:25 - error TS2307: Cannot find module '../../shared/storage' or its corresponding type declarations.
+
+3 import { storage } from "../../shared/storage";
+                          ~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/admin/adminController.ts:5:50 - error TS2305: Module '"../../../shared/schema"' has no exported member 'transactions'.
+
+5 import { users, rides, accommodations, bookings, transactions } from "../../../shared/schema";
+                                                   ~~~~~~~~~~~~
+
+src/modules/admin/adminController.ts:77:54 - error TS2339: Property 'price' does not exist on type 'PgTableWithColumns<{ name: "rides"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "rides"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 10 more ...; createdAt: PgColum...'.
+
+77         total: sql<number>`COALESCE(SUM(CAST(${rides.price} AS DECIMAL)), 0)`
+                                                        ~~~~~
+
+src/modules/admin/adminController.ts:452:54 - error TS2339: Property 'price' does not exist on type 'PgTableWithColumns<{ name: "rides"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "rides"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 10 more ...; createdAt: PgColum...'.
+
+452         total: sql<number>`COALESCE(SUM(CAST(${rides.price} AS DECIMAL)), 0)`
+                                                         ~~~~~
+
+src/modules/admin/adminController.ts:455:54 - error TS2339: Property 'price' does not exist on type 'PgTableWithColumns<{ name: "rides"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "rides"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; notNull: true; hasDefault: true; ... 6 more ...; generated: undefined; }, {}, { ...; }>; ... 10 more ...; createdAt: PgColum...'.
+
+455         total: sql<number>`COALESCE(SUM(CAST(${rides.price} AS DECIMAL)), 0)`
+                                                         ~~~~~
+
+src/modules/bookings/bookingController.ts:2:46 - error TS2307: Cannot find module '../../shared/storage' or its corresponding type declarations.
+
+2 import { storage, insertBookingSchema } from "../../shared/storage";
+                                               ~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/bookings/bookingController.ts:8:11 - error TS2430: Interface 'AuthenticatedRequest' incorrectly extends interface 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+  Types of property 'user' are incompatible.
+    Type '{ claims?: { sub?: string | undefined; email?: string | undefined; } | undefined; } | undefined' is not assignable to type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; } | undefined'.
+      Property 'uid' is missing in type '{ claims?: { sub?: string | undefined; email?: string | undefined; } | undefined; }' but required in type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+8 interface AuthenticatedRequest extends Request {
+            ~~~~~~~~~~~~~~~~~~~~
+
+  middleware/role-auth.ts:9:9
+    9         uid: string;
+              ~~~
+    'uid' is declared here.
+
+src/modules/bookings/bookingController.ts:53:34 - error TS7006: Parameter 'booking' implicitly has an 'any' type.
+
+53       bookings = bookings.filter(booking => booking.type === type);
+                                    ~~~~~~~
+
+src/modules/bookings/bookingController.ts:57:34 - error TS7006: Parameter 'booking' implicitly has an 'any' type.
+
+57       bookings = bookings.filter(booking => booking.status === status);
+                                    ~~~~~~~
+
+src/modules/bookings/bookingController.ts:379:34 - error TS7006: Parameter 'booking' implicitly has an 'any' type.
+
+379       bookings = bookings.filter(booking => booking.type === type);
+                                     ~~~~~~~
+
+src/modules/bookings/bookingController.ts:383:34 - error TS7006: Parameter 'booking' implicitly has an 'any' type.
+
+383       bookings = bookings.filter(booking => booking.status === status);
+                                     ~~~~~~~
+
+src/modules/bookings/bookingController.ts:428:40 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+428         completed: userBookings.filter(b => b.status === 'completed').length,
+                                           ~
+
+src/modules/bookings/bookingController.ts:429:40 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+429         cancelled: userBookings.filter(b => b.status === 'cancelled').length,
+                                           ~
+
+src/modules/bookings/bookingController.ts:430:38 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+430         pending: userBookings.filter(b => b.status === 'pending_approval').length,
+                                         ~
+
+src/modules/bookings/bookingController.ts:432:38 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+432           rides: userBookings.filter(b => b.type === 'ride').length,
+                                         ~
+
+src/modules/bookings/bookingController.ts:433:38 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+433           stays: userBookings.filter(b => b.type === 'stay').length,
+                                         ~
+
+src/modules/bookings/bookingController.ts:434:39 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+434           events: userBookings.filter(b => b.type === 'event').length
+                                          ~
+
+src/modules/bookings/bookingController.ts:439:44 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+439         completed: providerBookings.filter(b => b.status === 'completed').length,
+                                               ~
+
+src/modules/bookings/bookingController.ts:440:44 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+440         cancelled: providerBookings.filter(b => b.status === 'cancelled').length,
+                                               ~
+
+src/modules/bookings/bookingController.ts:441:42 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+441         pending: providerBookings.filter(b => b.status === 'pending_approval').length,
+                                             ~
+
+src/modules/bookings/bookingController.ts:443:42 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+443           rides: providerBookings.filter(b => b.type === 'ride').length,
+                                             ~
+
+src/modules/bookings/bookingController.ts:444:42 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+444           stays: providerBookings.filter(b => b.type === 'stay').length,
+                                             ~
+
+src/modules/bookings/bookingController.ts:445:43 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+445           events: providerBookings.filter(b => b.type === 'event').length
+                                              ~
+
+src/modules/clients/clientController.ts:3:25 - error TS2307: Cannot find module '../../shared/storage' or its corresponding type declarations.
+
+3 import { storage } from "../../shared/storage";
+                          ~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/drivers/driverController.ts:3:25 - error TS2307: Cannot find module '../../shared/storage' or its corresponding type declarations.
+
+3 import { storage } from "../../shared/storage";
+                          ~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/events/eventController.ts:2:44 - error TS2307: Cannot find module '../../shared/storage' or its corresponding type declarations.
+
+2 import { storage, insertEventSchema } from "../../shared/storage";
+                                             ~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/events/eventController.ts:8:11 - error TS2430: Interface 'AuthenticatedRequest' incorrectly extends interface 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+  Types of property 'user' are incompatible.
+    Type '{ claims?: { sub?: string | undefined; email?: string | undefined; } | undefined; } | undefined' is not assignable to type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; } | undefined'.
+      Property 'uid' is missing in type '{ claims?: { sub?: string | undefined; email?: string | undefined; } | undefined; }' but required in type '{ uid: string; email?: string | undefined; roles?: string[] | undefined; }'.
+
+8 interface AuthenticatedRequest extends Request {
+            ~~~~~~~~~~~~~~~~~~~~
+
+  middleware/role-auth.ts:9:9
+    9         uid: string;
+              ~~~
+    'uid' is declared here.
+
+src/modules/events/eventController.ts:59:30 - error TS7006: Parameter 'event' implicitly has an 'any' type.
+
+59       events = events.filter(event =>
+                                ~~~~~
+
+src/modules/events/eventController.ts:67:29 - error TS7006: Parameter 'a' implicitly has an 'any' type.
+
+67       events = events.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+                               ~
+
+src/modules/events/eventController.ts:67:32 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+67       events = events.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+                                  ~
+
+src/modules/events/eventController.ts:69:29 - error TS7006: Parameter 'a' implicitly has an 'any' type.
+
+69       events = events.sort((a, b) => Number(a.ticketPrice || 0) - Number(b.ticketPrice || 0));
+                               ~
+
+src/modules/events/eventController.ts:69:32 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+69       events = events.sort((a, b) => Number(a.ticketPrice || 0) - Number(b.ticketPrice || 0));
+                                  ~
+
+src/modules/events/eventController.ts:71:29 - error TS7006: Parameter 'a' implicitly has an 'any' type.
+
+71       events = events.sort((a, b) => (b.ticketsSold || 0) - (a.ticketsSold || 0));
+                               ~
+
+src/modules/events/eventController.ts:71:32 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+71       events = events.sort((a, b) => (b.ticketsSold || 0) - (a.ticketsSold || 0));
+                                  ~
+
+src/modules/users/userController.ts:2:43 - error TS2307: Cannot find module '../../shared/storage' or its corresponding type declarations.
+
+2 import { storage, insertUserSchema } from "../../shared/storage";
+                                            ~~~~~~~~~~~~~~~~~~~~~~
+
+src/modules/users/userController.ts:210:28 - error TS7006: Parameter 'user' implicitly has an 'any' type.
+
+210       users = users.filter(user => user.isVerified === (verified === 'true'));
+                               ~~~~
+
+src/modules/users/userController.ts:214:35 - error TS7006: Parameter 'user' implicitly has an 'any' type.
+
+214     const publicUsers = users.map(user => ({
+                                      ~~~~
+
+src/modules/users/userController.ts:336:34 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+336           ...userBookings.filter(b => b.status === 'completed'),
+                                     ~
+
+src/modules/users/userController.ts:337:38 - error TS7006: Parameter 'b' implicitly has an 'any' type.
+
+337           ...providerBookings.filter(b => b.status === 'completed')
+                                         ~
+
+
+Found 93 errors in 19 files.
+
+Errors  Files
+     1  middleware/role-auth.ts:2
+     2  profileRoutes.ts:142
+     2  routes/billing.ts:19
+     5  routes/chat.ts:12
+     2  routes/geo.ts:79
+     1  routes/index.ts:12
+     2  routes/provider/dashboard.ts:41
+     2  routes/shared/health.ts:42
+     1  searchRoutes.ts:2
+    15  services/chatService.ts:96
+     6  services/pmsService.ts:173
+     4  shared/database-schema.ts:184
+    11  shared/schema.ts:541
+     5  src/modules/admin/adminController.ts:3
+    18  src/modules/bookings/bookingController.ts:2
+     1  src/modules/clients/clientController.ts:3
+     1  src/modules/drivers/driverController.ts:3
+     9  src/modules/events/eventController.ts:2
+     5  src/modules/users/userController.ts:2
+edsondaniel@DESKTOP-USMCLA0:/mnt/c/Users/user/Downloads/Link-AMZAPP/backend$ npm start

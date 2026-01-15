@@ -1,0 +1,144 @@
+PROBLEMA IDENTIFICADO! 🚨 O erro "Failed to fetch" significa que o frontend não consegue se conectar com o backend!
+
+🔍 O que está acontecendo:
+✅ O formulário está funcionando no frontend
+
+✅ Os dados estão sendo coletados corretamente
+
+❌ A requisição POST para /api/rides-simple/create está falhando
+
+🎯 Causas do "Failed to fetch":
+1. Backend offline ou não respondendo
+bash
+# O servidor Express pode estar:
+- ❌ Não rodando
+- ❌ Travado
+- ❌ Com erro de inicialização
+2. Problema de CORS (Cross-Origin)
+typescript
+// O backend pode estar bloqueando requisições do frontend
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://seu-dominio.com'],
+  // ↑ Domínios permitidos precisa incluir seu frontend
+}));
+3. URL incorreta no fetch
+typescript
+// No frontend, o fetch pode estar com URL errada
+fetch('/api/rides-simple/create') // ← Pode ser relativo ou absoluto
+4. Timeout ou rede lenta
+Railway pode estar com instabilidade
+
+Conexão muito lenta
+
+🛠️ SOLUÇÕES IMEDIATAS:
+Passo 1: Verifique se o backend está online
+Abra no navegador:
+
+text
+https://link-amzapp-production.up.railway.app/api/health
+Se não responder: Backend está offline
+
+Passo 2: Verifique os logs do backend
+bash
+# No Railway dashboard:
+railway logs
+
+# Ou adicione logging no código:
+console.log('✅ Backend iniciado na porta', PORT);
+Passo 3: Teste a API manualmente
+Abra o Console do navegador e execute:
+
+javascript
+// Teste manual da API
+fetch('https://link-amzapp-production.up.railway.app/api/health')
+  .then(response => response.json())
+  .then(data => console.log('Health check:', data))
+  .catch(error => console.error('Erro:', error));
+Passo 4: Verifique CORS
+No backend, ajuste o CORS:
+
+typescript
+app.use(
+  cors({
+    origin: [
+      "https://link-aturismomoz.com",
+      "https://www.link-aturismomoz.com", 
+      "https://link-amzapp-production.up.railway.app",
+      "http://localhost:3000",
+      "http://localhost:5000", 
+      "http://localhost:8000",
+      // ↑ Adicione TODOS os domínios do frontend
+    ],
+    credentials: true,
+  })
+);
+🔧 Como Diagnosticar no Navegador:
+1. Abra DevTools (F12) → Network tab
+2. Tente publicar uma viagem
+3. Veja a requisição POST:
+🔴 Vermelho = Erro de conexão
+
+🟡 Amarelo = CORS error
+
+🔵 Azul = Sucesso mas com status de erro
+
+4. Clique na requisição falha e veja:
+Status: 404, 500, CORS error?
+
+Headers: URL está correta?
+
+Response: O que o backend retorna?
+
+📋 Possíveis Cenários:
+Cenário 1: Backend Offline
+text
+Status: (failed) net::ERR_CONNECTION_REFUSED
+Solução: Reinicie o backend no Railway
+Cenário 2: CORS Error
+text
+Status: CORS policy error
+Solução: Configure CORS corretamente
+Cenário 3: 404 Not Found
+text
+Status: 404
+Solução: Rota /api/rides-simple/create não existe
+Cenário 4: 500 Internal Error
+text
+Status: 500  
+Solução: Erro no código do backend - verifique logs
+🚀 SOLUÇÃO COMPLETA:
+1. Primeiro, teste a conexão básica:
+javascript
+// No console do navegador, execute:
+fetch('https://link-amzapp-production.up.railway.app/api/health')
+  .then(r => r.json())
+  .then(console.log)
+  .catch(console.error);
+2. Se funcionar, teste a rota específica:
+javascript
+// Teste a rota de criação
+fetch('https://link-amzapp-production.up.railway.app/api/rides-simple/create', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    fromAddress: "Maputo",
+    toAddress: "Tofo", 
+    departureDate: new Date().toISOString(),
+    price: "500",
+    maxPassengers: 4,
+    type: "sedan"
+  })
+})
+.then(r => r.json())
+.then(console.log)
+.catch(console.error);
+3. Corrija a URL no frontend:
+typescript
+// Use URL absoluta em produção
+const API_BASE = import.meta.env.PROD 
+  ? 'https://link-amzapp-production.up.railway.app'
+  : 'http://localhost:3001';
+
+fetch(`${API_BASE}/api/rides-simple/create`, {
+  // ... resto do código
+});

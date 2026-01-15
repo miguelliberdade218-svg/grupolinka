@@ -1,0 +1,71 @@
+ Problema Identificado:
+Frontend está chamando:
+
+text
+POST /api/rides-simple/create
+Mas seu backend só tem:
+
+javascript
+app.post('/api/rides', ...) // ← Rota diferente!
+🔧 Soluções Possíveis:
+Opção 1: Alterar o Backend (Recomendado)
+javascript
+// Mude a rota no backend para coincidir com o frontend
+app.post('/api/rides-simple/create', (req, res) => {
+  try {
+    const {
+      type,           // ← Agora é 'type' em vez de 'vehicleType'
+      fromAddress,    // ← Agora é 'fromAddress' em vez de 'from'  
+      toAddress,      // ← Agora é 'toAddress' em vez de 'to'
+      departureDate,  // ← Agora é 'departureDate' em vez de 'date'
+      price,          // ← Agora é 'price' em vez de 'price'
+      // ... outros campos
+    } = req.body;
+
+    console.log('📦 Dados recebidos:', req.body);
+
+    // Sua lógica aqui...
+    
+    res.status(201).json({ success: true, message: 'Rota criada!' });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+Opção 2: Alterar o Frontend
+Se você tem acesso ao código do frontend, mude a URL para:
+
+javascript
+// No frontend, altere de:
+const response = await fetch('/api/rides-simple/create', ...);
+
+// Para:
+const response = await fetch('/api/rides', ...);
+Opção 3: Adicionar Ambas as Rotas (Mais Seguro)
+javascript
+// No backend, adicione ambas as rotas
+app.post('/api/rides', createRideHandler);
+app.post('/api/rides-simple/create', createRideHandler); // ← mesma função
+
+function createRideHandler(req, res) {
+  // mesma lógica para ambas as rotas
+  const {
+    type,          // ← do rides-simple/create
+    vehicleType,   // ← do /api/rides
+    fromAddress,   // ← do rides-simple/create  
+    from,          // ← do /api/rides
+    toAddress,     // ← do rides-simple/create
+    to,            // ← do /api/rides
+    departureDate, // ← do rides-simple/create
+    date,          // ← do /api/rides
+    // ... etc
+  } = req.body;
+
+  // Use valores de qualquer nomeação
+  const finalFrom = from || fromAddress;
+  const finalTo = to || toAddress;
+  const finalVehicleType = vehicleType || type;
+  const finalDate = date || departureDate;
+
+  // ... restante da lógica
+}

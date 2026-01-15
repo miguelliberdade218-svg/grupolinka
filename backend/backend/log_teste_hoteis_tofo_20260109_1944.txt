@@ -1,0 +1,65 @@
+[H[2J[3J
+[0;34m==================================================[0m
+[0;34m TESTE EXAUSTIVO DE HOTÉIS - TOFO BEACH (09/01/2026) [0m
+[0;34m==================================================[0m
+
+[1;33m[19:44:48] TESTE: 1. Health Check[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/health
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "message": "Hotel module is healthy",
+  "timestamp": "2026-01-09T17:44:48.220Z",
+  "version": "1.0.0",
+  "endpoints": {
+    "public": [
+      "GET /api/hotels",
+      "GET /api/hotels/:id",
+      "GET /api/hotels/slug/:slug",
+      "GET /api/hotels/:id/room-types",
+      "GET /api/hotels/:id/availability",
+      "GET /api/hotels/:id/promotions",
+      "GET /api/hotels/:id/seasons",
+      "GET /api/hotels/province/:province",
+      "GET /api/hotels/locality/:locality",
+      "GET /api/hotels/:id/reviews",
+      "GET /api/hotels/:id/reviews/stats",
+      "GET /api/hotels/search/nearby"
+    ],
+    "private": [
+      "POST /api/hotels",
+      "PUT /api/hotels/:id",
+      "POST /api/hotels/:id/bookings",
+      "GET /api/hotels/:id/bookings/:bookingId",
+      "POST /api/hotels/bookings/:bookingId/check-in",
+      "POST /api/hotels/bookings/:bookingId/check-out",
+      "POST /api/hotels/bookings/:bookingId/cancel",
+      "POST /api/hotels/reviews/submit",
+      "POST /api/hotels/reviews/:reviewId/vote-helpful",
+      "POST /api/hotels/:hotelId/reviews/:reviewId/respond"
+    ],
+    "ownerOnly": [
+      "GET /api/hotels/:id/dashboard",
+      "GET /api/hotels/:id/bookings",
+      "POST /api/hotels/:id/room-types",
+      "PUT /api/hotels/:hotelId/room-types/:roomTypeId",
+      "DELETE /api/hotels/:hotelId/room-types/:roomTypeId",
+      "POST /api/hotels/:id/availability/bulk",
+      "GET /api/hotels/:id/bookings/:bookingId/invoice",
+      "POST /api/hotels/:id/invoices/:invoiceId/refresh",
+      "GET /api/hotels/:id/invoices/:invoiceId",
+      "GET /api/hotels/:id/bookings/:bookingId/deposit",
+      "GET /api/hotels/:id/bookings/:bookingId/payments",
+      "POST /api/hotels/:id/bookings/:bookingId/payments",
+      "GET /api/hotels/:id/payments/recent",
+      "GET /api/hotels/:id/financial-summary",
+      "GET /api/hotels/:id/payments/pending",
+      "GET /api/hotels/:id/reports/bookings",
+      "GET /api/hotels/:id/reports/payments"
+    ]
+  }
+}
+{"success":true,"message":"Hotel module is healthy","timestamp":"2026-01-09T17:44:48.220Z","version":"1.0.0","endpoints":{"public":["GET /api/hotels","GET /api/hotels/:id","GET /api/hotels/slug/:slug","GET /api/hotels/:id/room-types","GET /api/hotels/:id/availability","GET /api/hotels/:id/promotions","GET /api/hotels/:id/seasons","GET /api/hotels/province/:province","GET /api/hotels/locality/:locality","GET /api/hotels/:id/reviews","GET /api/hotels/:id/reviews/stats","GET /api/hotels/search/nearby"],"private":["POST /api/hotels","PUT /api/hotels/:id","POST /api/hotels/:id/bookings","GET /api/hotels/:id/bookings/:bookingId","POST /api/hotels/bookings/:bookingId/check-in","POST /api/hotels/bookings/:bookingId/check-out","POST /api/hotels/bookings/:bookingId/cancel","POST /api/hotels/reviews/submit","POST /api/hotels/reviews/:reviewId/vote-helpful","POST /api/hotels/:hotelId/reviews/:reviewId/respond"],"ownerOnly":["GET /api/hotels/:id/dashboard","GET /api/hotels/:id/bookings","POST /api/hotels/:id/room-types","PUT /api/hotels/:hotelId/room-types/:roomTypeId","DELETE /api/hotels/:hotelId/room-types/:roomTypeId","POST /api/hotels/:id/availability/bulk","GET /api/hotels/:id/bookings/:bookingId/invoice","POST /api/hotels/:id/invoices/:invoiceId/refresh","GET /api/hotels/:id/invoices/:invoiceId","GET /api/hotels/:id/bookings/:bookingId/deposit","GET /api/hotels/:id/bookings/:bookingId/payments","POST /api/hotels/:id/bookings/:bookingId/payments","GET /api/hotels/:id/payments/recent","GET /api/hotels/:id/financial-summary","GET /api/hotels/:id/payments/pending","GET /api/hotels/:id/reports/bookings","GET /api/hotels/:id/reports/payments"]}}
+[1;33m[19:44:48] TESTE: 2. Criar Hotel em Tofo[0m
+----------------------------------------

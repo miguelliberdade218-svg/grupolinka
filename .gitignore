@@ -1,0 +1,20 @@
+# Manter APENAS esta linha:
+mozambique_shapefiles/
+
+# Backup files
+*.backup
+*.sql
+*.dump
+*.tar.gz
+*.zip
+*.7z
+
+# Database backups
+backup_*
+*.backup
+*.sql
+
+# Large files
+*.pgsql
+*.pgdump
+

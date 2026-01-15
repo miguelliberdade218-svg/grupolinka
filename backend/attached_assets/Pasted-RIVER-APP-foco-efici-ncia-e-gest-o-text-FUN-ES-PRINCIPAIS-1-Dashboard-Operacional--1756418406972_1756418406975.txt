@@ -1,0 +1,104 @@
+RIVER APP (foco: eficiência e gestão)
+text
+FUNÇÕES PRINCIPAIS:
+1. 🎯 Dashboard Operacional
+   - Rides disponíveis na área
+   - Solicitações pendentes
+   - Agenda do dia
+   - Rendimentos do dia/mês
+
+2. 📊 Gestão de Corridas
+   - Aceitar/rejeitar corridas
+   - GPS e rotas em tempo real
+   - Status do veículo (online/offline)
+   - Histórico de corridas
+
+3. 💰 Financeiro
+   - Extrato de ganhos
+   - Taxas da plataforma
+   - Saques para M-Pesa
+   - Relatórios mensais
+
+4. 🔧 Perfil Profissional
+   - Documentos (carta, seguro)
+   - Avaliações dos clientes
+   - Estatísticas de performance
+   - Disponibilidade (horários)
+🏨 HOTEL APP (foco: gestão e ocupação)
+text
+FUNÇÕES PRINCIPAIS:
+1. 🏨 Gestão de Acomodações
+   - Cadastrar quartos/suítes
+   - Definir preços e datas
+   - Fotos e descrições
+   - Disponibilidade em tempo real
+
+2. 📅 Reservas & Check-in
+   - Solicitações de reserva
+   - Confirmações rápidas
+   - Check-in/check-out digital
+   - Histórico de hóspedes
+
+3. 💸 Gestão Financeira
+   - Preços dinâmicos
+   - Taxas e comissões
+   - Pagamentos recebidos
+   - Relatórios de ocupação
+
+4. ⭐ Reputação
+   - Avaliações dos hóspedes
+   - Responder reviews
+   - Métricas de satisfação
+   - Destaques no ranking
+🎪 EVENT APP (foco: vendas e experiência)
+text
+FUNÇÕES PRINCIPAIS:
+1. 🎭 Gestão de Eventos
+   - Criar eventos (shows, feiras, workshops)
+   - Definir lotes de ingressos
+   - Preços e capacidades
+   - Datas e horários
+
+2. 🎫 Vendas & Ingressos
+   - Venda online de ingressos
+   - QR codes para entrada
+   - Lista de participantes
+   - Check-in no evento
+
+3. 📊 Analytics
+   - Vendas por lote
+   - Público esperado
+   - Receita gerada
+   - Comparecimento real
+
+4. 🎨 Experiência
+   - Informações do evento
+   - Programação detalhada
+   - Mapas e localização
+   - Comunicação com participantes
+👑 ADMIN APP (foco: controle e insights)
+text
+FUNÇÕES PRINCIPAIS:
+1. 👥 Gestão de Utilizadores
+   - Aprovar/remover motoristas/hoteis
+   - Verificar documentos
+   - Gerir roles e permissões
+   - Suporte ao cliente
+
+2. 📈 Analytics da Plataforma
+   - Métricas de uso
+   - Receita total
+   - Crescimento mensal
+   - Heatmap de corridas
+
+3. ⚙️ Configurações do Sistema
+   - Taxas da plataforma
+   - Políticas de uso
+   - Configurações de pagamento
+   - Manutenção do sistema
+
+4. 🚨 Moderação & Suporte
+   - Reports de utilizadores
+   - Resolução de disputes
+   - Notificações globais
+   - Backup e segurança

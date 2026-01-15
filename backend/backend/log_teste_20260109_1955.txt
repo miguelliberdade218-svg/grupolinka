@@ -1,0 +1,309 @@
+[H[2J[3J
+[0;34m==================================================[0m
+[0;34m TESTE EXAUSTIVO DE HOTÉIS - TOFO BEACH (09/01/2026) [0m
+[0;34m==================================================[0m
+
+[1;33m[19:55:34] TESTE: 1. Health Check[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/health
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "message": "Hotel module is healthy",
+  "timestamp": "2026-01-09T17:55:34.993Z",
+  "version": "1.0.0",
+  "endpoints": {
+    "public": [
+      "GET /api/hotels",
+      "GET /api/hotels/:id",
+      "GET /api/hotels/slug/:slug",
+      "GET /api/hotels/:id/room-types",
+      "GET /api/hotels/:id/availability",
+      "GET /api/hotels/:id/promotions",
+      "GET /api/hotels/:id/seasons",
+      "GET /api/hotels/province/:province",
+      "GET /api/hotels/locality/:locality",
+      "GET /api/hotels/:id/reviews",
+      "GET /api/hotels/:id/reviews/stats",
+      "GET /api/hotels/search/nearby"
+    ],
+    "private": [
+      "POST /api/hotels",
+      "PUT /api/hotels/:id",
+      "POST /api/hotels/:id/bookings",
+      "GET /api/hotels/:id/bookings/:bookingId",
+      "POST /api/hotels/bookings/:bookingId/check-in",
+      "POST /api/hotels/bookings/:bookingId/check-out",
+      "POST /api/hotels/bookings/:bookingId/cancel",
+      "POST /api/hotels/reviews/submit",
+      "POST /api/hotels/reviews/:reviewId/vote-helpful",
+      "POST /api/hotels/:hotelId/reviews/:reviewId/respond"
+    ],
+    "ownerOnly": [
+      "GET /api/hotels/:id/dashboard",
+      "GET /api/hotels/:id/bookings",
+      "POST /api/hotels/:id/room-types",
+      "PUT /api/hotels/:hotelId/room-types/:roomTypeId",
+      "DELETE /api/hotels/:hotelId/room-types/:roomTypeId",
+      "POST /api/hotels/:id/availability/bulk",
+      "GET /api/hotels/:id/bookings/:bookingId/invoice",
+      "POST /api/hotels/:id/invoices/:invoiceId/refresh",
+      "GET /api/hotels/:id/invoices/:invoiceId",
+      "GET /api/hotels/:id/bookings/:bookingId/deposit",
+      "GET /api/hotels/:id/bookings/:bookingId/payments",
+      "POST /api/hotels/:id/bookings/:bookingId/payments",
+      "GET /api/hotels/:id/payments/recent",
+      "GET /api/hotels/:id/financial-summary",
+      "GET /api/hotels/:id/payments/pending",
+      "GET /api/hotels/:id/reports/bookings",
+      "GET /api/hotels/:id/reports/payments"
+    ]
+  }
+}
+{"success":true,"message":"Hotel module is healthy","timestamp":"2026-01-09T17:55:34.993Z","version":"1.0.0","endpoints":{"public":["GET /api/hotels","GET /api/hotels/:id","GET /api/hotels/slug/:slug","GET /api/hotels/:id/room-types","GET /api/hotels/:id/availability","GET /api/hotels/:id/promotions","GET /api/hotels/:id/seasons","GET /api/hotels/province/:province","GET /api/hotels/locality/:locality","GET /api/hotels/:id/reviews","GET /api/hotels/:id/reviews/stats","GET /api/hotels/search/nearby"],"private":["POST /api/hotels","PUT /api/hotels/:id","POST /api/hotels/:id/bookings","GET /api/hotels/:id/bookings/:bookingId","POST /api/hotels/bookings/:bookingId/check-in","POST /api/hotels/bookings/:bookingId/check-out","POST /api/hotels/bookings/:bookingId/cancel","POST /api/hotels/reviews/submit","POST /api/hotels/reviews/:reviewId/vote-helpful","POST /api/hotels/:hotelId/reviews/:reviewId/respond"],"ownerOnly":["GET /api/hotels/:id/dashboard","GET /api/hotels/:id/bookings","POST /api/hotels/:id/room-types","PUT /api/hotels/:hotelId/room-types/:roomTypeId","DELETE /api/hotels/:hotelId/room-types/:roomTypeId","POST /api/hotels/:id/availability/bulk","GET /api/hotels/:id/bookings/:bookingId/invoice","POST /api/hotels/:id/invoices/:invoiceId/refresh","GET /api/hotels/:id/invoices/:invoiceId","GET /api/hotels/:id/bookings/:bookingId/deposit","GET /api/hotels/:id/bookings/:bookingId/payments","POST /api/hotels/:id/bookings/:bookingId/payments","GET /api/hotels/:id/payments/recent","GET /api/hotels/:id/financial-summary","GET /api/hotels/:id/payments/pending","GET /api/hotels/:id/reports/bookings","GET /api/hotels/:id/reports/payments"]}}
+[1;33m[19:55:35] TESTE: 2. Criar Hotel em Tofo[0m
+----------------------------------------
+[1;33m⚠️  AVISO: ID não encontrado automaticamente. Digite manualmente:[0m
+[0;32m✅ SUCESSO: Hotel criado: 6df98b6e-6d62-4e7a-b77a-e93b082e9fb3[0m
+[1;33m[19:58:39] TESTE: 3. Buscar Hotel por ID[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "data": {
+    "id": "6df98b6e-6d62-4e7a-b77a-e93b082e9fb3",
+    "name": "Hotel Tofo Test 195535",
+    "slug": "hotel-tofo-test-1767981335",
+    "description": "Hotel teste praia Tofo",
+    "address": "Praia do Tofo, Jangamo",
+    "locality": "Tofo",
+    "province": "Inhambane",
+    "country": "Moçambique",
+    "lat": "-23.850000",
+    "lng": "35.550000",
+    "location_geom": "0101000020E61000006666666666C641409A99999999D937C0",
+    "images": [
+      "https://exemplo.com/tofo.jpg"
+    ],
+    "amenities": [
+      "WiFi",
+      "Piscina",
+      "Praia Privativa",
+      "Mergulho"
+    ],
+    "contact_email": "tofo@teste.com",
+    "contact_phone": "+258841234567",
+    "host_id": "bB88VrzVx8dbUUpXV7qSrGA5eiy2",
+    "check_in_time": "14:00:00",
+    "check_out_time": "12:00:00",
+    "policies": "Check-in: 14:00, Check-out: 12:00",
+    "rating": "0.00",
+    "total_reviews": 0,
+    "is_active": true,
+    "created_at": "2026-01-09T19:55:35.000Z",
+    "updated_at": "2026-01-09T19:55:35.000Z",
+    "created_by": null,
+    "updated_by": null,
+    "room_type_count": 0,
+    "roomTypes": []
+  }
+}
+{"success":true,"data":{"id":"6df98b6e-6d62-4e7a-b77a-e93b082e9fb3","name":"Hotel Tofo Test 195535","slug":"hotel-tofo-test-1767981335","description":"Hotel teste praia Tofo","address":"Praia do Tofo, Jangamo","locality":"Tofo","province":"Inhambane","country":"Moçambique","lat":"-23.850000","lng":"35.550000","location_geom":"0101000020E61000006666666666C641409A99999999D937C0","images":["https://exemplo.com/tofo.jpg"],"amenities":["WiFi","Piscina","Praia Privativa","Mergulho"],"contact_email":"tofo@teste.com","contact_phone":"+258841234567","host_id":"bB88VrzVx8dbUUpXV7qSrGA5eiy2","check_in_time":"14:00:00","check_out_time":"12:00:00","policies":"Check-in: 14:00, Check-out: 12:00","rating":"0.00","total_reviews":0,"is_active":true,"created_at":"2026-01-09T19:55:35.000Z","updated_at":"2026-01-09T19:55:35.000Z","created_by":null,"updated_by":null,"room_type_count":0,"roomTypes":[]}}
+[1;33m[19:58:39] TESTE: 4. Criar Room Type[0m
+----------------------------------------
+[0;32m✅ SUCESSO: Room Type criado: [0m
+[1;33m[19:58:42] TESTE: 5. Listar Room Types[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/room-types
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "data": [
+    {
+      "id": "8c69ef06-297b-48b4-871c-d4982f8ccf6a",
+      "hotel_id": "6df98b6e-6d62-4e7a-b77a-e93b082e9fb3",
+      "name": "Quarto Deluxe Tofo",
+      "slug": null,
+      "description": "Quarto com vista mar em Tofo",
+      "capacity": 3,
+      "base_price": "350.00",
+      "extra_adult_price": "50.00",
+      "extra_child_price": "25.00",
+      "base_occupancy": 2,
+      "amenities": [
+        "TV",
+        "Mini-bar",
+        "Varanda"
+      ],
+      "images": [
+        "https://exemplo.com/quarto-tofo.jpg"
+      ],
+      "total_units": 5,
+      "is_active": true,
+      "created_at": "2026-01-09T19:58:39.000Z",
+      "updated_at": "2026-01-09T19:58:39.000Z",
+      "base_price_low": null,
+      "base_price_high": null,
+      "min_nights_default": 1,
+      "extra_night_price": null
+    }
+  ]
+}
+{"success":true,"data":[{"id":"8c69ef06-297b-48b4-871c-d4982f8ccf6a","hotel_id":"6df98b6e-6d62-4e7a-b77a-e93b082e9fb3","name":"Quarto Deluxe Tofo","slug":null,"description":"Quarto com vista mar em Tofo","capacity":3,"base_price":"350.00","extra_adult_price":"50.00","extra_child_price":"25.00","base_occupancy":2,"amenities":["TV","Mini-bar","Varanda"],"images":["https://exemplo.com/quarto-tofo.jpg"],"total_units":5,"is_active":true,"created_at":"2026-01-09T19:58:39.000Z","updated_at":"2026-01-09T19:58:39.000Z","base_price_low":null,"base_price_high":null,"min_nights_default":1,"extra_night_price":null}]}
+[1;33m[19:58:42] TESTE: 6. Bulk Update Availability[0m
+----------------------------------------
+[1;33m[19:58:42] TESTE: Bulk update[0m
+----------------------------------------
+🔗 POST http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/availability/bulk
+📦 Payload:
+{
+  "roomTypeId": "",
+  "updates": [
+    {
+      "date": "2026-01-09",
+      "price": 350,
+      "availableUnits": 5
+    },
+    {
+      "date": "2026-01-16",
+      "price": 400,
+      "availableUnits": 3
+    },
+    {
+      "date": "2026-01-19",
+      "price": 420,
+      "availableUnits": 2
+    }
+  ]
+}
+[1;33m⚠️  AVISO: FALHA (400{}): Bulk update[0m
+Resposta:
+{
+  "success": false,
+  "message": "roomTypeId é obrigatório"
+}
+{"success":false,"message":"roomTypeId é obrigatório"}
+[1;33m[19:58:42] TESTE: 7. Buscar Disponibilidade[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/availability?startDate=2026-01-16&endDate=2026-01-19&roomTypeId=
+[1;33m⚠️  AVISO: FALHA (400{}): 7. Buscar Disponibilidade[0m
+Resposta:
+{
+  "success": false,
+  "message": "roomTypeId obrigatório"
+}
+{"success":false,"message":"roomTypeId obrigatório"}
+[1;33m[19:58:42] TESTE: 8. Criar Promoção[0m
+----------------------------------------
+[0;32m✅ SUCESSO: Promoção criada: [0m
+[1;33m[19:58:42] TESTE: 9. Listar Promoções[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/promotions
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "data": [
+    {
+      "id": "d8dfd832-08d3-4a13-a983-30f1ab559cbf",
+      "hotel_id": "6df98b6e-6d62-4e7a-b77a-e93b082e9fb3",
+      "room_type_id": null,
+      "promo_code": "TOFO2026",
+      "name": "25% Off Tofo",
+      "description": "Desconto especial para Tofo",
+      "discount_percent": 25,
+      "discount_amount": null,
+      "start_date": "2026-01-09T02:00:00.000Z",
+      "end_date": "2026-02-08T02:00:00.000Z",
+      "max_uses": 100,
+      "current_uses": 0,
+      "is_active": true,
+      "created_at": "2026-01-09T19:58:42.000Z",
+      "updated_at": "2026-01-09T19:58:42.000Z"
+    }
+  ]
+}
+{"success":true,"data":[{"id":"d8dfd832-08d3-4a13-a983-30f1ab559cbf","hotel_id":"6df98b6e-6d62-4e7a-b77a-e93b082e9fb3","room_type_id":null,"promo_code":"TOFO2026","name":"25% Off Tofo","description":"Desconto especial para Tofo","discount_percent":25,"discount_amount":null,"start_date":"2026-01-09T02:00:00.000Z","end_date":"2026-02-08T02:00:00.000Z","max_uses":100,"current_uses":0,"is_active":true,"created_at":"2026-01-09T19:58:42.000Z","updated_at":"2026-01-09T19:58:42.000Z"}]}
+[1;33m[19:58:42] TESTE: 10. Calcular Preço com Promoção[0m
+----------------------------------------
+🔗 POST http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/bookings/calculate-price
+📦 Payload:
+{
+  "roomTypeId": "",
+  "checkIn": "2026-01-16",
+  "checkOut": "2026-01-19",
+  "units": 1,
+  "promoCode": "TOFO2026"
+}
+[1;33m⚠️  AVISO: FALHA (400{}): 10. Calcular Preço com Promoção[0m
+Resposta:
+{
+  "success": false,
+  "message": "roomTypeId, checkIn e checkOut são obrigatórios"
+}
+{"success":false,"message":"roomTypeId, checkIn e checkOut são obrigatórios"}
+[1;33m[19:58:42] TESTE: 11. Criar Reserva[0m
+----------------------------------------
+[0;32m✅ SUCESSO: Reserva criada: [0m
+[1;33m[19:58:42] TESTE: 12. Check-in[0m
+----------------------------------------
+🔗 POST http://localhost:8000/api/hotels/bookings//check-in
+📦 Payload:
+{}
+[1;33m⚠️  AVISO: FALHA (404{}): 12. Check-in[0m
+Resposta:
+{
+  "success": false,
+  "error": "Rota não encontrada",
+  "path": "/api/hotels/bookings//check-in"
+}
+{"success":false,"error":"Rota não encontrada","path":"/api/hotels/bookings//check-in"}
+[1;33m[19:58:45] TESTE: 13. Check-out[0m
+----------------------------------------
+🔗 POST http://localhost:8000/api/hotels/bookings//check-out
+📦 Payload:
+{}
+[1;33m⚠️  AVISO: FALHA (404{}): 13. Check-out[0m
+Resposta:
+{
+  "success": false,
+  "error": "Rota não encontrada",
+  "path": "/api/hotels/bookings//check-out"
+}
+{"success":false,"error":"Rota não encontrada","path":"/api/hotels/bookings//check-out"}
+[1;33m[19:58:45] TESTE: 14. Submeter Review[0m
+----------------------------------------
+[1;33m[19:58:45] TESTE: 15. Listar Reviews[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/reviews
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "data": [],
+  "count": 0,
+  "pagination": {
+    "limit": 10,
+    "offset": 0,
+    "hasMore": false
+  }
+}
+{"success":true,"data":[],"count":0,"pagination":{"limit":10,"offset":0,"hasMore":false}}
+[1;33m[19:58:45] TESTE: 16. Estatísticas Reviews[0m
+----------------------------------------
+🔗 GET http://localhost:8000/api/hotels/6df98b6e-6d62-4e7a-b77a-e93b082e9fb3/reviews/stats
+[0;32m✅ SUCESSO: SUCESSO (200)[0m
+{
+  "success": true,
+  "data": {
+    "total_reviews": 0,
+    "average_rating": 0
+  }
+}
+{"success":true,"data":{"total_reviews":0,"average_rating":0}}
+
+[0;34m==================================================[0m
+[0;34m LIMPEZA OPCIONAL [0m
+[0;34m==================================================[0m
+
+[1;33mItens criados:[0m
+   Hotel: 6df98b6e-6d62-4e7a-b77a-e93b082e9fb3

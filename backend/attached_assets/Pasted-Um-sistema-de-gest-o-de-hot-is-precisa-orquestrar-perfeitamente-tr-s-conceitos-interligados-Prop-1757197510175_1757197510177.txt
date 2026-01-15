@@ -1,0 +1,94 @@
+Um sistema de gestão de hotéis precisa orquestrar perfeitamente três conceitos interligados:
+
+Propriedade (Hotel) & Inventário (Quartos): O "quê" está a ser vendido.
+
+Hotel: Nome, localização, descrição, comodidades gerais (Wifi, piscina, estacionamento), políticas (check-in/out), fotos.
+
+Tipo de Quarto: Define a "plantilla" de um quarto. Ex: "Quarto Duplo Standard", "Suite Premium". Contém: nome, descrição, comodidades específicas (ar condicionado, varanda), número máximo de hóspedes, fotos.
+
+Quartos Reais (Inventário): Instâncias específicas de um Tipo de Quarto. O Hotel "X" pode ter 10 quartos idênticos do "Tipo de Quarto Duplo Standard". Em sistemas menores, muitas vezes omite-se este nível e trabalha-se diretamente com o Tipo de Quarto gerindo a disponibilidade.
+
+Preços (Rate Plans): O "quanto" custa.
+
+Não é apenas um preço fixo. É um conjunto de regras:
+
+Preço Base: Para uma noite, para 2 pessoas.
+
+Regras de Preço: Preço por adulto extra, preço por criança, taxas (limpeza, cidade).
+
+Ofertas e Descontos: Preços promocionais para datas específicas, descontos por estadia longa.
+
+Restrições: Estadia mínima/máxima (ex: fim de semana requer 2 noites), prazo de cancelamento.
+
+Disponibilidade (Calendarização): O "quando" está disponível.
+
+Um calendário para cada Tipo de Quarto onde se define quantas unidades estão disponíveis para venda em cada data.
+
+É aqui que a mágica acontece: Cada vez que uma reserva é feita, o sistema bloqueia a disponibilidade para aquelas datas específicas, impedindo overbooking.
+
+2. Painel de Administração para o Hoteleiro (Backoffice)
+Este é o painel onde o proprietário do hotel gere o seu negócio. É uma aplicação à parte, mas crucial.
+
+Gestão de Listagens:
+
+CRUD completo do Hotel, Tipos de Quarto e seus preços.
+
+Upload e gestão de fotos.
+
+Gestão de Calendário e Preços:
+
+Uma vista de calendário para definir disponibilidade e preços de forma massiva ou individual (ex: aumentar o preço para o Ano Novo).
+
+Gestão de Reservas (Bookings):
+
+Ver todas as reservas (com filtros por data, status).
+
+Alterar status de uma reserva (Confirmada, Check-in, Check-out, Cancelada).
+
+Fazer check-in/out manualmente (para reservas presenciais).
+
+Dashboard e Relatórios:
+
+Métricas chave: Ocupação, receita, número de reservas futuras.
+
+3. Fluxo de uma Reserva (Journey do Hóspede)
+Busca e Filtros: O hóspede busca por localização, datas, número de hóspedes. O seu sistema cruza estes dados com Disponibilidade e Preços.
+
+Resultados da Busca: Lista de hotéis com Tipos de Quarto disponíveis e preço total para as datas.
+
+Página do Quarto: Exibe detalhes, fotos, preço detalhado, políticas de cancelamento.
+
+Checkout:
+
+Coleta de dados do hóspede.
+
+Verificação de Disponibilidade em Tempo Real (IMPORTANTE): Antes de finalizar, o sistema deve verificar novamente se as datas ainda estão disponíveis para aquele quarto.
+
+Seleção de método de pagamento (a integração com um gateway como Stripe é quase obrigatória).
+
+Confirmação da reserva.
+
+Pós-Reserva:
+
+Email de confirmação automático para o hóspede e para o hoteleiro.
+
+A disponibilidade é automaticamente decrementada no calendário.
+
+4. Funcionalidades Técnicas e de Configuração (Backend)
+APIs Robustas:
+
+/api/hotels: Busca, listagem, detalhes.
+
+/api/availability: Verificar disponibilidade e preços para um hotel/quarto em datas específicas.
+
+/api/bookings: Criar, ler, cancelar reservas.
+
+/api/auth: Autenticação para hóspedes e hoteleiros.
+
+Base de Dados:
+
+O esquema da BD deve refletir os 3 pilares. Tabelas como: hotels, room_types, rates, availability, bookings, users.
+
+Processamento em Tempo Real:
+
+A verificação de disponibilidade e o bloqueio de datas durante o checkout devem ser operations atómicas para evitar race conditions (duas pessoas reservarem o último quarto ao mesmo tempo)

@@ -1,0 +1,78 @@
+ Problema Principal:
+O Express está tentando servir arquivos estáticos do frontend, mas o diretório ../frontend/dist não existe ou está vazio.
+
+🔍 Causas Prováveis:
+Frontend não foi construído (build)
+
+Diretório incorreto no path.join(__dirname, "../frontend/dist")
+
+Build do frontend falhou
+
+Problema de deploy no Railway
+
+🛠️ Soluções Imediatas:
+Solução 1: Verificar se o frontend foi buildado
+bash
+# Na pasta do frontend, execute:
+npm run build
+Solução 2: Verificar a estrutura de pastas
+javascript
+// No seu index.ts, adicione logging para debug:
+console.log('Diretório do frontend:', path.join(__dirname, "../frontend/dist"));
+
+// Verifique se a pasta existe
+import fs from 'fs';
+const frontendPath = path.join(__dirname, "../frontend/dist");
+if (!fs.existsSync(frontendPath)) {
+  console.error('❌ Pasta do frontend não existe:', frontendPath);
+}
+Solução 3: Configurar fallback para API routes
+javascript
+// Mova o fallback do SPA para DEPOIS das rotas API
+app.all("/api/*", (req, res) => {
+  res.status(404).json({ error: "API endpoint não encontrado" });
+});
+
+// Só então sirva o SPA
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/dist", "index.html"));
+});
+Solução 4: Adicionar tratamento de erro para arquivo não encontrado
+javascript
+app.get("*", (req, res) => {
+  const frontendFile = path.join(__dirname, "../frontend/dist", "index.html");
+  
+  if (fs.existsSync(frontendFile)) {
+    res.sendFile(frontendFile);
+  } else {
+    // Se o frontend não existe, retorne JSON para API calls
+    if (req.path.startsWith('/api/')) {
+      res.status(404).json({ error: "Endpoint não encontrado" });
+    } else {
+      res.status(503).json({ 
+        error: "Frontend não disponível", 
+        message: "O frontend ainda não foi construído ou deployado" 
+      });
+    }
+  }
+});
+📁 Estrutura Correta Esperada:
+text
+seu-projeto/
+├── backend/
+│   ├── dist/           # Build do backend
+│   ├── src/
+│   └── package.json
+└── frontend/
+    └── dist/           # Build do frontend (deve existir!)
+        ├── index.html
+        ├── assets/
+        └── ...
+🚀 Para Deploy no Railway:
+1. Build do Frontend no Deploy:
+json
+// No package.json do backend, adicione:
+"scripts": {
+  "build:frontend": "cd ../frontend && npm install && npm run build",
+  "build": "npm run build:frontend && esbuild index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+  "start": "NODE_ENV=production node dist/index.js"
