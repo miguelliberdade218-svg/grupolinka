@@ -47,18 +47,18 @@ interface ApiHighlights {
   featuredEvents: EventHighlight[];
 }
 
-// ✅ CORREÇÃO: Interface estendida para searchQuery com LocationOption
+// âœ… CORREÃ‡ÃƒO: Interface estendida para searchQuery com LocationOption
 interface SearchQuery {
   from: string;
   to: string;
   date: string;
   fromId?: string;
   toId?: string;
-  fromOption?: LocationOption;  // ✅ NOVO: armazena o objeto completo
-  toOption?: LocationOption;    // ✅ NOVO: armazena o objeto completo
+  fromOption?: LocationOption;  // âœ… NOVO: armazena o objeto completo
+  toOption?: LocationOption;    // âœ… NOVO: armazena o objeto completo
 }
 
-// ✅ CORREÇÃO: Componentes separados para melhor organização
+// âœ… CORREÃ‡ÃƒO: Componentes separados para melhor organizaÃ§Ã£o
 const RidesList = ({ rides, user }: { rides: RideHighlight[], user: any }) => (
   <>
     {rides.slice(0, 6).map((ride, index) => (
@@ -75,7 +75,7 @@ const RidesList = ({ rides, user }: { rides: RideHighlight[], user: any }) => (
         <CardContent className="pt-4">
           <div className="mb-3">
             <h3 className="font-semibold text-lg flex items-center gap-2 mb-1">
-              <span>{ride.from} → {ride.to}</span>
+              <span>{ride.from} â†’ {ride.to}</span>
             </h3>
             <div className="flex items-center justify-between text-sm text-gray-600">
               <div className="flex items-center gap-1">
@@ -205,7 +205,7 @@ const EventsList = ({ events, user }: { events: EventHighlight[], user: any }) =
   </>
 );
 
-// ✅ CORREÇÃO: Interface tipada para ofertas especiais
+// âœ… CORREÃ‡ÃƒO: Interface tipada para ofertas especiais
 interface SpecialOffer {
   from: string;
   to: string;
@@ -223,7 +223,7 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const [searchType, setSearchType] = useState<"rides" | "hotels" | "event-spaces">("rides");
   
-  // ✅ CORREÇÃO: Inicializar também fromId, toId, fromOption e toOption
+  // âœ… CORREÃ‡ÃƒO: Inicializar tambÃ©m fromId, toId, fromOption e toOption
   const [searchQuery, setSearchQuery] = useState<SearchQuery>({ 
     from: "", 
     to: "", 
@@ -245,7 +245,7 @@ export default function Home() {
     closeHotelSearch,
   } = useModalState();
 
-  // ✅ CORREÇÃO: Função auxiliar para mostrar toast
+  // âœ… CORREÃ‡ÃƒO: FunÃ§Ã£o auxiliar para mostrar toast
   const showToast = (
     title: string, 
     description: string, 
@@ -255,7 +255,7 @@ export default function Home() {
     toast({ title, description, variant, action });
   };
 
-  // ✅ CORREÇÃO: Função para calcular check-out automático usando date-fns
+  // âœ… CORREÃ‡ÃƒO: FunÃ§Ã£o para calcular check-out automÃ¡tico usando date-fns
   const calculateCheckOut = (checkIn: string): string => {
     if (!checkIn) return '';
     try {
@@ -268,23 +268,23 @@ export default function Home() {
     }
   };
 
-  // ✅ CORREÇÃO: Função para mudança manual do input - AGORA RECEBE LocationOption DIRETAMENTE
+  // âœ… CORREÃ‡ÃƒO: FunÃ§Ã£o para mudanÃ§a manual do input - AGORA RECEBE LocationOption DIRETAMENTE
   const handleInputChange = (locationOption: LocationOption, type: 'from' | 'to') => {
     setSearchQuery(prev => ({
       ...prev,
-      [type]: locationOption.label, // ✅ usa o label do LocationOption
-      // Limpa o ID e option quando o usuário digita manualmente
+      [type]: locationOption.label, // âœ… usa o label do LocationOption
+      // Limpa o ID e option quando o usuÃ¡rio digita manualmente
       [`${type}Id`]: undefined,
       [`${type}Option`]: undefined
     }));
   };
 
-  // ✅ CORREÇÃO: Função para lidar com seleção de localização - AGORA RECEBE LocationOption DIRETAMENTE
+  // âœ… CORREÃ‡ÃƒO: FunÃ§Ã£o para lidar com seleÃ§Ã£o de localizaÃ§Ã£o - AGORA RECEBE LocationOption DIRETAMENTE
   const handleLocationSelect = (locationOption: LocationOption, type: 'from' | 'to' = 'from') => {
     if (!locationOption || !locationOption.label) {
       showToast(
-        "Localização inválida", 
-        "Por favor, selecione uma localização válida da lista.", 
+        "LocalizaÃ§Ã£o invÃ¡lida", 
+        "Por favor, selecione uma localizaÃ§Ã£o vÃ¡lida da lista.", 
         "destructive"
       );
       return;
@@ -292,32 +292,32 @@ export default function Home() {
     
     setSearchQuery(prev => ({
       ...prev,
-      [type]: locationOption.label, // ✅ string para display
-      [`${type}Id`]: locationOption.id, // ✅ id da localização
-      [`${type}Option`]: locationOption // ✅ objeto completo
+      [type]: locationOption.label, // âœ… string para display
+      [`${type}Id`]: locationOption.id, // âœ… id da localizaÃ§Ã£o
+      [`${type}Option`]: locationOption // âœ… objeto completo
     }));
   };
 
-  // ✅ CORREÇÃO: Função de logout usando sessionStorage
+  // âœ… CORREÃ‡ÃƒO: FunÃ§Ã£o de logout usando sessionStorage
   const handleLogout = () => {
-    // Limpar dados da sessão
+    // Limpar dados da sessÃ£o
     sessionStorage.removeItem('user');
     sessionStorage.removeItem('authToken');
     sessionStorage.removeItem('lastSearchResults');
     sessionStorage.removeItem('ridesSearchData');
     
-    // Recarregar a página para limpar estado
+    // Recarregar a pÃ¡gina para limpar estado
     window.location.href = '/';
   };
 
-  // ✅✅✅ CORREÇÃO CRÍTICA: Função de busca simplificada - só navega, não busca
+  // âœ…âœ…âœ… CORREÃ‡ÃƒO CRÃTICA: FunÃ§Ã£o de busca simplificada - só navega, nÃ£o busca
   const handleSearch = async () => {
     console.log('Busca:', { type: searchType, ...searchQuery });
 
-    // ✅ VALIDAÇÃO 1: Usuário não logado
+    // âœ… VALIDAÃ‡ÃƒO 1: UsuÃ¡rio nÃ£o logado
     if (!user) {
       showToast(
-        "Conta necessária",
+        "Conta necessÃ¡ria",
         "Precisa de criar uma conta gratuita para fazer reservas.",
         "default",
         (
@@ -331,50 +331,50 @@ export default function Home() {
       return;
     }
 
-    // ✅ VALIDAÇÃO 2: Localização obrigatória
+    // âœ… VALIDAÃ‡ÃƒO 2: LocalizaÃ§Ã£o obrigatÃ³ria
     if (!searchQuery.from) {
       showToast(
-        "Localização necessária",
-        "Por favor, selecione uma localização.",
+        "LocalizaÃ§Ã£o necessÃ¡ria",
+        "Por favor, selecione uma localizaÃ§Ã£o.",
         "destructive"
       );
       return;
     }
 
-    // ✅ VALIDAÇÃO 3: Data obrigatória
+    // âœ… VALIDAÃ‡ÃƒO 3: Data obrigatÃ³ria
     if (!searchQuery.date) {
       showToast(
-        "Data necessária",
+        "Data necessÃ¡ria",
         "Por favor, selecione uma data.",
         "destructive"
       );
       return;
     }
 
-    // ✅ VALIDAÇÃO 4: Para hotéis, verificar se localização foi selecionada da lista
+    // âœ… VALIDAÃ‡ÃƒO 4: Para hotÃ©is, verificar se localizaÃ§Ã£o foi selecionada da lista
     if (searchType === "hotels" && !searchQuery.fromOption?.id) {
       showToast(
-        "Selecione uma localização",
-        "Por favor, escolha uma localização da lista de sugestões para resultados precisos.",
+        "Selecione uma localizaÃ§Ã£o",
+        "Por favor, escolha uma localizaÃ§Ã£o da lista de sugestÃµes para resultados precisos.",
         "destructive"
       );
       return;
     }
 
-    // ✅ VALIDAÇÃO 5: Para rides, destino obrigatório
+    // âœ… VALIDAÃ‡ÃƒO 5: Para rides, destino obrigatÃ³rio
     if (searchType === "rides" && !searchQuery.to) {
       showToast(
-        "Destino necessário",
+        "Destino necessÃ¡rio",
         "Por favor, selecione um destino para a viagem.",
         "destructive"
       );
       return;
     }
 
-    // ✅✅✅ CORREÇÃO CRÍTICA: Só navegar, a página de search faz a busca
+    // âœ…âœ…âœ… CORREÃ‡ÃƒO CRÃTICA: SÃ³ navegar, a pÃ¡gina de search faz a busca
     try {
       if (searchType === "rides") {
-        // ✅ Só criar query params e navegar - SEM BUSCAR
+        // âœ… SÃ³ criar query params e navegar - SEM BUSCAR
         const queryParams = new URLSearchParams({
           from: searchQuery.from,
           to: searchQuery.to,
@@ -384,12 +384,12 @@ export default function Home() {
           toId: searchQuery.toOption?.id || ''
         }).toString();
         
-        console.log('🚀 Navegando para search com params:', queryParams);
+        console.log('ðŸš€ Navegando para search com params:', queryParams);
         setLocation(`/rides/search?${queryParams}`);
         
       } else if (searchType === "hotels") {
-        // ✅ REMOVIDO: Referência ao HotelSearchModal
-        // Em vez disso, navegar para a página de hotéis com os parâmetros
+        // âœ… REMOVIDO: ReferÃªncia ao HotelSearchModal
+        // Em vez disso, navegar para a pÃ¡gina de hotÃ©is com os parÃ¢metros
         const queryParams = new URLSearchParams({
           location: searchQuery.from,
           locationId: searchQuery.fromOption?.id || '',
@@ -409,16 +409,16 @@ export default function Home() {
         setLocation(`/event-spaces/search?${searchParams}`);
       }
     } catch (error) {
-      console.error('Erro na navegação:', error);
+      console.error('Erro na navegaÃ§Ã£o:', error);
       showToast(
-        "Erro na navegação",
+        "Erro na navegaÃ§Ã£o",
         "Ocorreu um erro ao processar sua busca. Tente novamente.",
         "destructive"
       );
     }
   };
 
-  // ✅ CORREÇÃO: Navegar para página de resultados usando query params
+  // âœ… CORREÃ‡ÃƒO: Navegar para pÃ¡gina de resultados usando query params
   const handleShowAllResults = (rides: any[], searchParams: any) => {
     // Salvar dados completos no sessionStorage
     sessionStorage.setItem('ridesSearchData', JSON.stringify({
@@ -431,7 +431,7 @@ export default function Home() {
       }
     }));
 
-    // Usar query params para navegação
+    // Usar query params para navegaÃ§Ã£o
     const queryParams = new URLSearchParams({
       from: searchParams.from || searchQuery.from || "",
       to: searchParams.to || searchQuery.to || "",
@@ -443,35 +443,35 @@ export default function Home() {
     setLocation(`/rides/search?${queryParams}`);
   };
 
-  // ✅ Dados mock para evitar erros 404
+  // âœ… Dados mock para evitar erros 404
   const weeklyHighlights: ApiHighlights = {
     topRides: [
-      { from: "Maputo", to: "Beira", price: 1500, date: "2024-01-15", driver: "João M.", rating: 4.8 },
+      { from: "Maputo", to: "Beira", price: 1500, date: "2024-01-15", driver: "JoÃ£o M.", rating: 4.8 },
       { from: "Nampula", to: "Nacala", price: 800, date: "2024-01-16", driver: "Maria S.", rating: 4.9 },
       { from: "Tete", to: "Chimoio", price: 1200, date: "2024-01-17", driver: "Carlos A.", rating: 4.7 },
       { from: "Beira", to: "Inhambane", price: 950, date: "2024-01-18", driver: "Ana L.", rating: 4.9 },
       { from: "Maputo", to: "Xai-Xai", price: 350, date: "2024-01-19", driver: "Pedro K.", rating: 4.6 }
     ],
     topHotels: [
-      { name: "Hotel Marisol", location: "Maputo", price: 3500, rating: 4.6, image: "🏨" },
-      { name: "Pensão Oceano", location: "Beira", price: 2200, rating: 4.4, image: "🏖️" },
-      { name: "Lodge Safari", location: "Gorongosa", price: 4800, rating: 4.9, image: "🦁" }
+      { name: "Hotel Marisol", location: "Maputo", price: 3500, rating: 4.6, image: "ðŸ¨" },
+      { name: "PensÃ£o Oceano", location: "Beira", price: 2200, rating: 4.4, image: "ðŸ–ï¸" },
+      { name: "Lodge Safari", location: "Gorongosa", price: 4800, rating: 4.9, image: "ðŸ¦" }
     ],
     featuredEvents: [
-      { name: "Festival de Marrabenta", location: "Maputo", date: "2024-02-10", price: 500, image: "🎵" },
-      { name: "Feira Artesanal", location: "Beira", date: "2024-02-15", price: 200, image: "🎨" },
-      { name: "Concerto de Música", location: "Nampula", date: "2024-02-20", price: 750, image: "🎤" }
+      { name: "Festival de Marrabenta", location: "Maputo", date: "2024-02-10", price: 500, image: "ðŸŽµ" },
+      { name: "Feira Artesanal", location: "Beira", date: "2024-02-15", price: 200, image: "ðŸŽ¨" },
+      { name: "Concerto de MÃºsica", location: "Nampula", date: "2024-02-20", price: 750, image: "ðŸŽ¤" }
     ]
   };
 
-  // ✅ CORREÇÃO: Dados para ofertas especiais com tipagem correta
+  // âœ… CORREÃ‡ÃƒO: Dados para ofertas especiais com tipagem correta
   const specialRideOffers: SpecialOffer[] = [
     { from: "Maputo", to: "Vilanculos", price: 1800, date: "2024-01-20", driver: "Sofia R.", rating: 4.9, isSpecial: true, discount: "20% OFF" },
     { from: "Beira", to: "Gorongosa", price: 800, date: "2024-01-21", driver: "Manuel C.", rating: 4.8, isSpecial: true, discount: "Oferta VIP" },
     { from: "Nampula", to: "Pemba", price: 1200, date: "2024-01-22", driver: "Antonio M.", rating: 4.7, isSpecial: false, discount: "" }
   ];
 
-  // ✅ CORREÇÃO: Filtrar apenas ofertas especiais
+  // âœ… CORREÃ‡ÃƒO: Filtrar apenas ofertas especiais
   const filteredSpecialOffers = specialRideOffers.filter(offer => offer.isSpecial);
 
   return (
@@ -503,11 +503,11 @@ export default function Home() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/admin/hotels" data-testid="link-hotels-app">
-                    <Hotel className="w-4 h-4 mr-2" />
-                    Gestão de Hotéis
-                  </Link>
-                </DropdownMenuItem>
+                    <Link href="/admin/hotels" data-testid="link-hotels-app">
+                      <Hotel className="w-4 h-4 mr-2" />
+                      Gestão de Hotéis
+                    </Link>
+                  </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/admin" data-testid="link-admin-app">
                     <Shield className="w-4 h-4 mr-2" />
@@ -526,7 +526,7 @@ export default function Home() {
                   </Button>
                 </Link>
                 <Link href="/bookings" data-testid="link-bookings">
-                  <Button variant="ghost">📋 Minhas Reservas</Button>
+                  <Button variant="ghost">ðŸ“‹ Minhas Reservas</Button>
                 </Link>
                 
                 <DropdownMenu>
@@ -540,7 +540,7 @@ export default function Home() {
                     <DropdownMenuItem asChild>
                       <Link href="/profile" data-testid="link-profile">
                         <Settings className="w-4 h-4 mr-2" />
-                        Perfil & Configurações
+                        Perfil & ConfiguraÃ§Ãµes
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={handleLogout} data-testid="button-logout">
@@ -576,8 +576,8 @@ export default function Home() {
               Bem-vindo ao Futuro do Turismo em Moçambique
             </h2>
             <p className="text-xl mb-8 max-w-3xl mx-auto opacity-90">
-              Encontre boleias, alojamentos e eventos incríveis. Conecte-se com motoristas e anfitriões verificados. 
-              Desfrute de descontos exclusivos e uma experiência única de viagem.
+              Encontre boleias, alojamentos e eventos incríveis. Conecte-se com motoristas e anfitriÃµes verificados. 
+              Desfrute de descontos exclusivos e uma experiÃªncia única de viagem.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
@@ -601,21 +601,21 @@ export default function Home() {
                   <Car className="w-8 h-8" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">Boleias Seguras</h3>
-                <p className="opacity-90">Motoristas verificados e viagens com segurança garantida</p>
+                <p className="opacity-90">Motoristas verificados e viagens com seguranÃ§a garantida</p>
               </div>
               <div className="flex flex-col items-center">
                 <div className="bg-white bg-opacity-20 rounded-full p-4 mb-4">
                   <Hotel className="w-8 h-8" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">Alojamentos Únicos</h3>
-                <p className="opacity-90">Hotéis, pousadas e casas com os melhores preços</p>
+                <p className="opacity-90">Hotéis, pousadas e casas com os melhores preÃ§os</p>
               </div>
               <div className="flex flex-col items-center">
                 <div className="bg-white bg-opacity-20 rounded-full p-4 mb-4">
                   <Calendar className="w-8 h-8" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">Eventos Exclusivos</h3>
-                <p className="opacity-90">Festivais, feiras e eventos culturais moçambicanos</p>
+                <p className="opacity-90">Festivais, feiras e eventos culturais moÃ§ambicanos</p>
               </div>
             </div>
           </div>
@@ -624,128 +624,128 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Seção de Busca Melhorada */}
-        <div className="mb-8">
-          <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 text-white py-8 rounded-xl shadow-lg">
-            <div className="max-w-7xl mx-auto px-4">
-              <h2 className="text-3xl font-bold mb-2">Encontre a sua próxima viagem</h2>
-              <p className="text-lg opacity-90 mb-6">
+        <div className=\"mb-8\">
+          <div className=\"bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 text-white py-8 rounded-xl shadow-lg\">
+            <div className=\"max-w-7xl mx-auto px-4\">
+              <h2 className=\"text-3xl font-bold mb-2\">Encontre a sua próxima viagem</h2>
+              <p className=\"text-lg opacity-90 mb-6\">
                 Milhares de opções a preços que você gosta
               </p>
               
-              <Card className="bg-white/90 backdrop-blur-sm border-white/30 shadow-xl">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Search className="w-5 h-5" />
-                    {user ? 'Encontrar Ofertas' : 'Explorar Ofertas Disponíveis'}
-                    {!user && <span className="text-sm text-orange-600 font-normal">(Registe-se para reservar)</span>}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    <Button
-                      variant={searchType === "rides" ? "default" : "outline"}
-                      onClick={() => setSearchType("rides")}
-                      data-testid="button-search-rides"
-                      className={`font-semibold ${searchType === "rides" ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}
-                    >
-                      <Car className="w-4 h-4 mr-2" />
-                      Boleias
-                    </Button>
-                    <Button
-                      variant={searchType === "hotels" ? "default" : "outline"}
-                      onClick={() => setSearchType("hotels")}
-                      data-testid="button-search-hotels"
-                      className={`font-semibold ${searchType === "hotels" ? "bg-green-600 hover:bg-green-700 text-white" : "border-green-300 text-green-700 hover:bg-green-50"}`}
-                    >
-                      <Hotel className="w-4 h-4 mr-2" />
-                      Hotéis
-                    </Button>
-                    <Button
-                      variant={searchType === "event-spaces" ? "default" : "outline"}
-                      onClick={() => setSearchType("event-spaces")}
-                      data-testid="button-search-event-spaces"
-                      className={`font-semibold ${searchType === "event-spaces" ? "bg-purple-600 hover:bg-purple-700 text-white" : "border-purple-300 text-purple-700 hover:bg-purple-50"}`}
-                    >
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Espaços para Eventos
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">
-                        {searchType === "rides" ? "De onde" : searchType === "hotels" ? "Destino" : "Localização do Evento"}
-                      </label>
-                      <LocationAutocomplete
-                        id="search-from"
-                        value={searchQuery.from}
-                        onChange={(locationOption) => handleInputChange(locationOption, 'from')}
-                        onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'from')}
-                        placeholder={searchType === "rides" ? "Cidade de origem (Moçambique)" : searchType === "hotels" ? "Onde quer ficar (Moçambique)" : "Local do evento (Moçambique)"}
-                      />
-                    </div>
-                    {searchType === "rides" && (
-                      <div>
-                        <label className="block text-sm font-medium mb-2">Para onde</label>
-                        <LocationAutocomplete
-                          id="search-to"
-                          value={searchQuery.to}
-                          onChange={(locationOption) => handleInputChange(locationOption, 'to')}
-                          onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'to')}
-                          placeholder="Cidade de destino (Moçambique)"
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Data</label>
-                      <Input
-                        type="date"
-                        value={searchQuery.date}
-                        onChange={(e) => setSearchQuery({...searchQuery, date: e.target.value})}
-                        data-testid="input-date"
-                        min={new Date().toISOString().split('T')[0]}
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <Button 
-                        onClick={handleSearch} 
-                        className="w-full" 
-                        data-testid="button-search"
-                      >
-                        <Search className="w-4 h-4 mr-2" />
-                        {user ? 'Buscar' : 'Ver Disponibilidade'}
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  {!user && (
-                    <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-5 h-5 text-orange-600" />
-                          <span className="text-orange-800">
-                            Para fazer reservas, precisa de criar uma conta primeiro
-                          </span>
-                        </div>
-                        <Link href="/signup" data-testid="search-signup-cta">
-                          <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-                            Registar Agora
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ✅ FEEDBACK VISUAL: Atualizado para usar fromOption */}
-                  {searchType === "hotels" && searchQuery.from && !searchQuery.fromOption?.id && (
-                    <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                      ⚠️ Por favor, selecione uma Localização da lista de sugestões para obter resultados precisos
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <Card className=\"bg-white/90 backdrop-blur-sm border-white/30 shadow-xl\">"
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="w-5 h-5" />
+              {user ? 'Encontrar Ofertas' : 'Explorar Ofertas Disponíveis'}
+              {!user && <span className="text-sm text-orange-600 font-normal">(Registe-se para reservar)</span>}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <Button
+                variant={searchType === "rides" ? "default" : "outline"}
+                onClick={() => setSearchType("rides")}
+                data-testid="button-search-rides"
+                  className={`font-semibold ${searchType === "rides" ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}
+                >
+                <Car className="w-4 h-4 mr-2" />
+                Boleias
+              </Button>
+              <Button
+                variant={searchType === "hotels" ? "default" : "outline"}
+                onClick={() => setSearchType("hotels")}
+                data-testid="button-search-hotels"
+                  className={`font-semibold ${searchType === "hotels" ? "bg-green-600 hover:bg-green-700 text-white" : "border-green-300 text-green-700 hover:bg-green-50"}`}
+                >
+                <Hotel className="w-4 h-4 mr-2" />
+                Hotéis
+              </Button>
+              <Button
+                variant={searchType === "event-spaces" ? "default" : "outline"}
+                onClick={() => setSearchType("event-spaces")}
+                data-testid="button-search-event-spaces"
+                  className={`font-semibold ${searchType === "event-spaces" ? "bg-purple-600 hover:bg-purple-700 text-white" : "border-purple-300 text-purple-700 hover:bg-purple-50"}`}
+                >
+                <Calendar className="w-4 h-4 mr-2" />
+                EspaÃ§os para Eventos
+              </Button>
             </div>
-          </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  {searchType === "rides" ? "De onde" : searchType === "hotels" ? "Destino" : "LocalizaÃ§Ã£o do Evento"}
+                </label>
+                <LocationAutocomplete
+                  id="search-from"
+                  value={searchQuery.from}
+                  onChange={(locationOption) => handleInputChange(locationOption, 'from')} // âœ… AGORA RECEBE LocationOption DIRETAMENTE
+                  onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'from')} // âœ… AGORA RECEBE LocationOption DIRETAMENTE
+                  placeholder={searchType === "rides" ? "Cidade de origem (Moçambique)" : searchType === "hotels" ? "Onde quer ficar (Moçambique)" : "Local do evento (Moçambique)"}
+                />
+              </div>
+              {searchType === "rides" && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Para onde</label>
+                  <LocationAutocomplete
+                    id="search-to"
+                    value={searchQuery.to}
+                    onChange={(locationOption) => handleInputChange(locationOption, 'to')} // âœ… AGORA RECEBE LocationOption DIRETAMENTE
+                    onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'to')} // âœ… AGORA RECEBE LocationOption DIRETAMENTE
+                    placeholder="Cidade de destino (Moçambique)"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium mb-2">Data</label>
+                <Input
+                  type="date"
+                  value={searchQuery.date}
+                  onChange={(e) => setSearchQuery({...searchQuery, date: e.target.value})}
+                  data-testid="input-date"
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button 
+                  onClick={handleSearch} 
+                  className="w-full" 
+                  data-testid="button-search"
+                >
+                  <Search className="w-4 h-4 mr-2" />
+                  {user ? 'Buscar' : 'Ver Disponibilidade'}
+                </Button>
+              </div>
+            </div>
+            
+            {!user && (
+              <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-orange-600" />
+                    <span className="text-orange-800">
+                      Para fazer reservas, precisa de criar uma conta primeiro
+                    </span>
+                  </div>
+                  <Link href="/signup" data-testid="search-signup-cta">
+                    <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+                      Registar Agora
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* âœ… FEEDBACK VISUAL: Atualizado para usar fromOption */}
+            {searchType === "hotels" && searchQuery.from && !searchQuery.fromOption?.id && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                âš ï¸ Por favor, selecione uma localizaÃ§Ã£o da lista de sugestÃµes para obter resultados precisos
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        </div>
+        </div>
         </div>
 
         {searchType === "rides" && filteredSpecialOffers && filteredSpecialOffers.length > 0 && (
@@ -771,7 +771,7 @@ export default function Home() {
                             <Badge variant="outline" className="text-xs border-green-500 text-green-700">Motorista Verificado</Badge>
                           </div>
                           <h3 className="font-bold text-lg text-gray-800">
-                            {offer.from} → {offer.to}
+                            {offer.from} â†’ {offer.to}
                           </h3>
                           <p className="text-sm text-gray-600 flex items-center gap-1">
                             <Users className="w-3 h-3" />
@@ -819,7 +819,7 @@ export default function Home() {
               
               <div className="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded-lg">
                 <p className="text-sm text-yellow-800 text-center">
-                  💡 <strong>Dica:</strong> Ofertas especiais são publicadas diretamente pelos motoristas e têm disponibilidade limitada!
+                  ðŸ’¡ <strong>Dica:</strong> Ofertas especiais sÃ£o publicadas diretamente pelos motoristas e tÃªm disponibilidade limitada!
                 </p>
               </div>
             </CardContent>
@@ -831,7 +831,7 @@ export default function Home() {
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5" />
               {searchType === "rides" ? "Viagens Populares" : "Destaques da Semana"}
-              {!user && <span className="text-sm text-gray-500 font-normal ml-2">- Veja o que está disponível</span>}
+              {!user && <span className="text-sm text-gray-500 font-normal ml-2">- Veja o que está disponÃ­vel</span>}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -880,24 +880,24 @@ export default function Home() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
                 <div className="p-4">
-                  <div className="text-orange-600 mb-2">✅</div>
+                  <div className="text-orange-600 mb-2">âœ…</div>
                   <h4 className="font-semibold text-orange-800">Grátis para Sempre</h4>
-                  <p className="text-sm text-orange-700">Registo e uso básico completamente gratuito</p>
+                  <p className="text-sm text-orange-700">Registo e uso bÃ¡sico completamente gratuito</p>
                 </div>
                 <div className="p-4">
-                  <div className="text-orange-600 mb-2">🛡️</div>
-                  <h4 className="font-semibold text-orange-800">Segurança Total</h4>
-                  <p className="text-sm text-orange-700">Utilizadores verificados e transações seguras</p>
+                  <div className="text-orange-600 mb-2">ðŸ›¡ï¸</div>
+                  <h4 className="font-semibold text-orange-800">SeguranÃ§a Total</h4>
+                  <p className="text-sm text-orange-700">Utilizadores verificados e transaÃ§Ãµes seguras</p>
                 </div>
                 <div className="p-4">
-                  <div className="text-orange-600 mb-2">💰</div>
-                  <h4 className="font-semibold text-orange-800">Melhor Preço</h4>
+                  <div className="text-orange-600 mb-2">ðŸ’°</div>
+                  <h4 className="font-semibold text-orange-800">Melhor PreÃ§o</h4>
                   <p className="text-sm text-orange-700">Descontos exclusivos e ofertas especiais</p>
                 </div>
                 <div className="p-4">
-                  <div className="text-orange-600 mb-2">📱</div>
+                  <div className="text-orange-600 mb-2">ðŸ“±</div>
                   <h4 className="font-semibold text-orange-800">Tudo num Sítio</h4>
-                  <p className="text-sm text-orange-700">Boleias, hotéis e eventos numa só plataforma</p>
+                  <p className="text-sm text-orange-700">Boleias, hotÃ©is e eventos numa só plataforma</p>
                 </div>
               </div>
               
@@ -915,7 +915,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* ✅ CORREÇÃO: Modal de Busca de Viagens com fallback */}
+      {/* âœ… CORREÃ‡ÃƒO: Modal de Busca de Viagens com fallback */}
       <ModalOverlay 
         isOpen={modalState.rideSearch.isOpen} 
         onClose={closeRideSearch}
@@ -927,7 +927,7 @@ export default function Home() {
         />
       </ModalOverlay>
       
-      {/* ✅ CORREÇÃO: Modal de Criar Viagem */}
+      {/* âœ… CORREÃ‡ÃƒO: Modal de Criar Viagem */}
       <ModalOverlay 
         isOpen={modalState.rideCreate.isOpen} 
         onClose={closeRideCreate}
@@ -939,6 +939,8 @@ export default function Home() {
           onClose={closeRideCreate}
         />
       </ModalOverlay>
+      
+      {/* âœ… REMOVIDO: Modal de Busca de Hotéis */}
     </div>
   );
 }

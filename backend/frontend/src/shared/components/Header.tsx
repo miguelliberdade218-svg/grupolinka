@@ -128,6 +128,17 @@ export default function Header() {
                       </button>
                     </Link>
                   )}
+                  {canAccessFeature('manager-dashboard') && (
+                    <Link href="/admin/hotels">
+                      <button
+                        data-testid="nav-hotel-manager"
+                        className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        <i className="fas fa-hotel mr-2"></i>Gestão de Hotel
+                      </button>
+                    </Link>
+                  )}
                   <button
                     data-testid="nav-profile"
                     className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"

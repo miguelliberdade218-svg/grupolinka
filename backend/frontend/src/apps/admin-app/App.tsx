@@ -6,6 +6,7 @@ import AdminMobileNav from "@/shared/admin/components/AdminMobileNav";
 import Dashboard from "@/shared/admin/pages/dashboard";
 import Users from "@/shared/admin/pages/users";
 import BillingManagement from "./pages/billing-management";
+import HotelManagerDashboard from "./pages/hotel-management/HotelManagerDashboard";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ export default function AdminApp() {
             <Route path="/admin" component={Dashboard} />
             <Route path="/admin/users" component={Users} />
             <Route path="/admin/billing" component={BillingManagement} />
+            <Route path="/admin/hotels" component={HotelManagerDashboard} />
             <Route component={Dashboard} />
           </Switch>
         </main>

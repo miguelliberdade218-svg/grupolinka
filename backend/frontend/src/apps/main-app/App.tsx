@@ -16,6 +16,14 @@ import RideSearchPage from './pages/Rides/search'; // ✅ IMPORT ADICIONADO
 import ProtectedRoute from '@/shared/components/ProtectedRoute';
 import NotFound from './pages/not-found';
 
+// Import das páginas de hotéis
+import HotelsSearchPage from './features/hotels/pages/HotelsSearchPage';
+import HotelDetailPage from './features/hotels/pages/HotelDetailPage';
+
+// Import das páginas de event spaces
+import EventSpacesSearchPage from './features/event-spaces/pages/EventSpacesSearchPage';
+import EventSpaceDetailPage from './features/event-spaces/pages/EventSpaceDetailPage';
+
 function MainApp() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -27,6 +35,24 @@ function MainApp() {
               {/* ✅ ROTA CORRIGIDA - usando children em vez de component */}
               <Route path="/rides/search">
                 <RideSearchPage />
+              </Route>
+              
+              {/* Rotas de Hotéis */}
+              <Route path="/hotels">
+                <HotelsSearchPage />
+              </Route>
+              
+              <Route path="/hotels/:id">
+                {(params) => <HotelDetailPage />}
+              </Route>
+              
+              {/* Rotas de Event Spaces */}
+              <Route path="/event-spaces">
+                <EventSpacesSearchPage />
+              </Route>
+              
+              <Route path="/event-spaces/:id">
+                {(params) => <EventSpaceDetailPage />}
               </Route>
               
               <Route path="/" component={Home} />

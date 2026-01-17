@@ -405,7 +405,7 @@ export default function AdminHome() {
                           <p className="text-sm text-gray-600">Gestão de alojamentos</p>
                           <p className="text-2xl font-bold text-purple-600">{systemStats.totalHotels} hotéis</p>
                         </div>
-                        <Link href="/hotels" data-testid="link-view-hotels-app">
+                        <Link href="/admin/hotels" data-testid="link-view-hotels-app">
                           <Button size="sm" variant="outline">Ver App</Button>
                         </Link>
                       </div>
