@@ -366,7 +366,7 @@ export const roomAvailability = pgTable("roomAvailability", {
   hotelId: uuid("hotelId").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
   roomTypeId: uuid("roomTypeId").references(() => roomTypes.id, { onDelete: "cascade" }).notNull(),
   date: timestamp("date", { mode: 'date' }).notNull(),
-  price: numeric("price", { precision: 10, scale: 2 }).notNull(),
+  price: numeric("price", { precision: 10, scale: 2 }), // ✅ REMOVA O .notNull()
   availableUnits: integer("availableUnits").notNull().default(0),
   stopSell: boolean("stopSell").default(false),
   minStay: integer("minStay").default(1),

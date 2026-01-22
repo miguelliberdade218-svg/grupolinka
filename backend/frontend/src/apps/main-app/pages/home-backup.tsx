@@ -502,10 +502,10 @@ export default function Home() {
                     App Motoristas
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                    <Link href="/admin/hotels" data-testid="link-hotels-app">
+                                  <DropdownMenuItem asChild>
+                    <Link href="/hotels/manage" data-testid="link-hotels-app">
                       <Hotel className="w-4 h-4 mr-2" />
-                      GestÃ£o de HotÃ©is
+                      Gestão de Hotéis
                     </Link>
                   </DropdownMenuItem>
                 <DropdownMenuItem asChild>

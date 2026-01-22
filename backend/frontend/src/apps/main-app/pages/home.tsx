@@ -503,7 +503,7 @@ export default function Home() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/admin/hotels" data-testid="link-hotels-app">
+                  <Link href="/hotels/manage" data-testid="link-hotels-app">
                     <Hotel className="w-4 h-4 mr-2" />
                     Gestão de Hotéis
                   </Link>

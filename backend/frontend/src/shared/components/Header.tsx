@@ -129,7 +129,7 @@ export default function Header() {
                     </Link>
                   )}
                   {canAccessFeature('manager-dashboard') && (
-                    <Link href="/admin/hotels">
+                    <Link href="/hotels/manage">
                       <button
                         data-testid="nav-hotel-manager"
                         className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"

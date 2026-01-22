@@ -1,6 +1,5 @@
-// src/services/apiService.ts - VERSÃO CORRIGIDA (CORS FIX)
+// src/services/apiService.ts - VERSÃO FINAL CORRIGIDA E ORGANIZADA
 import { auth } from '@/shared/lib/firebaseConfig';
-import { Booking, RideBookingRequest } from '@/shared/types/booking';
 import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday, formatDateTime } from '../utils/dateFormatter';
 
 // ====================== IMPORTAÇÕES DOS TIPOS UNIFICADOS ======================
@@ -39,13 +38,21 @@ import {
   ApiResponse,
   HotelByIdResponse,
   RoomTypesResponse,
+  Ride as LocalRide,
+  RideSearchParams as LocalRideSearchParams,
+  MatchStats as LocalMatchStats,
+  RideSearchResponse as LocalRideSearchResponse,
+  RideBookingRequest as LocalRideBookingRequest,
+  Booking
 } from '../types/index';
 
-// ====================== TIPOS RIDE ======================
-export type { Ride as LocalRide } from '../types/index';
-export type { RideSearchParams as LocalRideSearchParams } from '../types/index';
-export type { MatchStats as LocalMatchStats } from '../types/index';
-export type { RideSearchResponse as LocalRideSearchResponse } from '../types/index';
+// ====================== EXPORTAÇÃO DE TIPOS PARA USO EXTERNO ======================
+export type { Booking };
+export type { LocalRide as Ride };
+export type { LocalRideSearchParams as RideSearchParams };
+export type { LocalMatchStats as MatchStats };
+export type { LocalRideSearchResponse as RideSearchResponse };
+export type { LocalRideBookingRequest as RideBookingRequest };
 
 // ====================== FUNÇÕES UTILITÁRIAS RIDES ======================
 export function normalizeRide(apiRide: any): any {
@@ -172,57 +179,59 @@ class ApiService {
     };
 
     try {
-      // ✅ CORREÇÃO: Tentar obter token Firebase primeiro
       let token: string | null = null;
       
-      // Prioridade 1: Token do Firebase Auth
-      if (auth.currentUser) {
-        try {
-          token = await auth.currentUser.getIdToken();
-          console.log('🔐 Token obtido do Firebase Auth');
-        } catch (firebaseError) {
-          console.debug('Erro ao obter token do Firebase:', firebaseError);
+      // ✅ CORREÇÃO: Buscar tokens de forma segura com type assertion
+      const firebaseToken = localStorage.getItem('firebaseToken') as string | null;
+      const storedToken = localStorage.getItem('token') as string | null;
+      
+      const possibleTokens = [firebaseToken, storedToken];
+      
+      // Encontrar o primeiro token válido (não null e não vazio)
+      for (const possibleToken of possibleTokens) {
+        // ✅ CORREÇÃO: Verificar explicitamente que não é null e é string
+        if (possibleToken !== null && typeof possibleToken === 'string' && possibleToken.trim().length > 0) {
+          token = possibleToken;
+          console.log('✅ Token obtido do localStorage (comprimento:', token.length, ')');
+          break;
         }
       }
       
-      // Prioridade 2: Token do localStorage (fallback)
       if (!token) {
-        token = localStorage.getItem('firebaseToken');
-        if (token) {
-          console.log('🔐 Token obtido do localStorage');
+        console.warn('⚠️ Token NÃO encontrado no localStorage');
+        
+        // ✅ CORREÇÃO: Tentar obter do Firebase Auth
+        if (auth.currentUser) {
+          try {
+            const freshToken = await auth.currentUser.getIdToken();
+            // ✅ CORREÇÃO: Verificar que freshToken é string
+            if (freshToken && typeof freshToken === 'string' && freshToken.trim().length > 0) {
+              token = freshToken;
+              console.log('✅ Token obtido do Firebase Auth (comprimento:', token.length, ')');
+              // Salvar para futuras requisições
+              localStorage.setItem('token', token);
+              localStorage.setItem('firebaseToken', token);
+            }
+          } catch (firebaseError) {
+            console.warn('⚠️ Erro ao obter token fresco do Firebase:', (firebaseError as Error).message);
+          }
         }
       }
       
-      // ✅ CORREÇÃO CRÍTICA: Usar APENAS Authorization header (padrão CORS)
-      if (token) {
+      // ✅ CORREÇÃO: Só adicionar ao header se token existir e não for vazio
+      if (token && typeof token === 'string' && token.trim().length > 0) {
         headers['Authorization'] = `Bearer ${token}`;
-        
-        // ❌ REMOVER ou comentar headers customizados que causam CORS
-        // headers['X-Firebase-Token'] = token; // Causa erro CORS se não configurado no backend
-        
-        // Para debugging, pode manter mas será removido se causar problemas
-        if (process.env.NODE_ENV === 'development') {
-          // headers['X-Firebase-Token'] = token; // Descomente apenas se backend permitir
-        }
-      }
-      
-      // ✅ Adicionar informações do usuário para debugging (opcional)
-      const userEmail = localStorage.getItem('userEmail');
-      const userUid = localStorage.getItem('userUid');
-      
-      if (userEmail && process.env.NODE_ENV === 'development') {
-        // headers['X-User-Email'] = userEmail; // Descomente apenas se backend permitir
-      }
-      
-      if (userUid && process.env.NODE_ENV === 'development') {
-        // headers['X-User-UID'] = userUid; // Descomente apenas se backend permitir
+        console.log('✅ Authorization header ADICIONADO');
+      } else {
+        console.warn('⚠️ Authorization header NÃO adicionado (sem token)');
       }
       
     } catch (error) {
-      console.debug('Error fetching auth token:', error);
+      console.error('❌ Erro ao construir headers:', error);
     }
     
     console.log('📤 Headers sendo enviados:', Object.keys(headers));
+    console.log('📤 Authorization presente?', headers['Authorization'] ? 'SIM' : 'NÃO');
     return headers;
   }
 
@@ -344,6 +353,44 @@ class ApiService {
 
   async delete<T>(url: string, customHeaders?: Record<string, string>): Promise<T> {
     return this.request<T>('DELETE', url, undefined, customHeaders);
+  }
+
+  // ====================== NOVO MÉTODO getRaw() ADICIONADO ======================
+  
+  /**
+   * Método getRaw para obter resposta bruta (blob, text, etc.)
+   * ✅ ADICIONADO: Para suportar download de arquivos CSV
+   */
+  async getRaw(url: string, options?: { responseType?: 'blob' | 'json' | 'text' }): Promise<any> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const fullUrl = `${this.baseURL}${url}`;
+      
+      console.log('📥 getRaw request:', fullUrl, options);
+      
+      const response = await fetch(fullUrl, {
+        method: 'GET',
+        headers,
+        mode: 'cors',
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`${response.status}: ${errorText}`);
+      }
+      
+      if (options?.responseType === 'blob') {
+        return await response.blob();
+      } else if (options?.responseType === 'text') {
+        return await response.text();
+      } else {
+        return await response.json();
+      }
+    } catch (error) {
+      console.error('❌ getRaw error:', error);
+      throw error;
+    }
   }
 
   // ====================== MÉTODO DE TESTE CORS ======================
@@ -1078,7 +1125,7 @@ class ApiService {
     }
   }
 
-  async bookRide(bookingData: RideBookingRequest): Promise<{ success: boolean; data: { booking: Booking } }> {
+  async bookRide(bookingData: LocalRideBookingRequest): Promise<{ success: boolean; data: { booking: Booking } }> {
     return this.request('POST', '/api/bookings', bookingData);
   }
 
@@ -1096,7 +1143,7 @@ class ApiService {
       }
 
       if (type === 'ride') {
-        const payload = {
+        const payload: LocalRideBookingRequest = {
           rideId: bookingData.rideId,
           passengerId: user.uid,
           seatsBooked: bookingData.passengers,
@@ -1136,7 +1183,7 @@ class ApiService {
               ...result.booking,
               passengerId: result.booking.guestEmail,
               type: 'hotel'
-            } as any as Booking
+            } as Booking
           } : undefined,
           error: result.error
         };

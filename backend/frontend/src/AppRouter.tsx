@@ -3,6 +3,7 @@ import { Route, Switch } from 'wouter';
 import SearchRides from './apps/main-app/pages/Rides/search';
 import MainApp from './apps/main-app/App';
 import DriversApp from './apps/drivers-app/App';
+import HotelsApp from './apps/hotels-app/App';
 import AdminApp from './apps/admin-app/App';
 import LoginPage from './pages/login';
 import SignupPage from './pages/signup';
@@ -18,10 +19,17 @@ function AppRouter() {
       {/* Rota de busca de viagens */}
       <Route path="/rides/search" component={SearchRides} />
       
-      {/* Apps */}
+      {/* Apps - IMPORTANTE: Ordem importa! Mais específicas primeiro */}
+      
+      {/* 🏨 HOTELS APP - Para gerentes de hotéis gerenciar suas propriedades */}
+      <Route path="/hotels/*" component={HotelsApp} />
+      <Route path="/hotels" component={HotelsApp} />
+      
+      {/* 👨‍💼 DRIVERS APP - Para motoristas gerenciar viagens */}
       <Route path="/drivers/*" component={DriversApp} />
       <Route path="/drivers" component={DriversApp} />
       
+      {/* 🔐 ADMIN APP - APENAS para admins da plataforma (NÃO hotéis!) */}
       <Route path="/admin/*" component={AdminApp} />
       <Route path="/admin" component={AdminApp} />
       

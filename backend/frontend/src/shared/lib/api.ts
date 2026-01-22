@@ -4,7 +4,7 @@ import { Offer, HotelPartner } from '@/shared/types/dashboard';
 
 /**
  * Serviço central de API para todas as apps
- * ATUALIZADO para compatibilidade com get_rides_smart_final
+ * ATUALIZADO para compatibilidade com get_rides_smart_final e backend real
  */
 class ApiService {
   private baseURL: string;
@@ -14,7 +14,7 @@ class ApiService {
     console.log('🏗️ API Base URL:', this.baseURL);
   }
 
-  // ✅ CORREÇÃO 1: Função auxiliar para headers sem Content-Type padrão
+  // ✅ Função auxiliar para headers sem Content-Type padrão
   private async getAuthHeaders(includeContentType: boolean = true): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
     
@@ -33,7 +33,7 @@ class ApiService {
     return headers;
   }
 
-  // ✅ CORREÇÃO 5: Endpoint base consistente
+  // ✅ Endpoint base consistente
   private buildURL(endpoint: string): string {
     if (endpoint.startsWith('http')) {
       return endpoint;
@@ -47,7 +47,7 @@ class ApiService {
     return `${this.baseURL}${normalizedEndpoint}`;
   }
 
-  // ✅ CORREÇÃO 6: Tratamento de erros melhorado
+  // ✅ Tratamento de erros melhorado
   private async throwIfResNotOk(response: Response): Promise<void> {
     if (!response.ok) {
       let errorText = response.statusText;
@@ -61,6 +61,7 @@ class ApiService {
     }
   }
 
+  // ✅ Método request privado
   private async request<T>(
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
@@ -92,7 +93,24 @@ class ApiService {
     return response.json() as Promise<T>;
   }
 
-  // ✅✅✅ NOVO: Método para chamadas RPC (PostgreSQL Functions)
+  // ✅✅✅ MÉTODOS GENÉRICOS PÚBLICOS PARA REUTILIZAÇÃO
+  async get<T>(endpoint: string): Promise<T> {
+    return this.request<T>('GET', endpoint);
+  }
+
+  async post<T>(endpoint: string, data?: any): Promise<T> {
+    return this.request<T>('POST', endpoint, data);
+  }
+
+  async put<T>(endpoint: string, data?: any): Promise<T> {
+    return this.request<T>('PUT', endpoint, data);
+  }
+
+  async delete<T>(endpoint: string): Promise<T> {
+    return this.request<T>('DELETE', endpoint);
+  }
+
+  // ✅✅✅ Método para chamadas RPC (PostgreSQL Functions)
   private async rpcRequest<T>(
     functionName: string,
     parameters: Record<string, any> = {}
@@ -118,7 +136,7 @@ class ApiService {
     return response.json() as Promise<T>;
   }
 
-  // ✅ CORREÇÃO 7: Helper para adicionar informações do passageiro
+  // ✅ Helper para adicionar informações do passageiro
   private async attachUserInfo<T extends object>(payload: T): Promise<T & { userId: string; createdBy: string }> {
     const user = auth.currentUser;
     if (!user) {
@@ -132,7 +150,7 @@ class ApiService {
     };
   }
 
-  // ✅ CORREÇÃO 2: Helper para adicionar hostId
+  // ✅ Helper para adicionar hostId
   private async attachHostInfo<T extends object>(payload: T): Promise<T & { hostId: string; createdBy: string }> {
     const user = auth.currentUser;
     if (!user) {
@@ -146,7 +164,7 @@ class ApiService {
     };
   }
 
-  // ✅ CORREÇÃO 2: Helper para adicionar driverId
+  // ✅ Helper para adicionar driverId
   private async attachDriverInfo<T extends object>(payload: T): Promise<T & { driverId: string; createdBy: string }> {
     const user = auth.currentUser;
     if (!user) {
@@ -160,7 +178,7 @@ class ApiService {
     };
   }
 
-  // ✅ CORREÇÃO 8: Helper para adicionar updatedBy
+  // ✅ Helper para adicionar updatedBy
   private async attachUpdatedBy<T extends object>(payload: T): Promise<T & { updatedBy: string }> {
     const user = auth.currentUser;
     if (!user) {
@@ -175,7 +193,7 @@ class ApiService {
 
   // ===== RIDES API - COMPLETAMENTE ATUALIZADA =====
   
-  // ✅✅✅ CORREÇÃO CRÍTICA: Busca usando get_rides_smart_final via RPC
+  // ✅✅✅ Busca usando get_rides_smart_final via RPC
   async searchRides(params: { 
     from?: string; 
     to?: string; 
@@ -186,7 +204,6 @@ class ApiService {
   }): Promise<any> {
     console.log('🔍 [API] Buscando rides com função inteligente:', params);
     
-    // ✅✅✅ CORREÇÃO: Usar RPC call para get_rides_smart_final
     return this.rpcRequest('get_rides_smart_final', {
       search_from: params.from || '',
       search_to: params.to || '',
@@ -195,7 +212,7 @@ class ApiService {
     });
   }
 
-  // ✅✅✅ NOVO: Busca inteligente específica (alias para searchRides)
+  // ✅✅✅ Busca inteligente específica (alias para searchRides)
   async searchRidesSmart(params: {
     from: string;
     to: string;
@@ -216,7 +233,7 @@ class ApiService {
     });
   }
 
-  // ✅✅✅ CORREÇÃO: Busca universal simplificada (usando função inteligente)
+  // ✅✅✅ Busca universal simplificada (usando função inteligente)
   async searchRidesUniversal(params: { 
     from?: string; 
     to?: string; 
@@ -229,7 +246,6 @@ class ApiService {
   }): Promise<any> {
     console.log('🌍 [API] Busca universal:', params);
     
-    // ✅ CORREÇÃO: Usar função inteligente mesmo para busca universal
     return this.searchRides({
       from: params.from,
       to: params.to,
@@ -238,7 +254,7 @@ class ApiService {
     });
   }
 
-  // ✅✅✅ CORREÇÃO: Busca por proximidade (usando função inteligente)
+  // ✅✅✅ Busca por proximidade (usando função inteligente)
   async searchNearby(params: { 
     location: string;
     radiusKm?: number;
@@ -246,7 +262,6 @@ class ApiService {
   }): Promise<any> {
     console.log('📍 [API] Busca por proximidade:', params);
     
-    // ✅ CORREÇÃO: Usar mesma localização para from e to
     return this.searchRides({
       from: params.location,
       to: params.location,
@@ -255,11 +270,7 @@ class ApiService {
     });
   }
 
-  // ✅✅✅ CORREÇÃO: Métodos redundantes REMOVIDOS/SUBSTITUÍDOS
-  // ❌ REMOVIDOS: searchHybrid, searchBetweenCities, searchByProvince, detectProvince
-  // ✅ TODOS usam get_rides_smart_final agora
-
-  // ✅ CORREÇÃO CRÍTICA: Endpoint atualizado de /rides-simple/create para /rides
+  // ✅ Endpoint atualizado de /rides-simple/create para /rides
   async createRide(rideData: {
     fromAddress: string;
     toAddress: string;
@@ -285,7 +296,6 @@ class ApiService {
   }): Promise<any> {
     const rideDataWithDriver = await this.attachDriverInfo(rideData);
     
-    // ✅ CORREÇÃO: Usar endpoint correto /rides em vez de /rides-simple/create
     return this.request<any>('POST', '/rides', rideDataWithDriver);
   }
 
@@ -310,7 +320,7 @@ class ApiService {
     return this.request<any[]>('GET', `/rides/driver/${driverId}?${searchParams.toString()}`);
   }
 
-  // ✅✅✅ NOVO: Estatísticas de matching
+  // ✅✅✅ Estatísticas de matching
   async getRideMatchStats(from: string, to: string): Promise<any> {
     console.log('📊 [API] Buscando estatísticas de matching:', { from, to });
     
@@ -324,7 +334,8 @@ class ApiService {
   // ===== HOTEL WIZARD API =====
   
   /**
-   * Criar hotel completo (com informações básicas, localização, comodidades, quartos)
+   * Criar hotel completo
+   * ✅ CORREÇÃO: Alinhado com backend - POST /hotels
    */
   async createHotel(hotelData: any): Promise<{ hotelId: string; success: boolean; message: string }> {
     const hotelDataWithHost = await this.attachHostInfo(hotelData);
@@ -332,25 +343,18 @@ class ApiService {
 
     return this.request<{ hotelId: string; success: boolean; message: string }>(
       'POST', 
-      '/hotels/create-complete', 
+      '/hotels', 
       hotelDataWithHost
     );
   }
 
   /**
    * Criar tipo de quarto para um hotel
+   * ✅ CORREÇÃO: Endpoint correto do backend - POST /hotels/:id/room-types
    */
-  async createRoomType(roomTypeData: any): Promise<any> {
+  async createRoomType(hotelId: string, roomTypeData: any): Promise<any> {
     const roomTypeDataWithHost = await this.attachHostInfo(roomTypeData);
-    return this.request<any>('POST', '/hotels/room-types', roomTypeDataWithHost);
-  }
-
-  /**
-   * Criar quarto específico
-   */
-  async createRoom(roomData: any): Promise<any> {
-    const roomDataWithHost = await this.attachHostInfo(roomData);
-    return this.request<any>('POST', '/hotels/rooms', roomDataWithHost);
+    return this.request<any>('POST', `/hotels/${hotelId}/room-types`, roomTypeDataWithHost);
   }
 
   /**
@@ -372,7 +376,6 @@ class ApiService {
       formData.append(`imageOrder_${index}`, index.toString());
     });
 
-    // ✅ CORREÇÃO 1: Headers sem Content-Type para FormData
     const headers = await this.getAuthHeaders(false);
 
     const url = this.buildURL('/hotels/upload-images');
@@ -394,21 +397,13 @@ class ApiService {
     return this.request<any[]>('GET', `/hotels/${hotelId}/room-types`);
   }
 
-  /**
-   * Obter quartos de um hotel
-   */
-  async getRooms(hotelId: string): Promise<any[]> {
-    return this.request<any[]>('GET', `/hotels/${hotelId}/rooms`);
-  }
-
   // ===== OFFERS API =====
   async createOffer(offerData: Offer): Promise<Offer> {
     const offerDataWithHost = await this.attachHostInfo(offerData);
-    return this.request<Offer>('POST', '/offers/create', offerDataWithHost);
+    return this.request<Offer>('POST', '/offers', offerDataWithHost);
   }
 
   async getOffers(params?: { hotelId?: string; date?: string }): Promise<Offer[]> {
-    // ✅ CORREÇÃO 4: Parametrização segura de query strings
     const searchParams = new URLSearchParams();
     if (params?.hotelId) searchParams.append('hotelId', params.hotelId);
     if (params?.date) searchParams.append('date', params.date);
@@ -426,15 +421,12 @@ class ApiService {
 
   // ===== BOOKINGS API =====
   async bookRide(bookingData: RideBookingRequest): Promise<{ success: boolean; booking: Booking }> {
-    // ✅ CORREÇÃO 7: Garantir passengerId correto
     const bookingDataWithPassenger = await this.attachUserInfo(bookingData);
     
-    // ✅ CORREÇÃO: Endpoint atualizado para usar /bookings/create
     return this.request<{ success: boolean; booking: Booking }>('POST', '/bookings/create', bookingDataWithPassenger);
   }
 
   async bookHotel(bookingData: HotelBookingRequest): Promise<{ success: boolean; booking: Booking }> {
-    // ✅ CORREÇÃO 7: Garantir passengerId correto
     const bookingDataWithPassenger = await this.attachUserInfo(bookingData);
     return this.request<{ success: boolean; booking: Booking }>('POST', '/bookings/create', bookingDataWithPassenger);
   }
@@ -446,7 +438,6 @@ class ApiService {
     const user = auth.currentUser;
     if (!user) throw new Error('Usuário não autenticado');
 
-    // ✅ CORREÇÃO 7: Consolidar informações do passageiro
     const basePayload = {
       guestName: bookingData.guestName || user.displayName || 'Guest',
       guestEmail: bookingData.guestEmail || user.email || '',
@@ -508,14 +499,10 @@ class ApiService {
   
   /**
    * Obter todos os hotéis de um usuário (host)
+   * ✅ CORREÇÃO: Endpoint correto - GET /hotels/host/me (usa token para inferir host)
    */
   async getUserHotels(): Promise<any[]> {
-    const user = auth.currentUser;
-    if (!user) {
-      throw new Error('Usuário não autenticado');
-    }
-    
-    return this.request<any[]>('GET', `/hotels/user/${user.uid}`);
+    return this.request<any[]>('GET', '/hotels/host/me');
   }
 
   /**
@@ -526,7 +513,6 @@ class ApiService {
   }
 
   async searchAccommodations(params: { location?: string; checkIn?: string; checkOut?: string; guests?: number }): Promise<any> {
-    // ✅ CORREÇÃO 4: Parametrização segura
     const searchParams = new URLSearchParams();
     if (params.location) searchParams.append('address', params.location);
     if (params.checkIn) searchParams.append('checkIn', params.checkIn);
@@ -551,7 +537,6 @@ class ApiService {
   }
 
   async updateAccommodation(hotelId: string, accommodationData: any): Promise<any> {
-    // ✅ CORREÇÃO 8: Adicionar updatedBy
     const { pricePerNight, ...dataWithoutPrice } = accommodationData;
     const accommodationDataWithUpdate = await this.attachUpdatedBy(dataWithoutPrice);
     
@@ -567,18 +552,29 @@ class ApiService {
     return this.request<any[]>('GET', `/hotels/${hotelId}/rooms`);
   }
 
-  async getRoomById(roomId: string): Promise<any> {
-    return this.request<any>('GET', `/room-types/${roomId}`);
+  /**
+   * ✅ CORREÇÃO: Obtém um room-type específico com hotelId
+   * Backend usa: GET /hotels/:hotelId/room-types/:roomTypeId
+   */
+  async getRoomById(hotelId: string, roomTypeId: string): Promise<any> {
+    return this.request<any>('GET', `/hotels/${hotelId}/room-types/${roomTypeId}`);
   }
 
-  async updateRoom(roomId: string, roomData: any): Promise<any> {
-    // ✅ CORREÇÃO 8: Adicionar updatedBy
+  /**
+   * ✅ CORREÇÃO: Atualiza um room-type específico com hotelId
+   * Backend usa: PUT /hotels/:hotelId/room-types/:roomTypeId
+   */
+  async updateRoom(hotelId: string, roomTypeId: string, roomData: any): Promise<any> {
     const roomDataWithUpdate = await this.attachUpdatedBy(roomData);
-    return this.request<any>('PUT', `/room-types/${roomId}`, roomDataWithUpdate);
+    return this.request<any>('PUT', `/hotels/${hotelId}/room-types/${roomTypeId}`, roomDataWithUpdate);
   }
 
-  async deleteRoom(roomId: string): Promise<void> {
-    return this.request<void>('DELETE', `/room-types/${roomId}`);
+  /**
+   * ✅ CORREÇÃO: Remove um room-type específico com hotelId
+   * Backend usa: DELETE /hotels/:hotelId/room-types/:roomTypeId
+   */
+  async deleteRoom(hotelId: string, roomTypeId: string): Promise<void> {
+    return this.request<void>('DELETE', `/hotels/${hotelId}/room-types/${roomTypeId}`);
   }
 
   // ===== ROOM TYPES API =====
@@ -586,14 +582,21 @@ class ApiService {
     return this.request<any[]>('GET', `/hotels/${hotelId}/room-types`);
   }
 
-  async updateRoomType(roomTypeId: string, roomTypeData: any): Promise<any> {
-    // ✅ CORREÇÃO 8: Adicionar updatedBy
+  /**
+   * ✅ CORREÇÃO: Atualiza um tipo de quarto específico com hotelId
+   * Backend usa: PUT /hotels/:hotelId/room-types/:roomTypeId
+   */
+  async updateRoomType(hotelId: string, roomTypeId: string, roomTypeData: any): Promise<any> {
     const roomTypeDataWithUpdate = await this.attachUpdatedBy(roomTypeData);
-    return this.request<any>('PUT', `/room-types/${roomTypeId}`, roomTypeDataWithUpdate);
+    return this.request<any>('PUT', `/hotels/${hotelId}/room-types/${roomTypeId}`, roomTypeDataWithUpdate);
   }
 
-  async deleteRoomType(roomTypeId: string): Promise<void> {
-    return this.request<void>('DELETE', `/room-types/${roomTypeId}`);
+  /**
+   * ✅ CORREÇÃO: Remove um tipo de quarto específico com hotelId
+   * Backend usa: DELETE /hotels/:hotelId/room-types/:roomTypeId
+   */
+  async deleteRoomType(hotelId: string, roomTypeId: string): Promise<void> {
+    return this.request<void>('DELETE', `/hotels/${hotelId}/room-types/${roomTypeId}`);
   }
 
   // ===== ADMIN API =====
@@ -611,7 +614,6 @@ class ApiService {
 
   // ===== PARTNERSHIPS API =====
   
-  // ✅ CORREÇÃO 9: Métodos de Partnership com userId automático
   async getHotelPartnershipsProposals(): Promise<any> {
     return this.request('GET', '/hotel/partnerships/proposals');
   }
@@ -631,7 +633,6 @@ class ApiService {
   }
 
   async getAvailableProposals(filters?: { city?: string; driverLevel?: string }): Promise<any> {
-    // ✅ CORREÇÃO 4: Parametrização segura
     const params = new URLSearchParams();
     if (filters?.city) params.append('city', filters.city);
     if (filters?.driverLevel) params.append('driverLevel', filters.driverLevel);
@@ -697,17 +698,17 @@ class ApiService {
   
   /**
    * Atualizar hotel completo
+   * ✅ CORREÇÃO: Endpoint correto - PUT /hotels/:id
    */
   async updateHotel(hotelId: string, hotelData: any): Promise<any> {
     const hotelDataWithUpdate = await this.attachUpdatedBy(hotelData);
-    return this.request<any>('PUT', `/hotels/${hotelId}/update-complete`, hotelDataWithUpdate);
+    return this.request<any>('PUT', `/hotels/${hotelId}`, hotelDataWithUpdate);
   }
 
   /**
    * Obter disponibilidade de quartos
    */
   async getRoomAvailability(hotelId: string, checkIn: string, checkOut: string): Promise<any> {
-    // ✅ CORREÇÃO 4: Parametrização segura
     const searchParams = new URLSearchParams();
     searchParams.append('checkIn', checkIn);
     searchParams.append('checkOut', checkOut);

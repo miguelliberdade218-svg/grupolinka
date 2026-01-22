@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'wouter';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
-import { StarIcon, MapPinIcon, UsersIcon, HeartIcon } from 'lucide-react';
+import { Star, MapPin, Users, Heart } from 'lucide-react';
 import type { EventSpace } from '@/shared/types/event-spaces';
 
 interface EventSpaceCardProps {
@@ -26,10 +26,10 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   isFavorite = false,
   onToggleFavorite,
 }) => {
-  const startingPrice = Math.min(
-    space.pricePerHour,
-    space.priceHalfDay,
-    space.priceFullDay
+      const startingPrice = Math.min(
+    parseFloat(space.pricePerHour || '0'),
+    parseFloat(space.basePriceHalfDay || '0'),
+    parseFloat(space.basePriceFullDay || '0')
   );
 
   return (
@@ -37,7 +37,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
       {/* Imagem Hero */}
       <div className="relative h-48 overflow-hidden bg-gray-100">
         <img
-          src={space.mainImage || space.images?.[0] || 'https://via.placeholder.com/400x300'}
+          src={space.images?.[0] || 'https://via.placeholder.com/400x300'}
           alt={space.name}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
         />
@@ -46,7 +46,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
         {/* Rating Badge */}
         {space.rating > 0 && (
           <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/95 px-2 py-1 rounded-lg shadow-sm">
-            <StarIcon className="w-4 h-4 fill-primary text-primary" />
+            <Star className="w-4 h-4 fill-primary text-primary" />
             <span className="text-sm font-semibold text-dark">{space.rating.toFixed(1)}</span>
           </div>
         )}
@@ -56,7 +56,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           onClick={() => onToggleFavorite?.(space.id)}
           className="absolute top-3 right-3 p-2 bg-white/95 rounded-full hover:bg-white transition-colors"
         >
-          <HeartIcon
+          <Heart
             className={`w-5 h-5 ${isFavorite ? 'fill-alert text-alert' : 'text-gray-400'}`}
           />
         </button>
@@ -74,7 +74,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           <h3 className="text-lg font-semibold text-dark line-clamp-2 mb-1">{space.name}</h3>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <UsersIcon className="w-4 h-4" />
+              <Users className="w-4 h-4" />
               <span>Até {space.capacityMax} pessoas</span>
             </div>
           </div>
@@ -86,7 +86,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
         {/* Amenities */}
         {space.amenities && space.amenities.length > 0 && (
           <div className="mb-4 flex flex-wrap gap-1">
-            {space.amenities.slice(0, 2).map((amenity) => (
+            {space.amenities.slice(0, 2).map((amenity: string) => (
               <Badge key={amenity} variant="outline" className="text-xs">
                 {amenity}
               </Badge>

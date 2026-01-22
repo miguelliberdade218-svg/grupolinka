@@ -393,6 +393,20 @@ export interface NightlyPrice {
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'checked_in' | 'checked_out';
 export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 
+// ✅ CORREÇÃO: ADICIONAR TIPO BOOKING QUE ESTAVA FALTANDO
+export interface Booking {
+  id: string;
+  type: 'ride' | 'hotel' | 'event';
+  bookingDate: string;
+  status: string;
+  passengerId?: string;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+  totalPrice?: number;
+  details?: any;
+}
+
 export interface HotelBookingRequest {
   hotelId: string;
   roomTypeId: string;
@@ -822,6 +836,7 @@ export function formatHotelLocation(hotel: Hotel): string {
 // ====================== EXPORT ALL TYPES ======================
 // ✅ Exportação completa - agora você importa tudo de '@/types'
 export type {
+  Booking as IBooking,
   Hotel as IHotel,
   RoomType as IRoomType,
   HotelCreateRequest as IHotelCreateRequest,

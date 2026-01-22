@@ -2,7 +2,7 @@ import React from 'react';
 import { Card } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
-import { StarIcon, UsersIcon, RulerIcon } from 'lucide-react';
+import { Star, Users, Ruler } from 'lucide-react';
 import type { RoomType } from '@/shared/types/hotels';
 
 interface RoomTypeCardProps {
@@ -53,22 +53,17 @@ export const RoomTypeCard: React.FC<RoomTypeCardProps> = ({
             {/* Características */}
             <div className="flex flex-wrap gap-3 mb-3">
               <div className="flex items-center gap-1 text-sm">
-                <UsersIcon className="w-4 h-4 text-muted-foreground" />
-                <span>Até {room.capacity.maxOccupancy} hóspedes</span>
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <span>Até {room.capacity} hóspedes</span>
               </div>
 
-              {room.squareMeters && (
-                <div className="flex items-center gap-1 text-sm">
-                  <RulerIcon className="w-4 h-4 text-muted-foreground" />
-                  <span>{room.squareMeters}m²</span>
-                </div>
-              )}
+              
             </div>
 
             {/* Comodidades */}
             {room.amenities && room.amenities.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {room.amenities.slice(0, 3).map((amenity) => (
+                {room.amenities.slice(0, 3).map((amenity: string) => (
                   <Badge key={amenity} variant="outline" className="text-xs">
                     {amenity}
                   </Badge>

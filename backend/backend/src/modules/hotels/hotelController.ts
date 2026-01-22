@@ -1,5 +1,6 @@
-// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (13/01/2026)
-// Com todas as correções aplicadas conforme solicitação e compatível com o schema
+// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (21/01/2026)
+// Com correções para rota /host/me, min_nights_default, disponibilidade bulk update e todas as correções anteriores
+// ✅ CORREÇÕES APLICADAS: Validação de available_units vs total_units e price com null/undefined
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -145,6 +146,7 @@ const createBookingSchema = z.object({
   path: ["checkOut"],
 });
 
+// ✅ CORREÇÃO: Schema de room type atualizado para usar min_nights_default
 const createRoomTypeSchema = z.object({
   hotel_id: z.string().uuid(),
   name: z.string().min(3).max(100),
@@ -155,7 +157,7 @@ const createRoomTypeSchema = z.object({
   }),
   total_units: z.number().int().positive(),
   base_occupancy: z.number().int().positive(),
-  min_nights: z.number().int().positive().optional(),
+  min_nights_default: z.number().int().positive().optional().default(1), // ✅ CORREÇÃO: min_nights_default em vez de min_nights
   extra_adult_price: z.string().refine(val => !isNaN(Number(val)) && Number(val) >= 0, {
     message: "extra_adult_price deve ser um número não negativo"
   }).optional(),
@@ -203,6 +205,18 @@ const respondReviewSchema = z.object({
   responseText: z.string().min(10).max(1000),
 });
 
+// ✅ CORREÇÃO: Schema para bulk update de disponibilidade com price nullable
+const bulkAvailabilityUpdateSchema = z.object({
+  roomTypeId: z.string().uuid(),
+  updates: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
+    price: z.number().positive().optional().nullable(),  // ✅ Aceita null
+    stopSell: z.boolean().optional().nullable(),
+    minNights: z.number().int().positive().optional(),
+    availableUnits: z.number().int().min(0).optional(),  // ✅ Permite 0
+  })).min(1, "Pelo menos uma atualização é necessária"),
+});
+
 // ==================== TIPOS ADICIONAIS ====================
 interface PaymentServiceData {
   amount: number;
@@ -242,6 +256,25 @@ const parseDateSafe = (dateString: string | Date | null): Date | null => {
   } catch {
     return null;
   }
+};
+
+// Helper para validar preços
+const validatePrice = (price: any): { isValid: boolean; error?: string; value?: string } => {
+  if (price === undefined || price === null) {
+    return { isValid: true, value: undefined };
+  }
+  
+  const num = typeof price === 'string' ? parseFloat(price) : price;
+  
+  if (isNaN(num)) {
+    return { isValid: false, error: 'Preço deve ser um número válido' };
+  }
+  
+  if (num < 0) {
+    return { isValid: false, error: 'Preço não pode ser negativo' };
+  }
+  
+  return { isValid: true, value: num.toString() };
 };
 
 // ==================== MIDDLEWARE ====================
@@ -391,7 +424,18 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
 router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
+    console.log("🔵 [HOTEL UPDATE] Payload recebido:", JSON.stringify(req.body, null, 2));
+    
     const rawData = req.body;
+    
+    // Validação de campos obrigatórios
+    if (rawData.name !== undefined && (!rawData.name || typeof rawData.name !== 'string' || rawData.name.trim().length < 3)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Nome obrigatório (mínimo 3 caracteres)' 
+      });
+    }
+
     const data = {
       ...rawData,
       lat: rawData.lat?.toString(),
@@ -400,6 +444,8 @@ router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Res
     };
 
     const validatedData = updateHotelSchema.parse(data);
+    console.log("✅ Dados validados para update:", JSON.stringify(validatedData, null, 2));
+
     const updated = await updateHotel(req.params.id, validatedData);
 
     if (!updated) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
@@ -411,13 +457,72 @@ router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Res
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.error("❌ Erro de validação:", error.errors);
       return res.status(400).json({
         success: false,
         message: 'Dados inválidos',
         errors: error.errors,
       });
     }
+    console.error('Erro ao atualizar hotel:', error);
     res.status(500).json({ success: false, message: 'Erro ao atualizar hotel' });
+  }
+});
+
+// ======================= ROTA /host/me (NOVA) =======================
+// ✅ ADICIONADA: Rota para listar hotéis do usuário autenticado atual
+router.get('/host/me', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Usuário não autenticado' 
+      });
+    }
+
+    const hotels = await getHotelsByHost(userId);
+    
+    res.json({ 
+      success: true, 
+      data: hotels, 
+      count: hotels.length 
+    });
+  } catch (error) {
+    console.error('Erro ao buscar hotéis do host:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao buscar seus hotéis' 
+    });
+  }
+});
+
+// ======================= ROTA /host/:hostId (MANTIDA) =======================
+router.get('/host/:hostId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    const requestedHostId = req.params.hostId;
+
+    // Verificar se é admin ou se está acessando seus próprios hotéis
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+    
+    if (userId !== requestedHostId && !isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Acesso negado: só pode ver seus próprios hotéis ou precisa ser admin' 
+      });
+    }
+
+    const hotels = await getHotelsByHost(requestedHostId);
+    res.json({
+      success: true,
+      data: hotels,
+      count: hotels.length,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar hotéis do host:', error);
+    res.status(500).json({ success: false, message: 'Erro ao buscar hotéis' });
   }
 });
 
@@ -841,6 +946,16 @@ router.get('/:id/room-types', async (req: Request, res: Response) => {
 router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     const rawData = req.body;
+    console.log("🔵 [ROOM TYPE CREATE] Payload recebido:", JSON.stringify(rawData, null, 2));
+    
+    // Validação básica
+    if (!rawData.name || typeof rawData.name !== 'string' || rawData.name.trim().length < 3) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Nome obrigatório (mínimo 3 caracteres)' 
+      });
+    }
+
     const data = {
       ...rawData,
       hotel_id: req.params.id,
@@ -848,11 +963,21 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
       base_price: toNumber(rawData.base_price).toString(),
       extra_adult_price: rawData.extra_adult_price ? toNumber(rawData.extra_adult_price).toString() : undefined,
       extra_child_price: rawData.extra_child_price ? toNumber(rawData.extra_child_price).toString() : undefined,
+      // ✅ CORREÇÃO: Usar min_nights_default sempre
+      min_nights_default: rawData.min_nights_default ? toNumber(rawData.min_nights_default) : 
+                         (rawData.min_nights ? toNumber(rawData.min_nights) : 1),
     };
+
+    // ✅ REMOVER min_nights se existir para evitar conflitos
+    if (data.min_nights !== undefined) {
+      delete data.min_nights;
+    }
 
     const validatedData = createRoomTypeSchema.parse(data);
     
     const { id: _, ...roomTypeData } = validatedData as any;
+    
+    console.log("✅ Dados validados para criação:", JSON.stringify(roomTypeData, null, 2));
     
     const newRoomType = await createRoomType(roomTypeData);
 
@@ -863,6 +988,7 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.error("❌ Erro de validação:", error.errors);
       return res.status(400).json({ 
         success: false, 
         message: 'Dados inválidos',
@@ -874,30 +1000,101 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
   }
 });
 
+// ✅ CORREÇÃO APLICADA: Rota PUT de room-types com conversão de min_nights para min_nights_default
 router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
+    console.log("🔵 [ROOM TYPE UPDATE] Payload recebido:", JSON.stringify(req.body, null, 2));
+    console.log("📝 Hotel ID:", req.params.hotelId);
+    console.log("📝 Room Type ID:", req.params.roomTypeId);
+    
     const rawData = req.body;
     const updateData: any = { ...rawData };
     
-    if (rawData.base_price !== undefined) {
-      updateData.base_price = toNumber(rawData.base_price).toString();
+    // Log detalhado do que está sendo recebido
+    console.log("🔍 Campos recebidos no controller:", Object.keys(rawData));
+    
+    // Validação básica
+    if (rawData.name !== undefined && (!rawData.name || typeof rawData.name !== 'string' || rawData.name.trim().length < 3)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Nome obrigatório (mínimo 3 caracteres)' 
+      });
     }
+    
+    // Conversão de preços - garantir que sejam strings para o banco
+    if (rawData.base_price !== undefined) {
+      const price = toNumber(rawData.base_price);
+      if (price <= 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Preço base deve ser maior que 0' 
+        });
+      }
+      updateData.base_price = price.toString();
+    }
+    
     if (rawData.extra_adult_price !== undefined) {
       updateData.extra_adult_price = toNumber(rawData.extra_adult_price).toString();
     }
+    
     if (rawData.extra_child_price !== undefined) {
       updateData.extra_child_price = toNumber(rawData.extra_child_price).toString();
     }
 
+    // ✅ CORREÇÃO CRÍTICA: Converter min_nights para min_nights_default
+    // O frontend envia "min_nights" mas o campo no banco é "min_nights_default"
+    if (rawData.min_nights !== undefined) {
+      console.log("🔄 [CONTROLLER] Convertendo min_nights para min_nights_default:", rawData.min_nights);
+      // Converter min_nights para min_nights_default
+      updateData.min_nights_default = parseInt(rawData.min_nights);
+      if (isNaN(updateData.min_nights_default) || updateData.min_nights_default < 1) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'min_nights deve ser um número maior que 0' 
+        });
+      }
+      // Remover o campo min_nights para evitar conflitos
+      delete updateData.min_nights;
+      console.log("✅ min_nights_default definido como:", updateData.min_nights_default);
+    }
+    
+    // Se o frontend enviar min_nights_default diretamente, também processar
+    if (rawData.min_nights_default !== undefined) {
+      console.log("🔄 [CONTROLLER] Usando min_nights_default diretamente:", rawData.min_nights_default);
+      updateData.min_nights_default = parseInt(rawData.min_nights_default);
+      if (isNaN(updateData.min_nights_default) || updateData.min_nights_default < 1) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'min_nights_default deve ser um número maior que 0' 
+        });
+      }
+    }
+
+    // Remover campo id se presente
     delete updateData.id;
 
+    console.log("🔄 Dados processados para envio ao service:", JSON.stringify(updateData, null, 2));
+    
     const updated = await updateRoomType(req.params.roomTypeId, updateData);
-    if (!updated) return res.status(404).json({ success: false, message: 'Tipo de quarto não encontrado' });
+    
+    if (!updated) {
+      console.error("❌ Room type não encontrado ou erro na atualização");
+      return res.status(404).json({ success: false, message: 'Tipo de quarto não encontrado' });
+    }
 
-    res.json({ success: true, message: 'Tipo de quarto atualizado', data: updated });
+    console.log("✅ Room type atualizado com sucesso");
+    res.json({ 
+      success: true, 
+      message: 'Tipo de quarto atualizado', 
+      data: updated 
+    });
   } catch (error) {
-    console.error('Erro ao atualizar tipo de quarto:', error);
-    res.status(500).json({ success: false, message: 'Erro ao atualizar tipo de quarto' });
+    console.error('❌ Erro ao atualizar tipo de quarto:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao atualizar tipo de quarto',
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
   }
 });
 
@@ -986,25 +1183,13 @@ router.get('/:id/availability', async (req: Request, res: Response) => {
   }
 });
 
-// ✅ CORRIGIDO: Rota bulk update com verificação de roomTypeId pertencente ao hotel
+// ✅ CORREÇÃO CRÍTICA: Rota bulk update com validação de available_units vs total_units
 router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
-    const { updates, roomTypeId } = req.body;
+    // Validar os dados recebidos
+    const validated = bulkAvailabilityUpdateSchema.parse(req.body);
+    const { updates, roomTypeId } = validated;
     
-    if (!updates || !Array.isArray(updates)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'updates deve ser um array' 
-      });
-    }
-
-    if (!roomTypeId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'roomTypeId é obrigatório' 
-      });
-    }
-
     // Verificar se o roomType pertence ao hotel
     const roomType = await getRoomTypeById(roomTypeId);
     if (!roomType || roomType.hotel_id !== req.params.id) {
@@ -1014,16 +1199,96 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       });
     }
 
-    await bulkUpdateAvailability(roomTypeId, updates);
+    // ✅ VALIDAÇÃO: Total de unidades do room type
+    const maxUnits = roomType.total_units || 0;
+    console.log("🏨 Validando contra total de unidades:", maxUnits);
+
+    // ✅ CORREÇÃO: Processar os updates com validações rigorosas
+    const processedUpdates = updates.map(update => {
+      const processed: any = {
+        date: update.date,
+      };
+
+      // ✅ VALIDAÇÃO DE PREÇO
+      if (update.price !== undefined) {
+        if (update.price !== null && update.price <= 0) {
+          throw new Error(`Preço inválido para ${update.date}: deve ser maior que 0 MZN`);
+        }
+        processed.price = update.price;
+      }
+
+      // ✅ VALIDAÇÃO DE UNIDADES
+      if (update.availableUnits !== undefined) {
+        const units = Math.max(0, update.availableUnits);
+        
+        if (units > maxUnits) {
+          throw new Error(
+            `Unidades disponíveis (${units}) excedem o total do room type (${maxUnits}) para ${update.date}`
+          );
+        }
+        
+        processed.availableUnits = units;
+      }
+
+      // ✅ VALIDAÇÃO DE STOP_SELL
+      if (update.stopSell !== undefined) {
+        processed.stopSell = update.stopSell === true ? true : 
+                            update.stopSell === false ? false : 
+                            null;
+      }
+
+      // ✅ MIN_NIGHTS
+      if (update.minNights !== undefined) {
+        if (update.minNights < 1) {
+          throw new Error(`Mínimo de noites deve ser >= 1 para ${update.date}`);
+        }
+        processed.minNights = update.minNights;
+      }
+
+      return processed;
+    });
+
+    console.log("🔄 [BULK UPDATE] Processando atualizações:", {
+      roomTypeId,
+      hotelId: req.params.id,
+      maxUnits,
+      updatesCount: processedUpdates.length,
+      sampleUpdate: processedUpdates[0]
+    });
+
+    const updatedCount = await bulkUpdateAvailability(roomTypeId, processedUpdates);
 
     res.json({
       success: true,
       message: 'Disponibilidade atualizada com sucesso',
-      updatedCount: updates.length,
+      updatedCount,
+      processedUpdates: processedUpdates.length,
+      maxUnitsValidated: maxUnits,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      console.error("❌ Erro de validação no bulk update:", error.errors);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Dados inválidos',
+        errors: error.errors 
+      });
+    }
+    
+    // ✅ Erros de validação customizados
+    if (error.message?.includes('excede') || error.message?.includes('inválido')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
     console.error('Erro ao atualizar disponibilidade:', error);
-    res.status(500).json({ success: false, message: 'Erro ao atualizar disponibilidade' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao atualizar disponibilidade',
+      error: error.message 
+    });
   }
 });
 
@@ -1638,30 +1903,6 @@ router.get('/slug/:slug', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Erro ao buscar hotel por slug:', error);
     res.status(500).json({ success: false, message: 'Erro ao buscar hotel' });
-  }
-});
-
-router.get('/host/:hostId', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.id;
-    const requestedHostId = req.params.hostId;
-
-    if (userId !== requestedHostId) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Acesso negado: só pode ver seus próprios hotéis' 
-      });
-    }
-
-    const hotels = await getHotelsByHost(requestedHostId);
-    res.json({
-      success: true,
-      data: hotels,
-      count: hotels.length,
-    });
-  } catch (error) {
-    console.error('Erro ao buscar hotéis do host:', error);
-    res.status(500).json({ success: false, message: 'Erro ao buscar hotéis' });
   }
 });
 

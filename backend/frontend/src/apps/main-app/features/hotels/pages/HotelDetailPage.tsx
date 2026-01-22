@@ -6,7 +6,7 @@ import { RoomTypeCard } from '@/shared/components/hotels/RoomTypeCard';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
-import { MapPinIcon, CheckCircle2Icon, StarIcon } from 'lucide-react';
+import { MapPin, CheckCircle2, Star } from 'lucide-react';
 import { useHotelCompleteData } from '../hooks/useHotelCompleteData';
 import { Card } from '@/shared/components/ui/card';
 
@@ -51,7 +51,7 @@ export const HotelDetailPage: React.FC = () => {
   // Calcular o preço mínimo dos quartos disponíveis
   const minPrice = useMemo(() => {
     if (!roomTypes || roomTypes.length === 0) return null;
-    const prices = roomTypes.map(room => parseFloat(room.basePrice));
+    const prices = roomTypes.map((room: any) => parseFloat(room.basePrice));
     return Math.min(...prices);
   }, [roomTypes]);
 
@@ -89,10 +89,10 @@ export const HotelDetailPage: React.FC = () => {
                   <h1 className="text-4xl font-bold text-dark mb-2">{hotel.name}</h1>
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1">
-                      <StarIcon className="w-5 h-5 fill-primary text-primary" />
+                      <Star className="w-5 h-5 fill-primary text-primary" />
                       <span className="font-semibold text-dark">{hotel.rating.toFixed(1)}</span>
                       <span className="text-sm text-muted-foreground">
-                        ({hotel.totalReviews} avaliações)
+                        ({hotel.totalReviews || 0} avaliações)
                       </span>
                     </div>
                     <Badge className="bg-secondary text-dark">Localização excelente</Badge>
@@ -101,22 +101,22 @@ export const HotelDetailPage: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 text-muted-foreground mb-4">
-                <MapPinIcon className="w-5 h-5" />
-                <span>{hotel.locality || hotel.city}, {hotel.province}</span>
+                <MapPin className="w-5 h-5" />
+                <span>{hotel.locality}, {hotel.province}</span>
               </div>
 
               {/* Trust Badges */}
               <div className="flex flex-wrap gap-3 py-4 border-y border-gray-200">
                 <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                  <CheckCircle2 className="w-5 h-5 text-secondary" />
                   <span>Verificado pelo Link-A</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                  <CheckCircle2 className="w-5 h-5 text-secondary" />
                   <span>Pagamento seguro</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                  <CheckCircle2 className="w-5 h-5 text-secondary" />
                   <span>Suporte 24h</span>
                 </div>
               </div>
@@ -143,7 +143,7 @@ export const HotelDetailPage: React.FC = () => {
                   <h3 className="text-xl font-semibold text-dark mb-4">Tipos de quartos</h3>
                   {roomTypes && roomTypes.length > 0 ? (
                     <div className="space-y-4">
-                      {roomTypes.map((room) => (
+                      {roomTypes.map((room: any) => (
                         <RoomTypeCard
                           key={room.id}
                           room={room}
@@ -165,10 +165,10 @@ export const HotelDetailPage: React.FC = () => {
                 <div>
                   <h3 className="text-xl font-semibold text-dark mb-4">Comodidades do hotel</h3>
                   <div className="grid md:grid-cols-2 gap-4">
-                    {hotel.amenities && hotel.amenities.length > 0 ? (
-                      hotel.amenities.map((amenity, idx) => (
+                                        {hotel.amenities && hotel.amenities.length > 0 ? (
+                      hotel.amenities.map((amenity: string, idx: number) => (
                         <div key={idx} className="flex items-center gap-3 p-3 bg-white rounded-lg">
-                          <CheckCircle2Icon className="w-5 h-5 text-secondary flex-shrink-0" />
+                          <CheckCircle2 className="w-5 h-5 text-secondary flex-shrink-0" />
                           <span>{amenity}</span>
                         </div>
                       ))
@@ -187,14 +187,14 @@ export const HotelDetailPage: React.FC = () => {
                   </h3>
                   {reviews && reviews.length > 0 ? (
                     <div className="space-y-4">
-                      {reviews.slice(0, 5).map((review) => (
+                      {reviews.slice(0, 5).map((review: any) => (
                         <Card key={review.id} className="p-4">
                           <div className="flex items-start justify-between mb-2">
                             <div>
                               <p className="font-semibold text-dark">{review.guestName}</p>
                               <div className="flex items-center gap-1">
                                 {Array.from({ length: Math.round(review.averageRating) }).map((_, i) => (
-                                  <StarIcon
+                                  <Star
                                     key={i}
                                     className="w-4 h-4 fill-primary text-primary"
                                   />
@@ -269,7 +269,7 @@ export const HotelDetailPage: React.FC = () => {
 
               {selectedRoomId && (
                 <div className="bg-blue-50 p-3 rounded-lg mb-4 text-sm border border-blue-200">
-                  <p className="text-blue-900">Quarto selecionado: {roomTypes?.find(r => r.id === selectedRoomId)?.name}</p>
+                  <p className="text-blue-900">Quarto selecionado: {roomTypes?.find((r: any) => r.id === selectedRoomId)?.name}</p>
                 </div>
               )}
 

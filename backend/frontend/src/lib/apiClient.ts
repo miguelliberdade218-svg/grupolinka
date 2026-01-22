@@ -134,13 +134,16 @@ export class ApiClient {
 
   // ✅ CORREÇÃO: Função auxiliar para obter headers de autenticação
   private static getAuthHeaders(contentType: string = 'application/json'): HeadersInit {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    const authToken = localStorage.getItem('authToken') as string | null;
+    const token = localStorage.getItem('token') as string | null;
+    const finalToken = authToken || token;
+    
     const headers: HeadersInit = {
       'Content-Type': contentType
     };
     
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    if (finalToken) {
+      headers['Authorization'] = `Bearer ${finalToken}`;
     }
     
     return headers;
@@ -148,11 +151,14 @@ export class ApiClient {
 
   // ✅ CORREÇÃO: Função auxiliar para obter headers sem Content-Type (para GET requests)
   private static getAuthHeadersWithoutContentType(): HeadersInit {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+    const authToken = localStorage.getItem('authToken') as string | null;
+    const token = localStorage.getItem('token') as string | null;
+    const finalToken = authToken || token;
+    
     const headers: HeadersInit = {};
     
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    if (finalToken) {
+      headers['Authorization'] = `Bearer ${finalToken}`;
     }
     
     return headers;
@@ -437,13 +443,17 @@ export class ApiClient {
   
   // ✅ CORREÇÃO: Verificar se usuário está autenticado
   static isAuthenticated(): boolean {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-    return !!token;
+    const authToken = localStorage.getItem('authToken') as string | null;
+    const token = localStorage.getItem('token') as string | null;
+    const finalToken = authToken || token;
+    return !!finalToken;
   }
 
   // ✅ CORREÇÃO: Obter token (útil para debug)
   static getToken(): string | null {
-    return localStorage.getItem('authToken') || localStorage.getItem('token');
+    const authToken = localStorage.getItem('authToken') as string | null;
+    const token = localStorage.getItem('token') as string | null;
+    return authToken || token;
   }
 
   // ===== MANUAL CONTROL =====

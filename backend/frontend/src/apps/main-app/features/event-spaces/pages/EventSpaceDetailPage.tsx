@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui
 import { Card } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
-import { MapPinIcon, CheckCircle2Icon, StarIcon, UsersIcon, RulerIcon } from 'lucide-react';
+import { MapPin, CheckCircle2, Star, Users, Ruler } from 'lucide-react';
 import { useEventSpaceCompleteData } from '../hooks/useEventSpaceCompleteData';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 
@@ -49,7 +49,7 @@ export const EventSpaceDetailPage: React.FC = () => {
       {/* Hero Image */}
       <div className="relative h-96 bg-gray-200 overflow-hidden">
         <img
-          src={space.mainImage || space.images?.[0] || 'https://via.placeholder.com/1200x400'}
+          src={space.images?.[0] || 'https://via.placeholder.com/1200x400'}
           alt={space.name}
           className="w-full h-full object-cover"
         />
@@ -58,7 +58,7 @@ export const EventSpaceDetailPage: React.FC = () => {
         {/* Rating Badge */}
         {space.rating > 0 && (
           <div className="absolute top-6 right-6 bg-white/95 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
-            <StarIcon className="w-5 h-5 fill-primary text-primary" />
+            <Star className="w-5 h-5 fill-primary text-primary" />
             <span className="font-bold text-dark">{space.rating.toFixed(1)}</span>
           </div>
         )}
@@ -80,12 +80,12 @@ export const EventSpaceDetailPage: React.FC = () => {
 
               <div className="flex items-center gap-3 text-muted-foreground mb-4 py-4 border-y border-gray-200">
                 <div className="flex items-center gap-1">
-                  <UsersIcon className="w-5 h-5" />
+                  <Users className="w-5 h-5" />
                   <span>Capacidade: {space.capacityMin}-{space.capacityMax} pessoas</span>
                 </div>
                 {space.areaSqm && (
                   <div className="flex items-center gap-1">
-                    <RulerIcon className="w-5 h-5" />
+                    <Ruler className="w-5 h-5" />
                     <span>{space.areaSqm}m²</span>
                   </div>
                 )}
@@ -94,15 +94,15 @@ export const EventSpaceDetailPage: React.FC = () => {
               {/* Trust Badges */}
               <div className="flex flex-wrap gap-3 py-4 border-y border-gray-200">
                 <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                  <CheckCircle2 className="w-5 h-5 text-secondary" />
                   <span>Verificado pelo Link-A</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                  <CheckCircle2 className="w-5 h-5 text-secondary" />
                   <span>Pagamento seguro</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                  <CheckCircle2 className="w-5 h-5 text-secondary" />
                   <span>Suporte 24h</span>
                 </div>
               </div>
@@ -128,16 +128,16 @@ export const EventSpaceDetailPage: React.FC = () => {
                 <div>
                   <h3 className="text-xl font-semibold text-dark mb-4">Características</h3>
                   <div className="grid md:grid-cols-2 gap-4">
-                    {space.amenities && space.amenities.length > 0 ? (
-                      space.amenities.map((amenity, idx) => (
-                        <div key={idx} className="flex items-center gap-3 p-3 bg-white rounded-lg">
-                          <CheckCircle2Icon className="w-5 h-5 text-secondary flex-shrink-0" />
-                          <span>{amenity}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground">Nenhuma característica listada</p>
-                    )}
+                                          {space.amenities && space.amenities.length > 0 ? (
+                        space.amenities.map((amenity: string, idx: number) => (
+                          <div key={idx} className="flex items-center gap-3 p-3 bg-white rounded-lg">
+                            <CheckCircle2 className="w-5 h-5 text-secondary flex-shrink-0" />
+                            <span>{amenity}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground">Nenhuma característica listada</p>
+                      )}
                   </div>
                 </div>
               </TabsContent>
@@ -147,10 +147,10 @@ export const EventSpaceDetailPage: React.FC = () => {
                 <div>
                   <h3 className="text-xl font-semibold text-dark mb-4">Equipamentos Disponíveis</h3>
                   <div className="grid md:grid-cols-2 gap-4">
-                    {space.equipment && space.equipment.length > 0 ? (
-                      space.equipment.map((item, idx) => (
+                                        {space.equipment && space.equipment.length > 0 ? (
+                      space.equipment.map((item: string, idx: number) => (
                         <div key={idx} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
-                          <CheckCircle2Icon className="w-5 h-5 text-secondary flex-shrink-0" />
+                          <CheckCircle2 className="w-5 h-5 text-secondary flex-shrink-0" />
                           <span>{item}</span>
                         </div>
                       ))
@@ -167,7 +167,7 @@ export const EventSpaceDetailPage: React.FC = () => {
                   <h3 className="text-xl font-semibold text-dark mb-4">Avaliações de Clientes</h3>
                   {reviews && reviews.length > 0 ? (
                     <div className="space-y-4">
-                      {reviews.slice(0, 5).map((review) => (
+                      {reviews.slice(0, 5).map((review: any) => (
                         <Card key={review.id} className="p-4">
                           <div className="flex items-start justify-between mb-2">
                             <div>
@@ -177,7 +177,7 @@ export const EventSpaceDetailPage: React.FC = () => {
                               </p>
                               <div className="flex items-center gap-1 mt-1">
                                 {Array.from({ length: review.rating }).map((_, i) => (
-                                  <StarIcon
+                                  <Star
                                     key={i}
                                     className="w-4 h-4 fill-primary text-primary"
                                   />
@@ -235,19 +235,19 @@ export const EventSpaceDetailPage: React.FC = () => {
                     <h4 className="font-semibold text-dark mb-3">Serviços Incluídos</h4>
                     <div className="grid md:grid-cols-2 gap-2 text-sm">
                       <div className="flex items-center gap-2">
-                        <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                        <CheckCircle2 className="w-5 h-5 text-secondary" />
                         <span>Catering: {space.includesCatering ? 'Sim' : 'Não'}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                        <CheckCircle2 className="w-5 h-5 text-secondary" />
                         <span>Mobília: {space.includesFurniture ? 'Sim' : 'Não'}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                        <CheckCircle2 className="w-5 h-5 text-secondary" />
                         <span>Limpeza: {space.includesCleaning ? 'Sim' : 'Não'}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2Icon className="w-5 h-5 text-secondary" />
+                        <CheckCircle2 className="w-5 h-5 text-secondary" />
                         <span>Segurança: {space.includesSecurity ? 'Sim' : 'Não'}</span>
                       </div>
                     </div>
@@ -268,8 +268,8 @@ export const EventSpaceDetailPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-2 text-sm text-muted-foreground mb-4 p-3 bg-gray-50 rounded-lg">
-                  <p>Meio-dia: {space.priceHalfDay} MZN</p>
-                  <p>Dia completo: {space.priceFullDay} MZN</p>
+                                    <p>Meio-dia: {space.basePriceHalfDay} MZN</p>
+                  <p>Dia completo: {space.basePriceFullDay} MZN</p>
                   {space.weekendSurchargePercent > 0 && (
                     <p className="text-alert">
                       +{space.weekendSurchargePercent}% fim de semana

@@ -1,4 +1,5 @@
 // src/modules/events/eventController.ts - VERSÃO FINAL COMPLETA CORRIGIDA (13/01/2026)
+// ✅ CORRIGIDO: Adicionado middleware requireHotelOwnerForHotelIdParam para proteger rotas
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -432,6 +433,38 @@ const respondEventReviewSchema = z.object({
 });
 
 // ==================== MIDDLEWARES ====================
+
+// ✅ CORREÇÃO: Middleware para verificar se o usuário é dono do hotel (para rotas com :hotelId)
+const requireHotelOwnerForHotelIdParam = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const hotelId = req.params.hotelId;
+    if (!hotelId) return res.status(400).json({ success: false, message: 'hotelId obrigatório' });
+
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Autenticação requerida' });
+
+    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
+    if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
+
+    // Permitir admin também
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+    if (hotel.host_id !== userId && !isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Acesso negado: não é dono deste hotel' 
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Erro no middleware requireHotelOwnerForHotelIdParam:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao verificar propriedade do hotel' 
+    });
+  }
+};
+
 const requireHotelOwnerForSpace = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const spaceId = req.params.id || req.params.spaceId;
@@ -442,7 +475,13 @@ const requireHotelOwnerForSpace = async (req: Request, res: Response, next: Next
     if (!space) return res.status(404).json({ success: false, message: 'Espaço não encontrado' });
     const [hotel] = await db.select().from(hotels).where(eq(hotels.id, space.hotelId)).limit(1);
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
-    if (hotel.host_id !== userId) return res.status(403).json({ success: false, message: 'Acesso negado' });
+    
+    // Permitir admin também
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+    if (hotel.host_id !== userId && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Acesso negado' });
+    }
+    
     next();
   } catch (error) {
     console.error('Erro no middleware requireHotelOwnerForSpace:', error);
@@ -460,9 +499,15 @@ const requireHotelOwnerForBooking = async (req: Request, res: Response, next: Ne
     if (!booking) return res.status(404).json({ success: false, message: 'Reserva não encontrada' });
     const [space] = await db.select({ hotelId: eventSpaces.hotelId }).from(eventSpaces).where(eq(eventSpaces.id, booking.eventSpaceId));
     if (!space) return res.status(404).json({ success: false, message: 'Espaço não encontrado' });
-    const [hotel] = await db.select({ hostId: hotels.host_id }).from(hotels).where(eq(hotels.id, space.hotelId));
+    const [hotel] = await db.select({ host_id: hotels.host_id }).from(hotels).where(eq(hotels.id, space.hotelId));
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
-    if (hotel.hostId !== userId) return res.status(403).json({ success: false, message: 'Acesso negado' });
+    
+    // Permitir admin também
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+    if (hotel.host_id !== userId && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Acesso negado' });
+    }
+    
     next();
   } catch (error) {
     console.error('Erro no middleware requireHotelOwnerForBooking:', error);
@@ -502,7 +547,14 @@ const isEventSpaceOwnerOrPublic = async (req: Request, res: Response, next: Next
     if (space.isActive && req.method === 'GET') return next();
     if (!userId) return res.status(401).json({ success: false, message: 'Autenticação requerida' });
     const [hotel] = await db.select().from(hotels).where(eq(hotels.id, space.hotelId)).limit(1);
-    if (!hotel || hotel.host_id !== userId) return res.status(403).json({ success: false, message: 'Acesso negado' });
+    if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
+    
+    // Permitir admin também
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+    if (hotel.host_id !== userId && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Acesso negado' });
+    }
+    
     next();
   } catch (error) {
     console.error('Erro no middleware isEventSpaceOwnerOrPublic:', error);
@@ -757,7 +809,13 @@ router.post('/spaces', verifyFirebaseToken, async (req: Request, res: Response) 
     if (!rawData.hotel_id) return res.status(400).json({ success: false, message: 'hotel_id obrigatório' });
     const [hotel] = await db.select().from(hotels).where(eq(hotels.id, rawData.hotel_id)).limit(1);
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
-    if (hotel.host_id !== userId) return res.status(403).json({ success: false, message: 'Acesso negado' });
+    
+    // Permitir admin também
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+    if (hotel.host_id !== userId && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Acesso negado' });
+    }
+    
     const validatedData = createEventSpaceSchema.parse({
       ...rawData,
       name: rawData.name || 'Espaço Sem Nome',
@@ -1657,18 +1715,10 @@ router.post('/bookings/:bookingId/payments/confirm',
 );
 
 // ======================= DASHBOARD DO HOTEL =======================
-router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, async (req: Request, res: Response) => {
+// ✅ CORREÇÃO: Adicionado requireHotelOwnerForHotelIdParam para proteger rota
+router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, requireHotelOwnerForHotelIdParam, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
     const hotelId = req.params.hotelId;
-    
-    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
-    if (!hotel || hotel.host_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso negado: não é dono do hotel'
-      });
-    }
     
     const summary = await getEventDashboardSummary(hotelId);
     const stats = await getEventStatsForHotel(hotelId);
@@ -1688,6 +1738,9 @@ router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, async (req: Request
     
     const pendingApproval = await getPendingApprovalBookings(hotelId);
     const formattedPending = pendingApproval.map(booking => adaptToSnakeCase(booking));
+    
+    // Obter detalhes do hotel para exibir no dashboard
+    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
     
     res.json({
       success: true,
@@ -1709,19 +1762,11 @@ router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, async (req: Request
   }
 });
 
-router.get('/hotel/:hotelId/financial-summary', verifyFirebaseToken, async (req: Request, res: Response) => {
+// ✅ CORREÇÃO: Adicionado requireHotelOwnerForHotelIdParam para proteger rota
+router.get('/hotel/:hotelId/financial-summary', verifyFirebaseToken, requireHotelOwnerForHotelIdParam, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
     const hotelId = req.params.hotelId;
     const { startDate, endDate } = req.query;
-    
-    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
-    if (!hotel || hotel.host_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso negado: não é dono do hotel'
-      });
-    }
     
     const financialSummary = await eventPaymentService.getEventFinancialSummary(
       hotelId,
@@ -1738,6 +1783,108 @@ router.get('/hotel/:hotelId/financial-summary', verifyFirebaseToken, async (req:
     res.status(500).json({
       success: false,
       message: 'Erro ao buscar resumo financeiro'
+    });
+  }
+});
+
+// ======================= ESPAÇOS POR HOTEL =======================
+// ✅ CORREÇÃO: GET público permitido, mas PUT/DELETE requer autenticação
+router.get('/hotel/:hotelId/spaces', async (req: Request, res: Response) => {
+  try {
+    const includeInactive = req.query.includeInactive === 'true';
+    const spaces = await getEventSpacesByHotel(req.params.hotelId, includeInactive);
+    
+    const formattedSpaces = spaces.map(space => adaptToSnakeCase(space));
+    
+    res.json({
+      success: true,
+      data: formattedSpaces,
+      count: formattedSpaces.length,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar espaços do hotel:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar espaços: ' + (error as Error).message
+    });
+  }
+});
+
+// ✅ CORREÇÃO: Adicionado requireHotelOwnerForHotelIdParam para proteger rota
+router.get('/hotel/:hotelId/spaces/summary', verifyFirebaseToken, requireHotelOwnerForHotelIdParam, async (req: Request, res: Response) => {
+  try {
+    const hotelId = req.params.hotelId;
+    
+    const summary = await getHotelEventSpacesSummary(hotelId);
+    
+    const formattedSummary = summary.map(item => ({
+      space: adaptToSnakeCase(item.space),
+      total_days_available: item.totalDaysAvailable,
+    }));
+    
+    res.json({
+      success: true,
+      data: formattedSummary,
+      count: formattedSummary.length,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar resumo dos espaços:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar resumo'
+    });
+  }
+});
+
+// ✅ CORREÇÃO: Adicionado requireHotelOwnerForHotelIdParam para proteger rota
+router.get('/hotel/:hotelId/bookings', verifyFirebaseToken, requireHotelOwnerForHotelIdParam, async (req: Request, res: Response) => {
+  try {
+    const hotelId = req.params.hotelId;
+    
+    const status = req.query.status ? (req.query.status as string).split(',') : undefined;
+    const validStatuses = status?.filter(s => VALID_BOOKING_STATUSES.includes(s as BookingStatus));
+    const bookings = await getEventBookingsByHotel(hotelId, validStatuses);
+    
+    const formattedBookings = bookings.map(booking => adaptToSnakeCase(booking));
+    
+    res.json({
+      success: true,
+      data: formattedBookings,
+      count: formattedBookings.length,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar reservas do hotel:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar reservas: ' + (error as Error).message
+    });
+  }
+});
+
+// ✅ CORREÇÃO: Adicionado requireHotelOwnerForHotelIdParam para proteger rota
+router.get('/hotel/:hotelId/spaces/stats', verifyFirebaseToken, requireHotelOwnerForHotelIdParam, async (req: Request, res: Response) => {
+  try {
+    const hotelId = req.params.hotelId;
+    
+    const spacesWithStats = await getEventSpacesWithStats(hotelId);
+    
+    const formattedStats = spacesWithStats.map(item => ({
+      space: adaptToSnakeCase(item),
+      total_bookings: item.totalBookings,
+      total_revenue: item.totalRevenue,
+      last_booking_date: item.lastBookingDate,
+    }));
+    
+    res.json({
+      success: true,
+      data: formattedStats,
+      count: formattedStats.length,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas dos espaços:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar estatísticas'
     });
   }
 });
@@ -1868,131 +2015,6 @@ router.get('/spaces/:id/available-payment-options', async (req: Request, res: Re
   }
 });
 
-// ======================= ESPAÇOS POR HOTEL =======================
-router.get('/hotel/:hotelId/spaces', async (req: Request, res: Response) => {
-  try {
-    const includeInactive = req.query.includeInactive === 'true';
-    const spaces = await getEventSpacesByHotel(req.params.hotelId, includeInactive);
-    
-    const formattedSpaces = spaces.map(space => adaptToSnakeCase(space));
-    
-    res.json({
-      success: true,
-      data: formattedSpaces,
-      count: formattedSpaces.length,
-    });
-  } catch (error) {
-    console.error('Erro ao buscar espaços do hotel:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar espaços: ' + (error as Error).message
-    });
-  }
-});
-
-router.get('/hotel/:hotelId/spaces/summary', verifyFirebaseToken, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.id;
-    const hotelId = req.params.hotelId;
-    
-    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
-    if (!hotel || hotel.host_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso negado: não é dono do hotel'
-      });
-    }
-    
-    const summary = await getHotelEventSpacesSummary(hotelId);
-    
-    const formattedSummary = summary.map(item => ({
-      space: adaptToSnakeCase(item.space),
-      total_days_available: item.totalDaysAvailable,
-    }));
-    
-    res.json({
-      success: true,
-      data: formattedSummary,
-      count: formattedSummary.length,
-    });
-  } catch (error) {
-    console.error('Erro ao buscar resumo dos espaços:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar resumo'
-    });
-  }
-});
-
-router.get('/hotel/:hotelId/bookings', verifyFirebaseToken, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.id;
-    const hotelId = req.params.hotelId;
-    
-    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
-    if (!hotel || hotel.host_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso negado: não é dono do hotel'
-      });
-    }
-    
-    const status = req.query.status ? (req.query.status as string).split(',') : undefined;
-    const validStatuses = status?.filter(s => VALID_BOOKING_STATUSES.includes(s as BookingStatus));
-    const bookings = await getEventBookingsByHotel(hotelId, validStatuses);
-    
-    const formattedBookings = bookings.map(booking => adaptToSnakeCase(booking));
-    
-    res.json({
-      success: true,
-      data: formattedBookings,
-      count: formattedBookings.length,
-    });
-  } catch (error) {
-    console.error('Erro ao buscar reservas do hotel:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar reservas: ' + (error as Error).message
-    });
-  }
-});
-
-router.get('/hotel/:hotelId/spaces/stats', verifyFirebaseToken, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).user?.id;
-    const hotelId = req.params.hotelId;
-    
-    const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
-    if (!hotel || hotel.host_id !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Acesso negado: não é dono do hotel'
-      });
-    }
-    
-    const spacesWithStats = await getEventSpacesWithStats(hotelId);
-    
-    const formattedStats = spacesWithStats.map(item => ({
-      space: adaptToSnakeCase(item),
-      total_bookings: item.totalBookings,
-      total_revenue: item.totalRevenue,
-      last_booking_date: item.lastBookingDate,
-    }));
-    
-    res.json({
-      success: true,
-      data: formattedStats,
-      count: formattedStats.length,
-    });
-  } catch (error) {
-    console.error('Erro ao buscar estatísticas dos espaços:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar estatísticas'
-    });
-  }
-});
-
 // ======================= GESTÃO AVANÇADA =======================
 router.post('/spaces/bulk/status', verifyFirebaseToken, async (req: Request, res: Response) => {
   try {
@@ -2010,7 +2032,15 @@ router.post('/spaces/bulk/status', verifyFirebaseToken, async (req: Request, res
       const space = await getEventSpaceById(spaceId);
       if (space) {
         const [hotel] = await db.select().from(hotels).where(eq(hotels.id, space.hotelId)).limit(1);
-        if (!hotel || hotel.host_id !== userId) {
+        if (!hotel) {
+          return res.status(404).json({
+            success: false,
+            message: `Hotel do espaço ${spaceId} não encontrado`
+          });
+        }
+        
+        const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+        if (hotel.host_id !== userId && !isAdmin) {
           return res.status(403).json({
             success: false,
             message: `Acesso negado para espaço ${spaceId}`

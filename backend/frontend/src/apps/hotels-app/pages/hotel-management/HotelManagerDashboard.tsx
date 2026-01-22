@@ -1,0 +1,365 @@
+// src/apps/hotels-app/pages/hotel-management/HotelManagerDashboard.tsx
+import React, { useState, useEffect } from 'react';
+import { Card } from '@/shared/components/ui/card';
+import { Button } from '@/shared/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+import {
+  Loader2,
+  AlertCircle,
+  Building2,
+  Plus,
+  ChevronRight,
+  DoorOpen,
+  Calendar,
+  BarChart3,
+  MessageSquare,
+  Settings,
+} from 'lucide-react';
+import { hotelService, HotelDashboard, Hotel } from '@/services/hotelService';
+import { useToast } from '@/shared/hooks/use-toast';
+import RoomTypesManagement from '../../components/room-types/RoomTypesManagement';
+import EventSpacesManagementModern from '../../components/event-spaces/EventSpacesManagementModern';
+import CreateHotelForm from '../../components/CreateHotelForm';
+
+/**
+ * Dashboard principal do gerenciador de hotéis
+ * Mostra estatísticas e permite gerenciar quartos, eventos, reservas e promoções
+ */
+const HotelManagerDashboard: React.FC = () => {
+  const [activeHotel, setActiveHotel] = useState<Hotel | null>(null);
+  const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const { toast } = useToast();
+
+  // Carrega o hotel ativo ao montar o componente
+  useEffect(() => {
+    const loadActiveHotel = async () => {
+      try {
+        setLoading(true);
+        const hotel = await hotelService.getActiveHotel();
+        setActiveHotel(hotel);
+
+        if (hotel) {
+          await loadDashboard(hotel.id);
+        }
+      } catch (err) {
+        setError('Erro ao carregar hotel ativo');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadActiveHotel();
+  }, []);
+
+  // Função para carregar o dashboard de um hotel específico
+  const loadDashboard = async (hotelId: string) => {
+    try {
+      setLoading(true);
+      const response = await hotelService.getHotelDashboard(hotelId);
+
+      if (response.success && response.data) {
+        setDashboard(response.data);
+        setError(null);
+      } else {
+        setError(response.error || 'Erro ao carregar dados do dashboard');
+        setDashboard(null);
+      }
+    } catch (err) {
+      setError('Erro ao carregar dashboard');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateHotel = () => {
+    setShowCreateForm(true);
+  };
+
+  const handleCreateHotelSuccess = (newHotelId: string) => {
+    setShowCreateForm(false);
+    toast({
+      title: 'Hotel criado com sucesso!',
+      description: 'Agora você pode selecioná-lo manualmente no selector acima.',
+    });
+
+    // NÃO seta automaticamente como ativo
+    // O usuário escolhe manualmente no HotelSelector do header
+    console.log('✅ Novo hotel criado (seleção manual):', newHotelId);
+
+    // Opcional: recarregar lista de hotéis no header (se quiser atualizar o selector)
+    // Mas não é necessário, pois o HotelSelector já escuta mudanças
+  };
+
+  const handleEditHotel = () => {
+    toast({
+      title: 'Editar Hotel',
+      description: 'Funcionalidade em desenvolvimento',
+    });
+  };
+
+  const handleAddRoom = () => {
+    setActiveTab('rooms');
+  };
+
+  const handleAddSpace = () => {
+    setActiveTab('spaces');
+  };
+
+  const handleManageAvailability = () => {
+    toast({
+      title: 'Disponibilidade',
+      description: 'Use o gerenciador de quartos por enquanto. Calendário completo em breve.',
+      variant: 'default',
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Carregando dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado: Formulário de criação de hotel
+  if (showCreateForm) {
+    return (
+      <CreateHotelForm
+        onSuccess={handleCreateHotelSuccess}
+        onCancel={() => setShowCreateForm(false)}
+      />
+    );
+  }
+
+  // Estado: Sem hotel selecionado
+  if (!activeHotel) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card className="p-8 shadow-lg border-0">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Building2 className="w-8 h-8 text-blue-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-dark mb-2">Bem-vindo à Gestão de Hotéis</h2>
+              <p className="text-muted-foreground">
+                Selecione um hotel existente no menu superior ou crie um novo para começar.
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-red-900">Erro</p>
+                  <p className="text-sm text-red-800">{error}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <Button
+                onClick={handleCreateHotel}
+                className="w-full h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-lg"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Criar Meu Primeiro Hotel
+              </Button>
+            </div>
+
+            <div className="mt-8 pt-8 border-t border-gray-200">
+              <p className="text-xs text-muted-foreground text-center mb-4">
+                📚 Dicas rápidas:
+              </p>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <ChevronRight className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <span>Use o selector no topo para trocar de hotel</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ChevronRight className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <span>Crie quartos e espaços para começar a receber reservas</span>
+                </li>
+              </ul>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado: Hotel selecionado - Dashboard completo
+  return (
+    <div className="space-y-8 p-4 md:p-6">
+      {/* Header com nome do hotel */}
+      <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-600">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Building2 className="w-7 h-7 text-blue-600" />
+            </div>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+                {activeHotel.name}
+              </h1>
+              <p className="text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
+                {activeHotel.address || activeHotel.locality || 'Sem endereço cadastrado'}
+                <span className="text-xs bg-blue-100 text-blue-800 px-2.5 py-1 rounded-full">
+                  {activeHotel.locality}, {activeHotel.province}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          {/* Botão de editar hotel */}
+          <Button
+            onClick={handleEditHotel}
+            variant="outline"
+            className="border-blue-600 text-blue-600 hover:bg-blue-50"
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Editar Hotel
+          </Button>
+        </div>
+      </div>
+
+      {/* Estatísticas */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-0 shadow-sm hover:shadow-md transition-all">
+          <p className="text-sm text-muted-foreground mb-1">Total Reservas</p>
+          <p className="text-3xl font-bold text-blue-700">{dashboard?.total_bookings || 0}</p>
+          <p className="text-xs text-muted-foreground mt-2">até agora</p>
+        </Card>
+
+        <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-0 shadow-sm hover:shadow-md transition-all">
+          <p className="text-sm text-muted-foreground mb-1">Próximas Reservas</p>
+          <p className="text-3xl font-bold text-green-700">{dashboard?.upcoming_bookings || 0}</p>
+          <p className="text-xs text-muted-foreground mt-2">próximos 30 dias</p>
+        </Card>
+
+        <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-0 shadow-sm hover:shadow-md transition-all">
+          <p className="text-sm text-muted-foreground mb-1">Receita Total</p>
+          <p className="text-3xl font-bold text-purple-700">
+            {parseInt(dashboard?.total_revenue || '0').toLocaleString('pt-MZ')} MZN
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">acumulado</p>
+        </Card>
+
+        <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 border-0 shadow-sm hover:shadow-md transition-all">
+          <p className="text-sm text-muted-foreground mb-1">Taxa Ocupação</p>
+          <p className="text-3xl font-bold text-orange-700">78%</p>
+          <p className="text-xs text-muted-foreground mt-2">média geral</p>
+        </Card>
+      </div>
+
+      {/* Ações rápidas */}
+      <Card className="p-6 bg-white border-0 shadow-sm">
+        <h3 className="font-semibold text-lg mb-4">Ações Rápidas</h3>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            onClick={handleAddRoom}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Adicionar Quarto
+          </Button>
+
+          <Button
+            onClick={handleAddSpace}
+            className="bg-purple-600 hover:bg-purple-700 text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Adicionar Espaço
+          </Button>
+
+          <Button
+            onClick={handleManageAvailability}
+            variant="outline"
+            className="border-blue-600 text-blue-600 hover:bg-blue-50"
+          >
+            <Calendar className="w-4 h-4 mr-2" />
+            Gerenciar Disponibilidade
+          </Button>
+        </div>
+      </Card>
+
+      {/* Tabs principais */}
+      <Card className="p-6 bg-white border-0 shadow-sm">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-4 mb-6 bg-gray-100 p-1 rounded-lg">
+            <TabsTrigger
+              value="overview"
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">Resumo</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="rooms"
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm"
+            >
+              <DoorOpen className="w-4 h-4" />
+              <span className="hidden sm:inline">Quartos</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="spaces"
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Eventos</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="reviews"
+              className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span className="hidden sm:inline">Reviews</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Resumo */}
+          <TabsContent value="overview" className="space-y-6">
+            <div className="bg-blue-50 border-l-4 border-blue-600 rounded-lg p-6">
+              <h3 className="font-semibold text-dark mb-3">
+                Bem-vindo ao {activeHotel.name}
+              </h3>
+              <p className="text-muted-foreground">
+                Aqui você gerencia quartos, espaços de eventos, reservas, promoções e avaliações.
+              </p>
+            </div>
+          </TabsContent>
+
+          {/* Quartos */}
+          <TabsContent value="rooms">
+            <RoomTypesManagement hotelId={activeHotel.id} />
+          </TabsContent>
+
+          {/* Espaços */}
+          <TabsContent value="spaces">
+            <EventSpacesManagementModern hotelId={activeHotel.id} />
+          </TabsContent>
+
+          {/* Reviews */}
+          <TabsContent value="reviews">
+            <div className="text-center py-12">
+              <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-medium text-gray-700 mb-2">Gestão de Reviews</h3>
+              <p className="text-muted-foreground">Funcionalidade em desenvolvimento</p>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </Card>
+    </div>
+  );
+};
+
+export default HotelManagerDashboard;

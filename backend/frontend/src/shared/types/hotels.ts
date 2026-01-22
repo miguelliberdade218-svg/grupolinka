@@ -2,7 +2,8 @@
  * src/shared/types/hotels.ts
  * Tipos TypeScript para módulo de Hotéis
  * Compatível 100% com backend hotelController.ts
- * Versão: 15/01/2026
+ * Versão: 19/01/2026 - Corrigido e completo com export interface Hotel
+ * NOTA: Usando snake_case para compatibilidade total com backend
  */
 
 import type { HotelBooking, CreateHotelBookingRequest } from './bookings';
@@ -20,20 +21,20 @@ export interface Hotel {
   country?: string;
   lat?: string | null; // String numérico (ex: "-23.8544")
   lng?: string | null; // String numérico (ex: "35.4735")
-  contactEmail: string;
-  contactPhone?: string | null;
+  contact_email: string;
+  contact_phone?: string | null;
   policies?: string | null;
   images: string[]; // URLs de imagens
   amenities: string[]; // Facilidades (WiFi, Piscina, etc)
-  checkInTime?: string | null; // HH:mm (ex: "14:00")
-  checkOutTime?: string | null; // HH:mm (ex: "11:00")
+  check_in_time?: string | null; // HH:mm (ex: "14:00")
+  check_out_time?: string | null; // HH:mm (ex: "11:00")
   rating: number; // 0-5
-  totalReviews: number;
-  isActive: boolean;
-  isFeatured?: boolean;
-  hostId: string; // ID do proprietário
-  createdAt: string; // ISO datetime
-  updatedAt: string; // ISO datetime
+  total_reviews: number;
+  is_active: boolean;
+  is_featured?: boolean;
+  host_id: string; // ID do proprietário
+  created_at: string; // ISO datetime
+  updated_at: string; // ISO datetime
 }
 
 export interface CreateHotelRequest {
@@ -46,13 +47,13 @@ export interface CreateHotelRequest {
   country?: string;
   lat?: string | number;
   lng?: string | number;
-  contactEmail: string;
-  contactPhone?: string;
+  contact_email: string;
+  contact_phone?: string;
   policies?: string;
   images?: string[];
   amenities?: string[];
-  checkInTime?: string;
-  checkOutTime?: string;
+  check_in_time?: string;
+  check_out_time?: string;
 }
 
 export interface UpdateHotelRequest {
@@ -65,63 +66,63 @@ export interface UpdateHotelRequest {
   country?: string;
   lat?: string | number;
   lng?: string | number;
-  contactEmail?: string;
-  contactPhone?: string;
+  contact_email?: string;
+  contact_phone?: string;
   policies?: string;
   images?: string[];
   amenities?: string[];
-  checkInTime?: string;
-  checkOutTime?: string;
+  check_in_time?: string;
+  check_out_time?: string;
 }
 
 // ==================== ROOM TYPES ====================
 export interface RoomType {
   id: string;
-  hotelId: string;
+  hotel_id: string;
   name: string; // (ex: "Duplo Deluxe", "Suite")
   description?: string | null;
   capacity: number; // Número máximo de pessoas
-  basePrice: string; // Decimal como string (ex: "100.00")
-  totalUnits: number; // Número total de quartos deste tipo
-  baseOccupancy: number; // Ocupação padrão (ex: 2)
-  minNights?: number | null; // Noites mínimas
-  extraAdultPrice?: string | null; // Preço por adulto extra
-  extraChildPrice?: string | null; // Preço por criança extra
+  base_price: string; // Decimal como string (ex: "100.00")
+  total_units: number; // Número total de quartos deste tipo
+  base_occupancy: number; // Ocupação padrão (ex: 2)
+  min_nights?: number | null; // Noites mínimas
+  extra_adult_price?: string | null; // Preço por adulto extra
+  extra_child_price?: string | null; // Preço por criança extra
   amenities: string[]; // Amenidades do quarto
   images: string[]; // URLs das imagens
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreateRoomTypeRequest {
   name: string;
   description?: string;
   capacity: number;
-  basePrice: string | number;
-  totalUnits: number;
-  baseOccupancy: number;
-  minNights?: number;
-  extraAdultPrice?: string | number;
-  extraChildPrice?: string | number;
+  base_price: string | number;
+  total_units: number;
+  base_occupancy: number;
+  min_nights?: number;
+  extra_adult_price?: string | number;
+  extra_child_price?: string | number;
   amenities?: string[];
   images?: string[];
-  isActive?: boolean;
+  is_active?: boolean;
 }
 
 export interface UpdateRoomTypeRequest {
   name?: string;
   description?: string;
   capacity?: number;
-  basePrice?: string | number;
-  totalUnits?: number;
-  baseOccupancy?: number;
-  minNights?: number;
-  extraAdultPrice?: string | number;
-  extraChildPrice?: string | number;
+  base_price?: string | number;
+  total_units?: number;
+  base_occupancy?: number;
+  min_nights?: number;
+  extra_adult_price?: string | number;
+  extra_child_price?: string | number;
   amenities?: string[];
   images?: string[];
-  isActive?: boolean;
+  is_active?: boolean;
 }
 
 // ==================== SEARCH ====================
@@ -129,92 +130,92 @@ export interface HotelSearchParams {
   query?: string; // Busca por nome do hotel
   locality?: string; // Localidade/Cidade
   province?: string; // Província
-  checkIn?: string; // YYYY-MM-DD
-  checkOut?: string; // YYYY-MM-DD
+  check_in?: string; // YYYY-MM-DD
+  check_out?: string; // YYYY-MM-DD
   guests?: number; // Número de hóspedes
-  isActive?: boolean;
+  is_active?: boolean;
 }
 
 export interface HotelSearchResult {
   hotel: Hotel;
-  roomTypes: RoomType[];
-  minPrice?: number;
-  maxPrice?: number;
-  availableRooms?: number;
+  room_types: RoomType[];
+  min_price?: number;
+  max_price?: number;
+  available_rooms?: number;
 }
 
 // ==================== PROMOTIONS ====================
 export interface Promotion {
   id: string;
-  hotelId: string;
-  promoCode: string; // (ex: "WELCOME10")
+  hotel_id: string;
+  promo_code: string; // (ex: "WELCOME10")
   name: string;
   description?: string | null;
-  discountPercent?: number | null; // (ex: 10 = 10%)
-  discountAmount?: number | null; // Valor fixo
-  startDate: string; // YYYY-MM-DD
-  endDate: string; // YYYY-MM-DD
-  maxUses?: number | null;
-  currentUses: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  discount_percent?: number | null; // (ex: 10 = 10%)
+  discount_amount?: number | null; // Valor fixo
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  max_uses?: number | null;
+  current_uses: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreatePromotionRequest {
-  promoCode: string;
+  promo_code: string;
   name: string;
   description?: string;
-  discountPercent?: number;
-  discountAmount?: number;
-  startDate: string;
-  endDate: string;
-  maxUses?: number;
-  isActive?: boolean;
+  discount_percent?: number;
+  discount_amount?: number;
+  start_date: string;
+  end_date: string;
+  max_uses?: number;
+  is_active?: boolean;
 }
 
 export interface UpdatePromotionRequest {
-  promoCode?: string;
+  promo_code?: string;
   name?: string;
   description?: string;
-  discountPercent?: number;
-  discountAmount?: number;
-  startDate?: string;
-  endDate?: string;
-  maxUses?: number;
-  isActive?: boolean;
+  discount_percent?: number;
+  discount_amount?: number;
+  start_date?: string;
+  end_date?: string;
+  max_uses?: number;
+  is_active?: boolean;
 }
 
 // ==================== AVAILABILITY ====================
 export interface RoomAvailability {
   date: string; // YYYY-MM-DD
-  roomTypeId: string;
-  isAvailable: boolean;
-  availableUnits: number; // Unidades disponíveis
-  totalUnits: number; // Total de unidades
+  room_type_id: string;
+  is_available: boolean;
+  available_units: number; // Unidades disponíveis
+  total_units: number; // Total de unidades
   price?: string;
-  minBookingNights?: number;
+  min_booking_nights?: number;
 }
 
 export interface CheckAvailabilityRequest {
-  roomTypeId: string;
-  checkIn: string; // YYYY-MM-DD
-  checkOut: string; // YYYY-MM-DD
+  room_type_id: string;
+  check_in: string; // YYYY-MM-DD
+  check_out: string; // YYYY-MM-DD
   units?: number; // Quantos quartos
 }
 
 export interface CheckAvailabilityResponse {
   available: boolean;
-  minUnits: number;
-  maxUnits: number;
+  min_units: number;
+  max_units: number;
   message?: string;
 }
 
 export interface AvailabilityUpdate {
   date: string;
-  isAvailable?: boolean;
+  is_available?: boolean;
   price?: string;
-  minNights?: number;
+  min_nights?: number;
 }
 
 // ==================== PRICING ====================
@@ -234,45 +235,45 @@ export interface AvailabilityUpdate {
  * - Total: 300 - 30 = 270 MZN
  */
 export interface PricingCalculation {
-  roomTypeId: string;
-  checkIn: string;
-  checkOut: string;
+  room_type_id: string;
+  check_in: string;
+  check_out: string;
   nights: number;
   adults: number;
   children: number;
   units: number;
-  pricePerNight: string;
+  price_per_night: string;
   subtotal: string;
   discount?: string;
-  discountPercent?: number;
+  discount_percent?: number;
   taxes?: string;
-  totalPrice: string;
-  priceBreakdown: {
-    basePrice: string;
-    extraAdultCharges: string;
-    extraChildCharges: string;
-    discountAmount: string;
-    finalPrice: string;
+  total_price: string;
+  price_breakdown: {
+    base_price: string;
+    extra_adult_charges: string;
+    extra_child_charges: string;
+    discount_amount: string;
+    final_price: string;
   };
 }
 
 export interface CalculatePriceRequest {
-  roomTypeId: string;
-  checkIn: string; // YYYY-MM-DD
-  checkOut: string; // YYYY-MM-DD
+  room_type_id: string;
+  check_in: string; // YYYY-MM-DD
+  check_out: string; // YYYY-MM-DD
   adults: number;
   children?: number;
   units?: number;
-  promoCode?: string;
+  promo_code?: string;
 }
 
 // ==================== REVIEWS ====================
 export interface HotelReview {
   id: string;
-  hotelId: string;
-  bookingId: string;
-  guestName: string;
-  guestEmail: string;
+  hotel_id: string;
+  booking_id: string;
+  guest_name: string;
+  guest_email: string;
   title: string;
   comment: string;
   ratings: {
@@ -283,20 +284,20 @@ export interface HotelReview {
     staff: number;
     value: number;
   };
-  averageRating: number; // Média das 6 categorias
+  average_rating: number; // Média das 6 categorias
   pros?: string; // O que gostou
   cons?: string; // O que não gostou
-  helpfulCount: number;
-  unhelpfulCount: number;
-  managerResponse?: string; // Resposta do hotel
-  managerResponseDate?: string;
+  helpful_count: number;
+  unhelpful_count: number;
+  manager_response?: string; // Resposta do hotel
+  manager_response_date?: string;
   verified: boolean; // Se a estadia foi verificada
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreateReviewRequest {
-  bookingId: string;
+  booking_id: string;
   title: string;
   comment: string;
   ratings: {
@@ -312,9 +313,9 @@ export interface CreateReviewRequest {
 }
 
 export interface ReviewStats {
-  totalReviews: number;
-  averageRating: number;
-  categoryAverages: {
+  total_reviews: number;
+  average_rating: number;
+  category_averages: {
     cleanliness: number;
     comfort: number;
     location: number;
@@ -322,13 +323,13 @@ export interface ReviewStats {
     staff: number;
     value: number;
   };
-  ratingDistribution: Record<number, number>; // {5: 45, 4: 30, 3: 15, 2: 5, 1: 5}
-  withResponses: number;
+  rating_distribution: Record<number, number>; // {5: 45, 4: 30, 3: 15, 2: 5, 1: 5}
+  with_responses: number;
 }
 
 // ==================== BOOKINGS (Integração) ====================
 export interface HotelBookingData extends HotelBooking {
-  roomType?: RoomType;
+  room_type?: RoomType;
   hotel?: Hotel;
   payment?: HotelPayment;
   invoice?: HotelInvoice;
@@ -339,14 +340,14 @@ export interface HotelBookingData extends HotelBooking {
  * Resumo para host/proprietário com múltiplos hotéis
  */
 export interface HostDashboardSummary {
-  totalHotels: number;
-  totalBookings: number;
-  totalRevenue: number;
-  avgOccupancyRate: number;
-  avgRating: number;
-  totalGuests: number;
-  pendingPayments: number;
-  recentBookings: HotelBooking[];
+  total_hotels: number;
+  total_bookings: number;
+  total_revenue: number;
+  avg_occupancy_rate: number;
+  avg_rating: number;
+  total_guests: number;
+  pending_payments: number;
+  recent_bookings: HotelBooking[];
 }
 
 /**
@@ -354,18 +355,18 @@ export interface HostDashboardSummary {
  */
 export interface HotelDashboardStats {
   hotel: Hotel;
-  occupancyRate: number; // % (ex: 75.5)
-  monthlyRevenue: string; // Decimal
-  totalBookingsMonth: number;
-  averageNightlyRate: string; // Preço médio/noite
-  upcomingCheckIns: number; // Check-ins próximos 7 dias
-  pendingPayments: number;
-  totalReviews: number;
-  averageRating: number;
-  roomOccupancy: Array<{
-    roomTypeId: string;
-    roomTypeName: string;
-    occupancyPercent: number;
+  occupancy_rate: number; // % (ex: 75.5)
+  monthly_revenue: string; // Decimal
+  total_bookings_month: number;
+  average_nightly_rate: string; // Preço médio/noite
+  upcoming_check_ins: number; // Check-ins próximos 7 dias
+  pending_payments: number;
+  total_reviews: number;
+  average_rating: number;
+  room_occupancy: Array<{
+    room_type_id: string;
+    room_type_name: string;
+    occupancy_percent: number;
     revenue: string;
   }>;
 }
@@ -373,14 +374,14 @@ export interface HotelDashboardStats {
 // ==================== RELATÓRIOS ====================
 export interface BookingReport {
   period: {
-    startDate: string;
-    endDate: string;
+    start_date: string;
+    end_date: string;
   };
   summary: {
-    totalRevenue: number;
-    confirmedBookings: number;
-    cancelledBookings: number;
-    paidBookings: number;
+    total_revenue: number;
+    confirmed_bookings: number;
+    cancelled_bookings: number;
+    paid_bookings: number;
   };
   bookings: HotelBooking[];
 }
@@ -410,10 +411,10 @@ export interface HotelPaymentData {
   booking: HotelBooking;
   invoice: HotelInvoice;
   payments: HotelPayment[];
-  requiredDeposit: RequiredDeposit;
+  required_deposit: RequiredDeposit;
   balance: {
-    totalDue: number;
-    totalPaid: number;
-    balanceRemaining: number;
+    total_due: number;
+    total_paid: number;
+    balance_remaining: number;
   };
 }

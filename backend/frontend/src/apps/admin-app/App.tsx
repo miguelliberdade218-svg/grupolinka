@@ -6,10 +6,20 @@ import AdminMobileNav from "@/shared/admin/components/AdminMobileNav";
 import Dashboard from "@/shared/admin/pages/dashboard";
 import Users from "@/shared/admin/pages/users";
 import BillingManagement from "./pages/billing-management";
-import HotelManagerDashboard from "./pages/hotel-management/HotelManagerDashboard";
 
 const queryClient = new QueryClient();
 
+/**
+ * ⚠️ ADMIN APP - APENAS para administradores da plataforma
+ * 
+ * IMPORTANTE: Este app é EXCLUSIVO para gerenciamento de:
+ * - Utilizadores da plataforma
+ * - Dashboard de admin
+ * - Gestão de faturação
+ * 
+ * ❌ NÃO DEVE ter gerenciamento de hotéis aqui!
+ * ✅ Gerenciamento de hotéis está em: /hotels/* (hotels-app)
+ */
 export default function AdminApp() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -17,10 +27,16 @@ export default function AdminApp() {
         <AdminHeader />
         <main className="pb-20 md:pb-4">
           <Switch>
+            {/* Dashboard principal de admin */}
             <Route path="/admin" component={Dashboard} />
+            
+            {/* Gestão de utilizadores da plataforma */}
             <Route path="/admin/users" component={Users} />
+            
+            {/* Gestão de faturação */}
             <Route path="/admin/billing" component={BillingManagement} />
-            <Route path="/admin/hotels" component={HotelManagerDashboard} />
+            
+            {/* Rota padrão */}
             <Route component={Dashboard} />
           </Switch>
         </main>
