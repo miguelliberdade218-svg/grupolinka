@@ -12,7 +12,8 @@ import { hotelService } from "@/services/hotelService";
 import { toast } from "sonner";
 import { Hotel } from "@/shared/types/hotels";
 import { Button } from "@/shared/components/ui/button";
-import { useLocation } from "wouter";  // ← Correção: usa wouter em vez de react-router-dom
+import { useLocation } from "wouter";
+import { useActiveHotel } from '@/contexts/ActiveHotelContext'; // ← ADICIONADO: import do contexto
 
 // Função para converter Hotel do serviço para Hotel do tipo compartilhado
 function convertServiceHotelToSharedHotel(serviceHotel: any): Hotel {
@@ -54,7 +55,10 @@ export function HotelSelector({ onChange, showCreateButton = true }: HotelSelect
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [, setLocation] = useLocation();  // ← Correção: usa setLocation do wouter para navegação
+  const [, setLocation] = useLocation();
+  
+  // ADICIONADO: uso do contexto ActiveHotel
+  const { setActiveHotel } = useActiveHotel();
 
   const loadHotels = useCallback(async () => {
     setLoading(true);
@@ -75,28 +79,40 @@ export function HotelSelector({ onChange, showCreateButton = true }: HotelSelect
           const convertedActiveHotel = convertServiceHotelToSharedHotel(activeHotel);
           setSelectedId(convertedActiveHotel.id);
           onChange(convertedActiveHotel);
+          
+          // ADICIONADO: atualiza o contexto ActiveHotel com o hotel convertido
+          setActiveHotel(convertedActiveHotel);
         } else if (convertedHotels.length > 0) {
           // Se getActiveHotel retornou null mas temos hotéis, usa o primeiro
           const firstHotel = convertedHotels[0];
           setSelectedId(firstHotel.id);
           localStorage.setItem('activeHotelId', firstHotel.id);
           onChange(firstHotel);
+          
+          // ADICIONADO: atualiza o contexto ActiveHotel com o primeiro hotel
+          setActiveHotel(firstHotel);
         } else {
           // Nenhum hotel - notifica o callback
           onChange(null);
+          // ADICIONADO: atualiza o contexto ActiveHotel para null
+          setActiveHotel(null);
         }
       } else {
         setError(result.error || "Erro ao carregar hotéis");
         toast.error(result.error || "Não foi possível carregar seus hotéis");
+        // ADICIONADO: em caso de erro, define null no contexto
+        setActiveHotel(null);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro desconhecido";
       setError(message);
       toast.error("Falha na conexão com o servidor");
+      // ADICIONADO: em caso de erro, define null no contexto
+      setActiveHotel(null);
     } finally {
       setLoading(false);
     }
-  }, [onChange]);
+  }, [onChange, setActiveHotel]); // ADICIONADO: setActiveHotel nas dependências
 
   const handleHotelChange = useCallback((hotelId: string) => {
     const hotel = hotels.find(h => h.id === hotelId);
@@ -105,13 +121,19 @@ export function HotelSelector({ onChange, showCreateButton = true }: HotelSelect
       localStorage.setItem('activeHotelId', hotelId);
       onChange(hotel);
       
+      // CORREÇÃO APLICADA: converter o hotel para o tipo compartilhado antes de atualizar o contexto
+      // Neste caso, o hotel já está no tipo compartilhado (porque foi convertido em loadHotels),
+      // mas vamos garantir a consistência chamando a função de conversão novamente
+      const convertedHotel = convertServiceHotelToSharedHotel(hotel);
+      setActiveHotel(convertedHotel); // ← ATUALIZA O CONTEXTO ActiveHotel
+      
       // Feedback visual
       toast.success(`Hotel ${hotel.name} selecionado`);
     }
-  }, [hotels, onChange]);
+  }, [hotels, onChange, setActiveHotel]); // ADICIONADO: setActiveHotel nas dependências
 
   const handleCreateHotel = useCallback(() => {
-    setLocation('/hotels/create');  // ← Correção: usa setLocation do wouter
+    setLocation('/hotels/create');
   }, [setLocation]);
 
   // Carrega hotéis no início e se o callback onChange mudar

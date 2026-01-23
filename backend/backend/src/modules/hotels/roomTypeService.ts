@@ -1,5 +1,6 @@
 // src/modules/hotels/roomTypeService.ts - VERSÃO FINAL CORRIGIDA
 // Com tratamento correto para disponibilidade eterna, validações robustas e correções críticas
+// ✅ CORREÇÃO CRÍTICA: Lógica de reset e interação entre stopSell e availableUnits
 
 import { db } from "../../../db";
 import {
@@ -29,7 +30,11 @@ export type RoomAvailabilityEntry = typeof roomAvailability.$inferSelect;
 // ==================== FUNÇÕES HELPER ====================
 const toDecimalString = (num: number | string | null | undefined): string => {
   if (num === null || num === undefined) return "0.00";
-  if (typeof num === 'string') return num;
+  if (typeof num === 'string') {
+    // Converter string para number e depois formatar
+    const parsedNum = parseFloat(num);
+    return isNaN(parsedNum) ? "0.00" : parsedNum.toFixed(2);
+  }
   return num.toFixed(2);
 };
 
@@ -59,21 +64,21 @@ const validateRoomTypeData = (data: any): { isValid: boolean; errors: string[] }
   }
   
   if (data.capacity !== undefined) {
-    const capacity = parseInt(data.capacity);
+    const capacity = parseInt(data.capacity.toString());
     if (isNaN(capacity) || capacity < 1) {
       errors.push('Capacidade deve ser um número maior que 0');
     }
   }
   
   if (data.total_units !== undefined) {
-    const totalUnits = parseInt(data.total_units);
+    const totalUnits = parseInt(data.total_units.toString());
     if (isNaN(totalUnits) || totalUnits < 1) {
       errors.push('Total de unidades deve ser um número maior que 0');
     }
   }
   
   if (data.base_occupancy !== undefined) {
-    const baseOccupancy = parseInt(data.base_occupancy);
+    const baseOccupancy = parseInt(data.base_occupancy.toString());
     if (isNaN(baseOccupancy) || baseOccupancy < 1) {
       errors.push('Ocupação base deve ser um número maior que 0');
     }
@@ -81,8 +86,8 @@ const validateRoomTypeData = (data: any): { isValid: boolean; errors: string[] }
   
   // Validar se capacidade >= ocupação base
   if (data.capacity !== undefined && data.base_occupancy !== undefined) {
-    const capacity = parseInt(data.capacity);
-    const baseOccupancy = parseInt(data.base_occupancy);
+    const capacity = parseInt(data.capacity.toString());
+    const baseOccupancy = parseInt(data.base_occupancy.toString());
     if (!isNaN(capacity) && !isNaN(baseOccupancy) && capacity < baseOccupancy) {
       errors.push('Capacidade total deve ser maior ou igual à ocupação base');
     }
@@ -91,7 +96,7 @@ const validateRoomTypeData = (data: any): { isValid: boolean; errors: string[] }
   // CORREÇÃO: Usar apenas min_nights_default (campo correto no banco)
   // Remover referências a min_nights que não existe no TypeScript
   if (data.min_nights_default !== undefined) {
-    const minNights = parseInt(data.min_nights_default);
+    const minNights = parseInt(data.min_nights_default.toString());
     if (isNaN(minNights) || minNights < 1) {
       errors.push('Mínimo de noites deve ser um número maior que 0');
     }
@@ -492,128 +497,161 @@ export const releaseAvailabilityAfterCancellation = async (
 
 /**
  * Bulk update (preço, stopSell, etc.) - cria registo se não existir
+ * ✅ CORREÇÃO MELHORADA: Suporte a reset: true e interação entre campos
  */
 export const bulkUpdateAvailability = async (
   roomTypeId: string,
   updates: {
     date: string;
-    price?: number | null;  // ✅ CORREÇÃO: Aceita null explicitamente
+    price?: number | null;
     stopSell?: boolean | null;
     minNights?: number;
-    availableUnits?: number;
+    availableUnits?: number | null;
+    reset?: boolean;  // ✅ ADICIONAR ESTE CAMPO
   }[]
 ): Promise<number> => {
   if (updates.length === 0) return 0;
 
-  console.log("📊 [BULK UPDATE] Atualizando disponibilidade em lote");
+  console.log("📊 [BULK UPDATE] Iniciando atualização em lote");
   console.log("🔍 RoomTypeId:", roomTypeId);
-  console.log("📋 Número de updates:", updates.length);
-
+  console.log("📅 Updates recebidos:", updates.length);
+  
+  // Buscar informações do room type
   const roomType = await getRoomTypeById(roomTypeId);
-  if (!roomType || !roomType.hotel_id) throw new Error("RoomType inválido");
+  if (!roomType) {
+    console.error("❌ RoomType não encontrado:", roomTypeId);
+    throw new Error("RoomType inválido");
+  }
 
-  // ✅ VALIDAÇÃO: Total de unidades do room type
   const maxUnits = roomType.total_units || 0;
-  console.log("🏨 Total de unidades do room type:", maxUnits);
-
+  const hotelId = roomType.hotel_id!;
   let updatedCount = 0;
 
+  console.log("🏨 Informações do RoomType:", {
+    maxUnits,
+    hotelId,
+    roomTypeName: roomType.name
+  });
+
+  // Processar updates em transação para garantir consistência
   await db.transaction(async (tx) => {
     for (const u of updates) {
-      const dateObj = new Date(u.date);
-      const [existing] = await tx
-        .select()
-        .from(roomAvailability)
-        .where(and(
-          eq(roomAvailability.roomTypeId, roomTypeId),
-          eq(roomAvailability.date, dateObj)
-        ))
-        .limit(1);
-
-      // ✅ VALIDAÇÃO: available_units não pode exceder total_units
-      let validatedUnits: number | undefined = undefined;
-      if (u.availableUnits !== undefined) {
-        if (u.availableUnits < 0) {
-          throw new Error(`Unidades disponíveis não podem ser negativas para ${u.date}`);
-        }
-        if (u.availableUnits > maxUnits) {
-          console.warn(`⚠️ Unidades ${u.availableUnits} excedem máximo ${maxUnits} para ${u.date}. Ajustando...`);
-          validatedUnits = maxUnits;
-        } else {
-          validatedUnits = u.availableUnits;
-        }
-      }
-
-      // ✅ VALIDAÇÃO: Garantir que stopSell seja boolean ou null
-      const stopSellValue = ensureStopSell(u.stopSell !== undefined ? u.stopSell : existing?.stopSell);
-
-      // ✅ CORREÇÃO CRÍTICA: price só deve ser incluído se enviado explicitamente
-      let priceValue: string | null | undefined = undefined;
+      console.log("📅 Processando update para data:", u.date);
       
-      if (u.price !== undefined && u.price !== null) {
-        // Validação de preço
-        if (u.price <= 0) {
-          throw new Error(`Preço inválido para ${u.date}: deve ser maior que 0`);
-        }
-        priceValue = toDecimalString(u.price);
-      } else if (u.price === null) {
-        // Se enviou null explicitamente, remove o override (usa base_price)
-        priceValue = null;
-      } else if (existing?.price) {
-        // Se não enviou price mas existe um anterior, mantém
-        priceValue = existing.price;
-      }
-      // Se não enviou price e não tem anterior, fica undefined (não atualiza o campo)
+      const dateObj = new Date(u.date);
+      
+      // Buscar registro existente
+      const [existing] = await tx.select().from(roomAvailability).where(and(
+        eq(roomAvailability.roomTypeId, roomTypeId),
+        eq(roomAvailability.date, dateObj)
+      ));
 
-      const values: any = {
-        hotelId: roomType.hotel_id!,
+      // ✅ 1. DETERMINAR VALORES COM RESET
+      const isReset = u.reset === true;
+      
+      console.log("🔄 Estado do reset para", u.date, ":", isReset);
+      console.log("📦 Dados recebidos:", {
+        price: u.price,
+        stopSell: u.stopSell,
+        availableUnits: u.availableUnits,
+        minNights: u.minNights,
+        reset: u.reset
+      });
+
+      // ✅ 2. LÓGICA COM RESET
+      let priceValue = isReset 
+        ? null  // Reset explícito: remove price override (usa base_price)
+        : (u.price !== undefined ? u.price : existing?.price ?? null);
+      
+      let stopSellValue = isReset
+        ? false  // Reset explícito: desbloqueia
+        : (u.stopSell !== undefined ? u.stopSell : existing?.stopSell ?? false);
+      
+      let unitsValue = isReset
+        ? null  // Reset explícito: volta ao padrão (será null no banco)
+        : (u.availableUnits !== undefined ? u.availableUnits : existing?.availableUnits ?? maxUnits);
+      
+      let minNightsValue = isReset
+        ? 1  // Reset explícito: volta ao mínimo padrão
+        : (u.minNights ?? existing?.minNights ?? 1);
+
+      console.log("📊 Valores determinados após reset:", {
+        priceValue,
+        stopSellValue,
+        unitsValue,
+        minNightsValue
+      });
+
+      // ✅ 3. INTERAÇÃO ENTRE CAMPOS: stopSell = true → availableUnits = 0
+      if (stopSellValue === true) {
+        unitsValue = 0;
+        console.log(`🔒 [STOP SELL] Forçando availableUnits para 0 para ${u.date}`);
+      }
+
+      // ✅ 4. VALIDAÇÃO FINAL
+      // Se unitsValue é null (reset), não atualizar o campo
+      // Se unitsValue é número, validar contra maxUnits
+      if (unitsValue !== null && (unitsValue < 0 || unitsValue > maxUnits)) {
+        throw new Error(`Unidades inválidas para ${u.date}: ${unitsValue} (máximo: ${maxUnits})`);
+      }
+
+      // ✅ 5. LÓGICA DE RESET EXPLÍCITO: se reset = true e existe registro, deletar
+      if (isReset && existing) {
+        console.log("🗑️ [RESET EXPLÍCITO] Removendo registro para", u.date);
+        await tx.delete(roomAvailability).where(eq(roomAvailability.id, existing.id));
+        updatedCount++;
+        continue; // Pula para próximo update
+      }
+
+      // ✅ 6. LÓGICA DE RESET PARA NULL VALUES: se todos campos são null/default, deletar
+      const isAllNull = priceValue === null && 
+                       stopSellValue === false && 
+                       unitsValue === null && 
+                       minNightsValue === 1;
+      
+      if (isAllNull && existing) {
+        console.log("🗑️ [TUDO PADRÃO] Removendo registro para", u.date);
+        await tx.delete(roomAvailability).where(eq(roomAvailability.id, existing.id));
+        updatedCount++;
+        continue;
+      }
+
+      // ✅ 7. PREPARAR DADOS PARA INSERT/UPDATE
+      const dataToInsert: any = {
+        hotelId,
         roomTypeId,
         date: dateObj,
-        availableUnits: validatedUnits ?? (existing?.availableUnits ?? maxUnits),
+        price: priceValue, // Pode ser null (usa base_price)
         stopSell: stopSellValue,
-        minNights: u.minNights ?? (existing?.minNights ?? 1),
+        minNights: minNightsValue,
         updatedAt: new Date(),
       };
-
-      // ✅ CORREÇÃO: Só adiciona price se tiver valor definido (não undefined)
-      if (priceValue !== undefined) {
-        values.price = priceValue;
-      }
-
-      // ✅ CORREÇÃO: Determina se precisa criar/atualizar/remover registro
-      const hasOverride = 
-        values.stopSell !== null || 
-        priceValue !== undefined || 
-        validatedUnits !== undefined && validatedUnits !== maxUnits;
       
-      if (existing) {
-        if (hasOverride) {
-          // Atualiza se houver algum override
-          await tx
-            .update(roomAvailability)
-            .set(values)
-            .where(eq(roomAvailability.id, existing.id));
-          console.log("✏️ Atualizado registro existente para", u.date);
-          updatedCount++;
-        } else {
-          // Remove registro se não houver mais override (voltou ao padrão)
-          await tx.delete(roomAvailability).where(eq(roomAvailability.id, existing.id));
-          console.log("🗑️ Removido registro (voltou ao padrão) para", u.date);
-        }
-      } else {
-        // Só cria novo registro se houver override
-        if (hasOverride) {
-          await tx.insert(roomAvailability).values(values);
-          console.log("➕ Criado novo registro para", u.date);
-          updatedCount++;
-        } else {
-          console.log("⏭️ Pulando (sem override necessário) para", u.date);
-        }
+      // ✅ 8. ADICIONAR availableUnits APENAS SE NÃO FOR NULL
+      if (unitsValue !== null) {
+        dataToInsert.availableUnits = unitsValue;
       }
+
+      console.log("💾 Dados preparados para banco:", {
+        ...dataToInsert,
+        price: dataToInsert.price ?? 'null (usa base_price)',
+        availableUnits: dataToInsert.availableUnits ?? 'null (usa maxUnits)'
+      });
+
+      // ✅ 9. EXECUTAR INSERT/UPDATE
+      if (existing) {
+        await tx.update(roomAvailability).set(dataToInsert).where(eq(roomAvailability.id, existing.id));
+        console.log("✏️ Atualizado registro existente para", u.date);
+      } else {
+        await tx.insert(roomAvailability).values(dataToInsert);
+        console.log("➕ Criado novo registro para", u.date);
+      }
+      
+      updatedCount++;
     }
   });
 
-  console.log("✅ Bulk update completado. Registros atualizados:", updatedCount);
+  console.log("✅ [BULK UPDATE] Concluído. Registros processados:", updatedCount);
   return updatedCount;
 };
 
@@ -768,19 +806,21 @@ export const hasActiveBookings = async (roomTypeId: string): Promise<boolean> =>
 
 /**
  * Inicializa ou atualiza disponibilidade para um tipo de quarto
+ * ✅ CORREÇÃO APLICADA: O parâmetro defaultPrice agora é opcional e pode ser null
+ * ✅ CORREÇÃO APLICADA: Só insere price se defaultPrice > 0, caso contrário null (usa base_price do room_type)
  */
 export const initializeAvailability = async (
   roomTypeId: string,
   startDate: string,
   endDate: string,
-  defaultPrice: number,
+  defaultPrice?: number | null,  // ✅ CORREÇÃO: Agora opcional e pode ser null
   defaultUnits: number = 1,
   minNights: number = 1
 ): Promise<number> => {
   console.log("🔧 [INIT AVAILABILITY] Inicializando disponibilidade");
   console.log("🔍 RoomTypeId:", roomTypeId);
   console.log("📆 Start:", startDate, "End:", endDate);
-  console.log("💰 Preço padrão:", defaultPrice, "Unidades:", defaultUnits, "Noites mínimas:", minNights);
+  console.log("💰 Preço padrão:", defaultPrice ?? 'null (usa base_price)', "Unidades:", defaultUnits, "Noites mínimas:", minNights);
   
   // Buscar informações do tipo de quarto
   const roomType = await getRoomTypeById(roomTypeId);
@@ -809,13 +849,16 @@ export const initializeAvailability = async (
       );
 
     if (existing.length === 0) {
+      // ✅ CORREÇÃO CRÍTICA: Só insere price se defaultPrice for um número positivo > 0
+      const priceValue = defaultPrice && defaultPrice > 0 ? defaultPrice.toString() : null;
+
       await db.insert(roomAvailability).values({
         roomTypeId: roomTypeId,
         hotelId: roomType.hotel_id,
         date: dateObj,
-        price: defaultPrice.toString(),
+        price: priceValue,  // ✅ CORREÇÃO: null = usa base_price do roomType
         availableUnits: defaultUnits,
-        stopSell: null, // Inicialmente null
+        stopSell: null, // Inicialmente null (ou false)
         minNights: minNights,
         maxStay: null,
         minStay: 1

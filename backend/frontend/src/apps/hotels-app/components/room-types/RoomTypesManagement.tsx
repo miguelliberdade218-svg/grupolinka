@@ -20,6 +20,11 @@ import {
 import { hotelService } from '@/services/hotelService';
 import { useToast } from '@/shared/hooks/use-toast';
 import CreateRoomTypeFormModern from './CreateRoomTypeFormModern';
+import {
+  CalendarOptions,
+  LoadedPeriod,
+  // CalendarChunk, LazyLoadingConfig (se usar depois)
+} from '@/shared/types/hotels';
 
 interface RoomTypesManagementProps {
   hotelId: string;
@@ -30,6 +35,25 @@ const localizer = momentLocalizer(moment);
 
 // Limite suave para evitar ir muito longe no futuro (5 anos = 60 meses)
 const MAX_MONTHS_FUTURE = 60;
+
+// Configuração padrão de lazy loading (90 dias = ~3 meses)
+const DEFAULT_CHUNK_DAYS = 90;
+
+// Interface para eventos do calendário
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  allDay?: boolean;
+  resource?: {
+    available?: boolean;
+    price?: number;
+    status?: 'available' | 'blocked' | 'occupied' | 'booked';
+    date?: string;
+    availableUnits?: number;
+  };
+}
 
 /**
  * Componente para gerenciar room types (quartos) do hotel
@@ -55,8 +79,8 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
   const [selectedRoomTypeId, setSelectedRoomTypeId] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<{ start: Date; end: Date } | null>(null);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-  const [allEvents, setAllEvents] = useState<any[]>([]);
-  const [loadedPeriods, setLoadedPeriods] = useState<{start: string; end: string}[]>([]);
+  const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
+  const [loadedPeriods, setLoadedPeriods] = useState<LoadedPeriod[]>([]);
   const [currentViewDate, setCurrentViewDate] = useState<Date>(new Date());
   const [loadingCalendar, setLoadingCalendar] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
@@ -68,6 +92,13 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
   const [dayPrice, setDayPrice] = useState<string>('');
   const [dayUnits, setDayUnits] = useState<string>('');
   const [dayBlocked, setDayBlocked] = useState<boolean>(false);
+  
+  // ✅ NOVOS ESTADOS PARA RESET
+  const [bulkReset, setBulkReset] = useState(false);
+  const [dayReset, setDayReset] = useState(false);
+
+  // Estado para forçar reload (para mostrar mensagem específica)
+  const [forceReloading, setForceReloading] = useState(false);
 
   // Estados para promoções
   const [promotions, setPromotions] = useState<any[]>([]);
@@ -84,6 +115,13 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     max_uses: '',
     applicable_room_types: [] as string[],
     is_active: true,
+  });
+
+  // Variáveis para estatísticas da disponibilidade
+  const [availabilityStats, setAvailabilityStats] = useState({
+    totalDias: 0,
+    comPrecoOverride: 0,
+    bloqueados: 0,
   });
 
   // Lista completa de amenities (50+ opções)
@@ -118,6 +156,11 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     if (activeSubTab === 'availability' && selectedRoomTypeId) {
       setAllEvents([]);
       setLoadedPeriods([]);
+      setAvailabilityStats({
+        totalDias: 0,
+        comPrecoOverride: 0,
+        bloqueados: 0,
+      });
       loadCalendarData(new Date()); // Carrega o período atual
     }
   }, [selectedRoomTypeId, activeSubTab]);
@@ -167,13 +210,17 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   };
 
-  // ✅ LAZY LOADING: Carregar disponibilidade + reservas por chunks de 3 meses
-  const loadCalendarData = async (targetDate: Date = currentViewDate) => {
+  // ✅ LAZY LOADING: Carregar disponibilidade + reservas por chunks
+  const loadCalendarData = async (
+    targetDate: Date = currentViewDate,
+    options: CalendarOptions = { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false }
+  ) => {
     if (!selectedRoomTypeId || !hotelId) return;
     
-    // Calcula o chunk de 3 meses a partir da data alvo
+    // ✅ Calcula o chunk baseado no chunkSize (convertendo dias para meses)
+    const chunkMonths = Math.ceil((options.chunkSize || DEFAULT_CHUNK_DAYS) / 30);
     const start = moment(targetDate).startOf('month').format('YYYY-MM-DD');
-    const end = moment(targetDate).add(3, 'months').endOf('month').format('YYYY-MM-DD');
+    const end = moment(targetDate).add(chunkMonths, 'months').endOf('month').format('YYYY-MM-DD');
 
     // ✅ Verifica limite suave de meses futuros (5 anos)
     const monthsFromNow = moment(end).diff(moment(), 'months');
@@ -197,18 +244,53 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
 
     setLoadingCalendar(true);
+    setForceReloading(options.forceReload || false);
+    
     try {
-      console.log('📅 CALENDÁRIO (LAZY): Buscando disponibilidade de', start, 'até', end);
+      console.log('📅 CALENDÁRIO (LAZY): Buscando disponibilidade de', start, 'até', end, 'com opções:', {
+        chunkSize: options.chunkSize,
+        forceReload: options.forceReload,
+        chunkMonths
+      });
 
       // ✅ Busca disponibilidade para o chunk
       const availResponse = await hotelService.getAvailabilityCalendar(
         hotelId,
         selectedRoomTypeId,
         start,
-        end
+        end,
+        options
       );
       const availability = availResponse?.data || [];
       
+      // ✅ CONTAGEM CORRETA DE OVERRIDES E BLOQUEIOS
+      let comPrecoOverride = 0;
+      let bloqueados = 0;
+
+      availability.forEach((item: any) => {
+        // Detecta override de preço (mesmo que seja 0)
+        if (item.price !== null && item.price !== undefined) {
+          comPrecoOverride++;
+        }
+        // Detecta bloqueio real
+        if (item.stopSell === true) {
+          bloqueados++;
+        }
+      });
+
+      console.log('🔍 Contagem real:', { 
+        comPrecoOverride, 
+        bloqueados, 
+        totalDias: availability.length 
+      });
+
+      // ✅ Atualiza estatísticas
+      setAvailabilityStats(prev => ({
+        totalDias: prev.totalDias + availability.length,
+        comPrecoOverride: prev.comPrecoOverride + comPrecoOverride,
+        bloqueados: prev.bloqueados + bloqueados,
+      }));
+
       // ✅ Tratamento para quando a API retorna array vazio
       if (availability.length === 0) {
         console.warn('⚠️ API retornou array vazio de disponibilidade para o período', start, 'até', end);
@@ -242,7 +324,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       });
 
       // ✅ Cria eventos de disponibilidade
-      const availEvents = availability.map((item: any) => ({
+      const availEvents: CalendarEvent[] = availability.map((item: any) => ({
         id: `avail-${item.date}`,
         title: item.availableUnits > 0 && !item.stopSell
           ? `Disponível - ${item.price || 'Padrão'} MZN`
@@ -260,7 +342,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       }));
 
       // ✅ Cria eventos de reservas (apenas para o chunk atual)
-      const bookingEvents = filteredBookings.map((booking: any) => ({
+      const bookingEvents: CalendarEvent[] = filteredBookings.map((booking: any) => ({
         id: `booking-${booking.id}`,
         title: `Reserva: ${booking.guestName || 'Cliente'}`,
         start: new Date(booking.checkIn),
@@ -290,6 +372,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       });
     } finally {
       setLoadingCalendar(false);
+      setForceReloading(false);
     }
   };
 
@@ -309,10 +392,15 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       description: 'Atualizando dados do calendário',
     });
     
-    // Reseta e carrega o período atual
+    // Reseta e carrega o período atual com forceReload
     setAllEvents([]);
     setLoadedPeriods([]);
-    await loadCalendarData(currentViewDate);
+    setAvailabilityStats({
+      totalDias: 0,
+      comPrecoOverride: 0,
+      bloqueados: 0,
+    });
+    await loadCalendarData(currentViewDate, { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: true });
   };
 
   // ✅ Função para carregar mais meses à frente
@@ -320,7 +408,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     if (!selectedRoomTypeId || !hotelId) return;
     
     const futureDate = moment(currentViewDate).add(additionalMonths, 'months').toDate();
-    await loadCalendarData(futureDate);
+    await loadCalendarData(futureDate, { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false });
     
     toast({
       title: 'Carregado',
@@ -383,144 +471,29 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
 
   const handleApplyBulk = async () => {
     if (!selectedRoomTypeId || !selectedRange || !hotelId) {
-      toast({
-        title: 'Erro',
-        description: 'Selecione um tipo de quarto e intervalo de datas',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro', description: 'Selecione quarto e datas', variant: 'destructive' });
       return;
     }
 
-    // ✅ VALIDAÇÃO: Pelo menos uma ação/valor deve ser definido
-    if (!bulkAction && !bulkPrice && !bulkUnits) {
-      toast({
-        title: 'Erro',
-        description: 'Selecione uma ação ou defina valores para aplicar',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // ✅ VALIDAÇÃO DE PREÇO
-    let validatedPrice: number | undefined = undefined;
-    if (bulkPrice && bulkPrice.trim() !== '') {
-      const priceNum = parseFloat(bulkPrice);
-      if (isNaN(priceNum) || priceNum <= 0) {
-        toast({
-          title: "Preço inválido",
-          description: "O preço especial deve ser maior que 0 MZN",
-          variant: "destructive",
-        });
-        return;
-      }
-      validatedPrice = priceNum;
-    }
-
-    // ✅ VALIDAÇÃO DE UNIDADES
-    let validatedUnits: number | undefined = undefined;
-    if (bulkUnits && bulkUnits.trim() !== '') {
-      const unitsNum = parseInt(bulkUnits);
-      const selectedRoom = roomTypes.find(r => r.id === selectedRoomTypeId);
-      const maxUnits = selectedRoom?.total_units || 100;
-      
-      if (isNaN(unitsNum) || unitsNum < 0) {
-        toast({
-          title: "Unidades inválidas",
-          description: "O número de unidades deve ser 0 ou maior",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      if (unitsNum > maxUnits) {
-        toast({
-          title: "Unidades inválidas",
-          description: `Máximo permitido: ${maxUnits} unidades`,
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      validatedUnits = unitsNum;
-    }
-
-    try {
-      const startDate = moment(selectedRange.start).format('YYYY-MM-DD');
-      const endDate = moment(selectedRange.end).format('YYYY-MM-DD');
-
+    // ✅ Reset: Envia reset: true para backend deletar
+    if (bulkReset) {
+      if (!window.confirm('Resetar datas ao padrão? Remove overrides.')) return;
       const updates = [];
-      let current = moment(startDate);
-      
-      while (current.isSameOrBefore(endDate)) {
-        const dateStr = current.format('YYYY-MM-DD');
-        let update: any = { date: dateStr };
-
-        // ✅ AÇÕES PRINCIPAIS
-        if (bulkAction === 'block') {
-          update.stop_sell = true;
-          update.available_units = 0;
-          update.price_override = null;  // Remove preço quando bloqueia
-        } else if (bulkAction === 'unblock') {
-          update.stop_sell = false;
-          update.price_override = null;  // Remove preço quando desbloqueia
-          // NÃO envia available_units → backend usa total_units
-        } else if (bulkAction === 'units' && validatedUnits !== undefined) {
-          // Ação específica para definir unidades
-          update.available_units = validatedUnits;
-          update.stop_sell = validatedUnits === 0;  // Se 0 unidades, bloqueia automaticamente
-        }
-
-        // ✅ PREÇO ESPECIAL (independente da ação, se definido e não bloqueado)
-        if (validatedPrice !== undefined && bulkAction !== 'block') {
-          update.price_override = validatedPrice;
-          update.stop_sell = false;  // Garante que não está bloqueado
-        }
-
-        // ✅ UNIDADES (independente da ação, se definido e não bloqueado)
-        if (validatedUnits !== undefined && bulkAction !== 'block' && bulkAction !== 'units') {
-          update.available_units = validatedUnits;
-        }
-
-        // Só adiciona se houver algo além da data
-        if (Object.keys(update).length > 1) {
-          updates.push(update);
-        }
-
+      let current = moment(selectedRange.start);
+      while (current.isSameOrBefore(selectedRange.end)) {
+        updates.push({ date: current.format('YYYY-MM-DD'), reset: true });
         current.add(1, 'day');
       }
-
-      if (updates.length === 0) {
-        toast({
-          title: 'Aviso',
-          description: 'Nenhuma alteração foi feita',
-          variant: 'default',
-        });
-        return;
-      }
-
-      await hotelService.bulkUpdateAvailability(
-        hotelId,
-        selectedRoomTypeId,
-        updates
-      );
-
-      toast({
-        title: 'Sucesso!',
-        description: `Atualização aplicada para ${updates.length} dia(s)`,
-      });
-
+      console.log('📤 Bulk payload (reset):', JSON.stringify({ updates }, null, 2));
+      await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, updates);
+      toast({ title: 'Sucesso', description: 'Resetado' });
       setShowBulkModal(false);
-      setSelectedRange(null);
-      setBulkAction(null);
-      setBulkPrice('');
-      setBulkUnits('');
-      
-      // ✅ Recarrega os períodos afetados
+      // Recarrega afetados (mantenha código original)
       const affectedPeriods = loadedPeriods.filter(p => {
         const periodStart = moment(p.start);
         const periodEnd = moment(p.end);
-        const updateStart = moment(startDate);
-        const updateEnd = moment(endDate);
+        const updateStart = moment(selectedRange.start);
+        const updateEnd = moment(selectedRange.end);
         
         return (
           (updateStart.isBetween(periodStart, periodEnd, 'day', '[]') ||
@@ -531,23 +504,104 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
 
       // Recarrega cada período afetado
       for (const period of affectedPeriods) {
-        await loadCalendarData(moment(period.start).toDate());
+        await loadCalendarData(moment(period.start).toDate(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: true });
+      }
+      return;
+    }
+
+    // ✅ Validação normal
+    if (!bulkAction && !bulkPrice && !bulkUnits) {
+      toast({ title: 'Erro', description: 'Selecione ação/valores', variant: 'destructive' });
+      return;
+    }
+
+    let validatedPrice: number | null = null;
+    if (bulkPrice.trim() !== '') {
+      const priceNum = parseFloat(bulkPrice);
+      if (isNaN(priceNum) || priceNum <= 0) {
+        toast({ title: 'Preço inválido', description: '> 0 MZN', variant: 'destructive' });
+        return;
+      }
+      validatedPrice = priceNum;
+    }
+
+    let validatedUnits: number | null = null;
+    if (bulkUnits.trim() !== '') {
+      const unitsNum = parseInt(bulkUnits);
+      const max = roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || 100;
+      if (isNaN(unitsNum) || unitsNum < 0 || unitsNum > max) {
+        toast({ title: 'Unidades inválidas', description: `0-${max}`, variant: 'destructive' });
+        return;
+      }
+      validatedUnits = unitsNum;
+    }
+
+    const updates = [];
+    let current = moment(selectedRange.start);
+    while (current.isSameOrBefore(selectedRange.end)) {
+      const dateStr = current.format('YYYY-MM-DD');
+      const update: any = { date: dateStr };
+
+      // ✅ Combinação de ações
+      if (bulkAction === 'block') {
+        update.stop_sell = true;
+        update.available_units = 0;
+        update.price_override = null;  // Reset preço em block
+      } else if (bulkAction === 'unblock') {
+        update.stop_sell = false;
+        if (validatedPrice === null) update.price_override = null;  // Non-explicit: reset preço
+        if (validatedUnits === null) update.available_units = null;  // Reset units to default
+      } else if (bulkAction === 'units' && validatedUnits !== null) {
+        update.available_units = validatedUnits;
+        update.stop_sell = validatedUnits === 0;
       }
 
-    } catch (err: any) {
-      console.error('Erro ao aplicar bulk update:', err);
-      
-      let errorMsg = 'Falha ao aplicar atualização em massa';
-      if (err.response?.data?.error?.includes('price_override') || 
-          err.message?.includes('price_positive')) {
-        errorMsg = 'Preço especial inválido: deve ser maior que 0 MZN';
+      // ✅ Preço: Explicit se valor, non-explicit null para reset
+      if (validatedPrice !== null) {
+        update.price_override = validatedPrice;
+      } else if (bulkPrice.trim() === '' && bulkAction !== 'block') {
+        update.price_override = null;  // Non-explicit reset
       }
+
+      // ✅ Units: Similar
+      if (validatedUnits !== null) {
+        update.available_units = validatedUnits;
+      } else if (bulkUnits.trim() === '' && bulkAction !== 'block') {
+        update.available_units = null;  // Reset to default
+      }
+
+      if (Object.keys(update).length > 1) updates.push(update);
+      current.add(1, 'day');
+    }
+
+    if (updates.length === 0) {
+      toast({ title: 'Aviso', description: 'Sem alterações', variant: 'default' });
+      return;
+    }
+
+    console.log('📤 Bulk payload:', JSON.stringify({ updates }, null, 2));
+    await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, updates);
+    toast({ title: 'Sucesso!', description: `Aplicado em ${updates.length} dias` });
+    setShowBulkModal(false);
+    setBulkReset(false);
+    
+    // ✅ Recarrega os períodos afetados
+    const affectedPeriods = loadedPeriods.filter(p => {
+      const periodStart = moment(p.start);
+      const periodEnd = moment(p.end);
+      const updateStart = moment(selectedRange.start);
+      const updateEnd = moment(selectedRange.end);
       
-      toast({
-        title: 'Erro',
-        description: errorMsg,
-        variant: 'destructive',
-      });
+      return (
+        (updateStart.isBetween(periodStart, periodEnd, 'day', '[]') ||
+         updateEnd.isBetween(periodStart, periodEnd, 'day', '[]') ||
+         (updateStart.isBefore(periodStart) && updateEnd.isAfter(periodEnd)))
+      );
+    });
+
+    // Recarrega cada período afetado
+    for (const period of affectedPeriods) {
+      await loadCalendarData(moment(period.start).toDate(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: true });
     }
   };
 
@@ -555,121 +609,79 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
   const handleUpdateDay = async () => {
     if (!selectedRoomTypeId || !selectedDay || !hotelId) return;
 
-    try {
-      const dateStr = moment(selectedDay).format('YYYY-MM-DD');
-      let update: any = { date: dateStr };
-
-      // ✅ VALIDAÇÃO DE PREÇO
-      if (dayPrice && dayPrice.trim() !== '') {
-        const priceNum = parseFloat(dayPrice);
-        
-        if (isNaN(priceNum)) {
-          toast({
-            title: "Preço inválido",
-            description: "Digite um valor numérico válido",
-            variant: "destructive",
-          });
-          return;
-        }
-        if (priceNum <= 0) {
-          toast({
-            title: "Preço inválido",
-            description: "O preço especial deve ser maior que 0 MZN",
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        update.price_override = priceNum;
-      }
-
-      // ✅ VALIDAÇÃO DE UNIDADES
-      if (dayUnits && dayUnits.trim() !== '') {
-        const unitsNum = parseInt(dayUnits);
-        const selectedRoom = roomTypes.find(r => r.id === selectedRoomTypeId);
-        const maxUnits = selectedRoom?.total_units || 100;
-        
-        if (isNaN(unitsNum) || unitsNum < 0) {
-          toast({
-            title: "Unidades inválidas",
-            description: "O número de unidades deve ser 0 ou maior",
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        if (unitsNum > maxUnits) {
-          toast({
-            title: "Unidades inválidas",
-            description: `Máximo permitido: ${maxUnits} unidades`,
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        update.available_units = unitsNum;
-      }
-      
-      // ✅ STATUS DE BLOQUEIO
-      update.stop_sell = dayBlocked;
-
-      // Se bloquear, força 0 unidades e remove preço
-      if (dayBlocked) {
-        update.available_units = 0;
-        update.price_override = null;
-      }
-
-      // Validação: Só atualiza se houver mudanças
-      if (Object.keys(update).length <= 1) {
-        toast({
-          title: 'Aviso',
-          description: 'Nenhuma alteração foi feita',
-          variant: 'default',
-        });
-        return;
-      }
-      
-      await hotelService.updateDayAvailability(
-        hotelId,
-        selectedRoomTypeId,
-        dateStr,
-        update
-      );
-      
-      toast({
-        title: 'Sucesso!',
-        description: `Dia ${moment(selectedDay).format('DD/MM/YYYY')} atualizado`,
-      });
-      
+    if (dayReset) {
+      if (!window.confirm('Resetar dia ao padrão? Remove overrides.')) return;
+      const updates = [{ date: moment(selectedDay).format('YYYY-MM-DD'), reset: true }];
+      console.log('📤 Day payload (reset):', JSON.stringify({ updates }, null, 2));
+      await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, updates);
+      toast({ title: 'Sucesso', description: 'Dia resetado' });
       setShowDayModal(false);
-      setSelectedDay(null);
-      setDayPrice('');
-      setDayUnits('');
-      setDayBlocked(false);
-      
-      // ✅ Recarrega o período que contém este dia
+      // Recarrega
+      const dateStr = moment(selectedDay).format('YYYY-MM-DD');
       const affectedPeriod = loadedPeriods.find(p => 
         moment(dateStr).isBetween(p.start, p.end, 'day', '[]')
       );
       
       if (affectedPeriod) {
-        await loadCalendarData(moment(affectedPeriod.start).toDate());
+        await loadCalendarData(moment(affectedPeriod.start).toDate(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: true });
       }
-      
-    } catch (err: any) {
-      console.error('Erro ao atualizar dia:', err);
-      
-      let errorMsg = 'Falha ao atualizar dia';
-      if (err.response?.data?.error?.includes('price_override') || 
-          err.message?.includes('price_positive')) {
-        errorMsg = 'Preço especial inválido: deve ser maior que 0 MZN';
+      return;
+    }
+
+    let validatedPrice: number | null = null;
+    if (dayPrice.trim() !== '') {
+      const priceNum = parseFloat(dayPrice);
+      if (isNaN(priceNum) || priceNum <= 0) {
+        toast({ title: 'Preço inválido', description: '> 0 MZN', variant: 'destructive' });
+        return;
       }
-      
-      toast({
-        title: 'Erro',
-        description: errorMsg,
-        variant: 'destructive',
-      });
+      validatedPrice = priceNum;
+    }
+
+    let validatedUnits: number | null = null;
+    if (dayUnits.trim() !== '') {
+      const unitsNum = parseInt(dayUnits);
+      const max = roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || 100;
+      if (isNaN(unitsNum) || unitsNum < 0 || unitsNum > max) {
+        toast({ title: 'Unidades inválidas', description: `0-${max}`, variant: 'destructive' });
+        return;
+      }
+      validatedUnits = unitsNum;
+    }
+
+    const dateStr = moment(selectedDay).format('YYYY-MM-DD');
+    const update: any = { date: dateStr };
+
+    update.stop_sell = dayBlocked;
+    if (dayBlocked) {
+      update.available_units = 0;
+      update.price_override = null;
+    }
+
+    if (validatedPrice !== null) update.price_override = validatedPrice;
+    else if (dayPrice.trim() === '' && !dayBlocked) update.price_override = null;  // Non-explicit reset
+
+    if (validatedUnits !== null) update.available_units = validatedUnits;
+    else if (dayUnits.trim() === '' && !dayBlocked) update.available_units = null;
+
+    if (Object.keys(update).length <= 1) {
+      toast({ title: 'Aviso', description: 'Sem alterações', variant: 'default' });
+      return;
+    }
+
+    console.log('📤 Day payload:', JSON.stringify({ updates: [update] }, null, 2));
+    await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, [update]);
+    toast({ title: 'Sucesso!', description: 'Dia atualizado' });
+    setShowDayModal(false);
+    setDayReset(false);
+    
+    // Recarrega o período que contém este dia
+    const affectedPeriod = loadedPeriods.find(p => 
+      moment(dateStr).isBetween(p.start, p.end, 'day', '[]')
+    );
+    
+    if (affectedPeriod) {
+      await loadCalendarData(moment(affectedPeriod.start).toDate(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: true });
     }
   };
 
@@ -1159,6 +1171,11 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                   setSelectedRoomTypeId(value);
                   setAllEvents([]);
                   setLoadedPeriods([]);
+                  setAvailabilityStats({
+                    totalDias: 0,
+                    comPrecoOverride: 0,
+                    bloqueados: 0,
+                  });
                 }}
               >
                 <SelectTrigger className="w-[280px]">
@@ -1186,6 +1203,39 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
             </div>
           </div>
 
+          {/* ✅ Mostrar estatísticas de disponibilidade */}
+          {selectedRoomTypeId && availabilityStats.totalDias > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-blue-700 font-medium">Total de Dias</p>
+                    <p className="text-2xl font-bold text-blue-900">{availabilityStats.totalDias}</p>
+                  </div>
+                  <CalendarIcon className="w-8 h-8 text-blue-500" />
+                </div>
+              </Card>
+              <Card className="p-4 bg-gradient-to-r from-green-50 to-green-100 border-green-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-green-700 font-medium">Com Preço Override</p>
+                    <p className="text-2xl font-bold text-green-900">{availabilityStats.comPrecoOverride}</p>
+                  </div>
+                  <Badge className="bg-green-500 text-white">💰</Badge>
+                </div>
+              </Card>
+              <Card className="p-4 bg-gradient-to-r from-red-50 to-red-100 border-red-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-red-700 font-medium">Dias Bloqueados</p>
+                    <p className="text-2xl font-bold text-red-900">{availabilityStats.bloqueados}</p>
+                  </div>
+                  <Badge className="bg-red-500 text-white">🚫</Badge>
+                </div>
+              </Card>
+            </div>
+          )}
+
           {/* ✅ Aviso quando não há room types */}
           {roomTypes.length === 0 && (
             <Card className="p-8 text-center bg-gradient-to-br from-gray-50 to-gray-100 border-dashed border-2 border-gray-300">
@@ -1207,12 +1257,14 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           {/* Calendário com LAZY LOADING e proteção contra navegação rápida */}
           {roomTypes.length > 0 && (
             <Card className="p-4 md:p-6 shadow-sm relative">
-              {/* ✅ Loader overlay durante navegação (apenas para cargas adicionais) */}
+              {/* ✅ Loader overlay durante navegação com mensagem específica */}
               {loadingCalendar && loadedPeriods.length > 0 && (
                 <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-20 rounded-lg">
                   <div className="text-center">
                     <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-3" />
-                    <p className="text-sm text-gray-600">Carregando dados adicionais...</p>
+                    <p className="text-sm text-gray-600">
+                      {forceReloading ? 'Forçando atualização dos dados...' : 'Carregando dados adicionais...'}
+                    </p>
                   </div>
                 </div>
               )}
@@ -1250,7 +1302,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         
                         setIsNavigating(true);
                         setCurrentViewDate(newDate);
-                        await loadCalendarData(newDate);
+                        await loadCalendarData(newDate, { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false });
                         setIsNavigating(false);
                       }}
                       eventPropGetter={(event) => {
@@ -1317,7 +1369,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                                   if (!isNavigating) {
                                     props.onNavigate('PREV');
                                     // Carrega dados para o mês anterior se necessário
-                                    loadCalendarData(moment(props.date).subtract(1, 'month').toDate());
+                                    loadCalendarData(moment(props.date).subtract(1, 'month').toDate(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false });
                                   }
                                 }}
                                 className="rbc-btn bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded disabled:opacity-50"
@@ -1331,7 +1383,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                                   if (!isNavigating) {
                                     props.onNavigate('TODAY');
                                     setCurrentViewDate(new Date());
-                                    loadCalendarData(new Date());
+                                    loadCalendarData(new Date(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false });
                                   }
                                 }}
                                 className="rbc-btn bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded disabled:opacity-50"
@@ -1345,7 +1397,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                                   if (!isNavigating) {
                                     props.onNavigate('NEXT');
                                     // Carrega dados para o próximo mês se necessário
-                                    loadCalendarData(moment(props.date).add(1, 'month').toDate());
+                                    loadCalendarData(moment(props.date).add(1, 'month').toDate(), { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false });
                                   }
                                 }}
                                 className="rbc-btn bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded disabled:opacity-50"
@@ -1416,7 +1468,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                   <div className="mt-4 text-center">
                     <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm">
                       <Info className="w-4 h-4" />
-                      <span>O calendário carrega automaticamente 3 meses conforme você navega</span>
+                      <span>O calendário carrega automaticamente {Math.ceil(DEFAULT_CHUNK_DAYS/30)} meses conforme você navega</span>
                     </div>
                   </div>
                 </>
@@ -1479,6 +1531,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       setBulkAction(null);
                       setBulkPrice('');
                       setBulkUnits('');
+                      setBulkReset(false);
                     }}
                     className="h-8 w-8 p-0"
                   >
@@ -1490,7 +1543,10 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                   {/* Botões de ação */}
                   <div className="grid grid-cols-2 gap-3">
                     <Button
-                      onClick={() => setBulkAction('block')}
+                      onClick={() => {
+                        setBulkAction('block');
+                        setBulkReset(false);
+                      }}
                       className={`${
                         bulkAction === 'block' 
                           ? 'bg-red-700 hover:bg-red-800 text-white' 
@@ -1500,7 +1556,10 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       🚫 Bloquear
                     </Button>
                     <Button
-                      onClick={() => setBulkAction('unblock')}
+                      onClick={() => {
+                        setBulkAction('unblock');
+                        setBulkReset(false);
+                      }}
                       className={`${
                         bulkAction === 'unblock' 
                           ? 'bg-green-700 hover:bg-green-800 text-white' 
@@ -1511,7 +1570,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     </Button>
                   </div>
 
-                  {/* ✅ NOVO: Campo de Unidades Disponíveis */}
+                  {/* ✅ Campo de Unidades Disponíveis */}
                   <div>
                     <Label htmlFor="bulkUnits">Definir Unidades Disponíveis</Label>
                     <Input
@@ -1520,6 +1579,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       value={bulkUnits}
                       onChange={(e) => {
                         setBulkUnits(e.target.value);
+                        setBulkReset(false);
                         if (e.target.value && !bulkAction) {
                           setBulkAction('units');
                         }
@@ -1528,6 +1588,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       className="mt-1"
                       min="0"
                       max={roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || 100}
+                      disabled={bulkReset}
                     />
                     <p className="text-xs text-muted-foreground mt-1">
                       💡 Use para reservas externas. Ex: 3 unidades, 2 reservadas no Booking → defina <strong>1</strong> aqui.
@@ -1544,6 +1605,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       onChange={(e) => {
                         const value = e.target.value;
                         setBulkPrice(value);
+                        setBulkReset(false);
                         if (value && parseFloat(value) > 0 && !bulkAction) {
                           setBulkAction('price');
                         }
@@ -1552,10 +1614,28 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       className="mt-1"
                       min="1"
                       step="0.01"
+                      disabled={bulkReset}
                     />
                     <p className="text-xs text-muted-foreground mt-1">
                       ⚠️ Deve ser maior que 0 MZN. Deixe vazio para não alterar.
                     </p>
+                  </div>
+
+                  {/* ✅ NOVO: Checkbox Reset */}
+                  <div className="flex items-center space-x-2 mt-4">
+                    <Checkbox
+                      id="bulkReset"
+                      checked={bulkReset}
+                      onCheckedChange={(checked) => {
+                        setBulkReset(!!checked);
+                        if (checked) {  // Limpa outros ao resetar
+                          setBulkAction(null);
+                          setBulkPrice('');
+                          setBulkUnits('');
+                        }
+                      }}
+                    />
+                    <Label htmlFor="bulkReset">Resetar ao padrão (remover overrides)</Label>
                   </div>
 
                   <div className="flex gap-3 mt-6">
@@ -1567,6 +1647,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         setBulkAction(null);
                         setBulkPrice('');
                         setBulkUnits('');
+                        setBulkReset(false);
                       }} 
                       className="flex-1"
                     >
@@ -1574,7 +1655,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     </Button>
                     <Button
                       onClick={handleApplyBulk}
-                      disabled={!bulkAction && !bulkPrice && !bulkUnits}
+                      disabled={!bulkAction && !bulkPrice && !bulkUnits && !bulkReset}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
                     >
                       Aplicar
@@ -1602,6 +1683,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       setDayPrice('');
                       setDayUnits('');
                       setDayBlocked(false);
+                      setDayReset(false);
                     }}
                     className="h-8 w-8 p-0"
                   >
@@ -1623,12 +1705,14 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                           setDayPrice('');
                           setDayUnits('');
                         }
+                        setDayReset(false);
                       }}
                       className="h-5 w-5 text-blue-600 rounded"
+                      disabled={dayReset}
                     />
                   </div>
 
-                  {/* ✅ NOVO: Campo de Unidades Disponíveis */}
+                  {/* ✅ Campo de Unidades Disponíveis */}
                   {!dayBlocked && (
                     <div>
                       <Label htmlFor="dayUnits">Unidades Disponíveis</Label>
@@ -1642,11 +1726,13 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                           if (e.target.value) {
                             setDayBlocked(false);
                           }
+                          setDayReset(false);
                         }}
                         placeholder={`Total padrão: ${roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || '?'} unidades`}
                         className="mt-1"
                         min="0"
                         max={roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || 100}
+                        disabled={dayReset || dayBlocked}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
                         💡 Deixe vazio para usar o total padrão ({roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || '?'} unidades)
@@ -1668,17 +1754,36 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                           if (e.target.value && parseFloat(e.target.value) > 0) {
                             setDayBlocked(false);
                           }
+                          setDayReset(false);
                         }}
                         placeholder="Deixe vazio para usar preço padrão"
                         className="mt-1"
                         min="1"
                         step="0.01"
+                        disabled={dayReset || dayBlocked}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
                         ⚠️ Deve ser maior que 0 MZN. Deixe vazio para preço padrão.
                       </p>
                     </div>
                   )}
+
+                  {/* ✅ NOVO: Checkbox Reset */}
+                  <div className="flex items-center space-x-2 mt-4">
+                    <Checkbox
+                      id="dayReset"
+                      checked={dayReset}
+                      onCheckedChange={(checked) => {
+                        setDayReset(!!checked);
+                        if (checked) {  // Limpa outros ao resetar
+                          setDayPrice('');
+                          setDayUnits('');
+                          setDayBlocked(false);
+                        }
+                      }}
+                    />
+                    <Label htmlFor="dayReset">Resetar ao padrão (remover overrides)</Label>
+                  </div>
 
                   <div className="flex gap-3 mt-6">
                     <Button 
@@ -1689,6 +1794,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         setDayPrice('');
                         setDayUnits('');
                         setDayBlocked(false);
+                        setDayReset(false);
                       }} 
                       className="flex-1"
                     >

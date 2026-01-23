@@ -418,3 +418,70 @@ export interface HotelPaymentData {
     balance_remaining: number;
   };
 }
+
+// ==================== LAZY LOADING / CALENDÁRIO ====================
+
+/**
+ * Opções para chamadas de calendário com suporte a lazy loading
+ * Usado em hotelService.getAvailabilityCalendar e similares
+ */
+export interface CalendarOptions {
+  /**
+   * Tamanho sugerido do chunk em dias (ex: 90 para 3 meses)
+   * O backend pode ignorar ou usar como orientação
+   */
+  chunkSize?: number;
+
+  /**
+   * Forçar recarregamento ignorando qualquer cache no backend
+   * Útil no botão "Recarregar" do painel do gestor
+   */
+  forceReload?: boolean;
+}
+
+/**
+ * Período carregado no estado do calendário lazy loading
+ * Usado em RoomTypesManagement.tsx para rastrear chunks já buscados
+ */
+export interface LoadedPeriod {
+  start: string; // 'YYYY-MM-DD'
+  end: string;   // 'YYYY-MM-DD'
+}
+
+/**
+ * Chunk completo de dados do calendário (disponibilidade + reservas filtradas)
+ * Pode ser usado para cache ou hooks futuros
+ */
+export interface CalendarChunk {
+  hotelId: string;
+  roomTypeId: string;
+  startDate: string;
+  endDate: string;
+  availability: any[];    // Array de dias (como retornado pela API)
+  bookings: HotelBooking[];    // Reservas que se sobrepõem ao chunk
+  events: any[];          // Eventos formatados para react-big-calendar
+  loadedAt: string;       // ISO timestamp de quando foi carregado
+}
+
+/**
+ * Opções gerais de configuração do lazy loading (pode ser usado em hooks)
+ */
+export interface LazyLoadingConfig {
+  /**
+   * Tamanho padrão do chunk em dias (usado se não especificado)
+   * @default 90
+   */
+  defaultChunkSize?: number;
+
+  /**
+   * Máximo de meses no futuro permitido (limite suave)
+   * @default 60 (5 anos)
+   */
+  maxMonthsFuture?: number;
+
+  /**
+   * Duração do cache local em milissegundos (opcional)
+   * @default 300000 (5 minutos)
+   */
+  cacheDuration?: number;
+}

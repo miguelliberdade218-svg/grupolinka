@@ -1,6 +1,8 @@
 // src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (21/01/2026)
 // Com correções para rota /host/me, min_nights_default, disponibilidade bulk update e todas as correções anteriores
 // ✅ CORREÇÕES APLICADAS: Validação de available_units vs total_units e price com null/undefined
+// ✅ CORREÇÃO DO BULK UPDATE: Aceitar ambos os formatos (snake_case e camelCase) do frontend
+// ✅ CORREÇÃO CRÍTICA: Transformação automática de snake_case para camelCase no schema
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -205,17 +207,54 @@ const respondReviewSchema = z.object({
   responseText: z.string().min(10).max(1000),
 });
 
-// ✅ CORREÇÃO: Schema para bulk update de disponibilidade com price nullable
-const bulkAvailabilityUpdateSchema = z.object({
+// ✅ CORREÇÃO CRÍTICA: Schema para bulk update de disponibilidade com transformação automática
+// Primeiro definimos o tipo das atualizações após transformação
+const updateItemSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
+  price: z.number().positive().optional().nullable(),
+  stopSell: z.boolean().optional().nullable(),
+  availableUnits: z.number().int().min(0).optional().nullable(),
+  minNights: z.number().int().positive().optional(),
+  reset: z.boolean().optional().default(false),
+});
+
+// Schema base que aceita ambos os formatos
+const bulkAvailabilityUpdateBaseSchema = z.object({
   roomTypeId: z.string().uuid(),
   updates: z.array(z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
-    price: z.number().positive().optional().nullable(),  // ✅ Aceita null
+    
+    // ✅ ACEITAR CAMPOS DO FRONTEND (snake_case)
+    price_override: z.number().positive().optional().nullable(),
+    stop_sell: z.boolean().optional().nullable(),
+    available_units: z.number().int().min(0).optional().nullable(),
+    min_nights: z.number().int().positive().optional(),
+    reset: z.boolean().optional().default(false),
+    
+    // ✅ MANTER CAMPOS ORIGINAIS (camelCase) para compatibilidade
+    price: z.number().positive().optional().nullable(),
     stopSell: z.boolean().optional().nullable(),
+    availableUnits: z.number().int().min(0).optional().nullable(),
     minNights: z.number().int().positive().optional(),
-    availableUnits: z.number().int().min(0).optional(),  // ✅ Permite 0
   })).min(1, "Pelo menos uma atualização é necessária"),
 });
+
+// Schema final com transformação
+const bulkAvailabilityUpdateSchema = bulkAvailabilityUpdateBaseSchema.transform((data) => ({
+  roomTypeId: data.roomTypeId,
+  updates: data.updates.map(update => ({
+    date: update.date,
+    reset: update.reset || false,
+    // ✅ MAPEAR snake_case → camelCase (prioridade: campos do frontend primeiro)
+    price: update.price_override ?? update.price,
+    stopSell: update.stop_sell ?? update.stopSell,
+    availableUnits: update.available_units ?? update.availableUnits,
+    minNights: update.min_nights ?? update.minNights,
+  }))
+}));
+
+// Tipo inferido do schema
+type BulkAvailabilityUpdate = z.infer<typeof bulkAvailabilityUpdateSchema>;
 
 // ==================== TIPOS ADICIONAIS ====================
 interface PaymentServiceData {
@@ -275,6 +314,22 @@ const validatePrice = (price: any): { isValid: boolean; error?: string; value?: 
   }
   
   return { isValid: true, value: num.toString() };
+};
+
+// ✅ ADICIONADA: Função para normalizar campos de snake_case para camelCase (manter para compatibilidade)
+const normalizeUpdateFields = (update: any) => {
+  const normalized: any = {
+    date: update.date,
+    reset: update.reset || false,
+  };
+ 
+  // ✅ Mapear snake_case → camelCase
+  normalized.price = update.price_override ?? update.price;
+  normalized.stopSell = update.stop_sell ?? update.stopSell;
+  normalized.availableUnits = update.available_units ?? update.availableUnits;
+  normalized.minNights = update.min_nights ?? update.minNights;
+ 
+  return normalized;
 };
 
 // ==================== MIDDLEWARE ====================
@@ -1183,11 +1238,13 @@ router.get('/:id/availability', async (req: Request, res: Response) => {
   }
 });
 
-// ✅ CORREÇÃO CRÍTICA: Rota bulk update com validação de available_units vs total_units
+// ✅ CORREÇÃO COMPLETA: Rota bulk update com transformação automática no schema
 router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
-    // Validar os dados recebidos
-    const validated = bulkAvailabilityUpdateSchema.parse(req.body);
+    console.log('📤 Received bulk payload:', JSON.stringify(req.body, null, 2));
+    
+    // ✅ O schema já faz a transformação automática de snake_case para camelCase
+    const validated: BulkAvailabilityUpdate = bulkAvailabilityUpdateSchema.parse(req.body);
     const { updates, roomTypeId } = validated;
     
     // Verificar se o roomType pertence ao hotel
@@ -1203,43 +1260,53 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
     const maxUnits = roomType.total_units || 0;
     console.log("🏨 Validando contra total de unidades:", maxUnits);
 
-    // ✅ CORREÇÃO: Processar os updates com validações rigorosas
+    // ✅ Processar os updates já normalizados pelo schema
     const processedUpdates = updates.map(update => {
       const processed: any = {
         date: update.date,
+        reset: update.reset || false,
       };
 
-      // ✅ VALIDAÇÃO DE PREÇO
+      // ✅ VALIDAÇÃO DE PREÇO (com suporte a reset)
       if (update.price !== undefined) {
-        if (update.price !== null && update.price <= 0) {
-          throw new Error(`Preço inválido para ${update.date}: deve ser maior que 0 MZN`);
+        if (update.reset) {
+          processed.price = null; // Reset explícito
+        } else if (update.price !== null) {
+          const price = parseFloat(update.price.toString());
+          if (isNaN(price) || price <= 0) {
+            throw new Error(`Preço inválido para ${update.date}: ${update.price}`);
+          }
+          processed.price = price;
         }
-        processed.price = update.price;
       }
 
-      // ✅ VALIDAÇÃO DE UNIDADES
+      // ✅ VALIDAÇÃO DE UNIDADES (com suporte a reset)
       if (update.availableUnits !== undefined) {
-        const units = Math.max(0, update.availableUnits);
-        
-        if (units > maxUnits) {
-          throw new Error(
-            `Unidades disponíveis (${units}) excedem o total do room type (${maxUnits}) para ${update.date}`
-          );
+        if (update.reset) {
+          processed.availableUnits = null; // Reset explícito
+        } else if (update.availableUnits !== null) {
+          const units = Math.max(0, update.availableUnits);
+          
+          if (units > maxUnits) {
+            throw new Error(
+              `Unidades disponíveis (${units}) excedem o total do room type (${maxUnits}) para ${update.date}`
+            );
+          }
+          
+          processed.availableUnits = units;
         }
-        
-        processed.availableUnits = units;
       }
 
-      // ✅ VALIDAÇÃO DE STOP_SELL
+      // ✅ VALIDAÇÃO DE STOP_SELL (com suporte a reset)
       if (update.stopSell !== undefined) {
-        processed.stopSell = update.stopSell === true ? true : 
-                            update.stopSell === false ? false : 
-                            null;
+        processed.stopSell = update.reset ? false : Boolean(update.stopSell);
       }
 
-      // ✅ MIN_NIGHTS
+      // ✅ MIN_NIGHTS (com suporte a reset)
       if (update.minNights !== undefined) {
-        if (update.minNights < 1) {
+        if (update.reset) {
+          processed.minNights = 1; // Reset para padrão
+        } else if (update.minNights < 1) {
           throw new Error(`Mínimo de noites deve ser >= 1 para ${update.date}`);
         }
         processed.minNights = update.minNights;
@@ -1253,7 +1320,8 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       hotelId: req.params.id,
       maxUnits,
       updatesCount: processedUpdates.length,
-      sampleUpdate: processedUpdates[0]
+      sampleUpdate: processedUpdates[0],
+      resetFlags: processedUpdates.filter(u => u.reset).length
     });
 
     const updatedCount = await bulkUpdateAvailability(roomTypeId, processedUpdates);
@@ -1780,7 +1848,7 @@ router.get('/:id/payments/pending', requireAuth, requireHotelOwner, async (req: 
   }
 });
 
-router.post('/:id/bookings/:bookingId/process-payment', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
+router.post('/:id/bookings/:bookingId/process-payment', requireAuth, requireHotelOwner, async (req: Request, res:Response) => {
   try {
     const { bookingId } = req.params;
     const { paymentOptionId, selectedPromotionId } = req.body;

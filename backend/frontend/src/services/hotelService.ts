@@ -2,7 +2,10 @@
 // Serviço para gerenciamento de hotéis - Integração com API real
 // VERSÃO ATUALIZADA COM getMyHotels() E getActiveHotel()
 // ✅ CORRIGIDO: Todas as rotas ajustadas para backend existente (sem /api/v2 prefix)
+// ✅ ATUALIZADO: Suporte completo a lazy loading com options (chunkSize, forceReload)
+// ✅ ADICIONADO: Função de conversão para tipo compatível
 import { apiService } from './api';
+import moment from 'moment';
 
 // ==================== TIPOS ====================
 export interface Hotel {
@@ -181,6 +184,47 @@ export interface AvailabilityUpdate {
   price_override?: number | string;
   stop_sell?: boolean;
   min_nights?: number;
+}
+
+export interface CalendarOptions {
+  chunkSize?: number;      // Tamanho sugerido do chunk em dias (ex: 90)
+  forceReload?: boolean;   // Forçar recarregamento (ignora cache no backend se suportado)
+}
+
+// ==================== FUNÇÃO DE CONVERSÃO ====================
+/**
+ * Converte um Hotel do serviço (com campos opcionais) para o tipo compartilhado
+ * (com campos obrigatórios como images e amenities)
+ */
+export function convertServiceHotelToSharedHotel(serviceHotel: any): any {
+  // Importante: Esta função deve retornar o tipo Hotel de src/shared/types/hotels.ts
+  // Aqui estamos garantindo que arrays vazios sejam fornecidos para campos obrigatórios
+  return {
+    id: serviceHotel.id,
+    name: serviceHotel.name,
+    slug: serviceHotel.slug || '',
+    description: serviceHotel.description || '',
+    address: serviceHotel.address,
+    locality: serviceHotel.locality,
+    province: serviceHotel.province,
+    country: serviceHotel.country || 'Moçambique',
+    lat: serviceHotel.lat || null,
+    lng: serviceHotel.lng || null,
+    contact_email: serviceHotel.contact_email,
+    contact_phone: serviceHotel.contact_phone || null,
+    policies: serviceHotel.policies || null,
+    images: serviceHotel.images || [],           // ← Garante array vazio se undefined
+    amenities: serviceHotel.amenities || [],     // ← Garante array vazio se undefined
+    check_in_time: serviceHotel.check_in_time || null,
+    check_out_time: serviceHotel.check_out_time || null,
+    rating: serviceHotel.rating || 0,
+    total_reviews: serviceHotel.total_reviews || 0,
+    is_active: serviceHotel.is_active ?? true,
+    is_featured: serviceHotel.is_featured ?? false,
+    host_id: serviceHotel.host_id,
+    created_at: serviceHotel.created_at,
+    updated_at: serviceHotel.updated_at,
+  };
 }
 
 class HotelService {
@@ -460,21 +504,75 @@ class HotelService {
 
   /**
    * Obter calendário de disponibilidade
-   * ✅ CORRIGIDO: Usa rota correta do backend (/api/hotels/...)
+   * ✅ SUPORTE A LAZY LOADING: aceita chunkSize e forceReload
+   * @param hotelId ID do hotel
+   * @param roomTypeId ID do tipo de quarto
+   * @param start Data inicial (YYYY-MM-DD)
+   * @param end Data final (YYYY-MM-DD)
+   * @param options Opcional: controle de chunk e recarregamento
    */
-  async getAvailabilityCalendar(hotelId: string, roomTypeId: string, start: string, end: string): Promise<ApiResponse<any[]>> {
+  async getAvailabilityCalendar(
+    hotelId: string,
+    roomTypeId: string,
+    start: string,
+    end: string,
+    options?: CalendarOptions
+  ): Promise<ApiResponse<any[]>> {
     try {
-      // ✅ CORREÇÃO: Usa a rota correta /api/hotels/:hotelId/availability (sem v2)
-      const url = `/api/hotels/${hotelId}/availability?startDate=${start}&endDate=${end}&roomTypeId=${roomTypeId}`;
-      
-      console.log('📅 Buscando disponibilidade:', url);
-      return await apiService.get<ApiResponse<any[]>>(url);
+      // Validação básica de datas
+      if (!moment(start, 'YYYY-MM-DD', true).isValid() || !moment(end, 'YYYY-MM-DD', true).isValid()) {
+        throw new Error('Formato de data inválido. Use YYYY-MM-DD');
+      }
+      if (moment(end).isBefore(moment(start))) {
+        throw new Error('Data final deve ser após a data inicial');
+      }
+
+      // Monta query string
+      let url = `/api/hotels/${hotelId}/availability?startDate=${start}&endDate=${end}&roomTypeId=${roomTypeId}`;
+
+      // Adiciona parâmetros opcionais
+      if (options?.chunkSize) {
+        url += `&chunkSize=${options.chunkSize}`;
+      }
+      if (options?.forceReload) {
+        url += `&forceReload=true`;
+      }
+
+      console.log('📅 Buscando disponibilidade (lazy):', {
+        url,
+        period: `${start} → ${end}`,
+        days: moment(end).diff(moment(start), 'days') + 1,
+        chunkSize: options?.chunkSize || 'padrão do backend',
+        forceReload: !!options?.forceReload
+      });
+
+      const response = await apiService.get<ApiResponse<any[]>>(url);
+
+      // Log de resultado para debug (melhorado)
+      if (response.success && response.data) {
+        console.log('✅ Disponibilidade carregada:', {
+          totalDias: response.data.length,
+          periodo: `${response.data[0]?.date || '—'} → ${response.data[response.data.length - 1]?.date || '—'}`,
+          comPrecoOverride: response.data.filter(d => d.price_override != null).length,
+          bloqueados: response.data.filter(d => d.stop_sell).length
+        });
+      }
+
+      return response;
     } catch (error) {
-      console.error('Erro ao carregar calendário de disponibilidade:', error);
-      return { 
-        success: false, 
+      console.error('❌ Erro ao carregar calendário de disponibilidade:', {
+        hotelId,
+        roomTypeId,
+        start,
+        end,
+        options,
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      return {
+        success: false,
         error: error instanceof Error ? error.message : 'Erro ao carregar calendário de disponibilidade',
-        data: [] 
+        data: []
       };
     }
   }
@@ -730,6 +828,7 @@ class HotelService {
 
   /**
    * Pega o hotel atualmente ativo (salvo no localStorage ou fallback para o primeiro)
+   * IMPORTANTE: Este método retorna o Hotel do tipo do serviço (com campos opcionais)
    */
   async getActiveHotel(): Promise<Hotel | null> {
     const savedId = localStorage.getItem('activeHotelId');
@@ -739,7 +838,7 @@ class HotelService {
       try {
         const result = await this.getHotelById(savedId);
         if (result.success && result.data) {
-          return result.data;
+          return result.data; // Retorna o Hotel do tipo do serviço
         }
       } catch (err) {
         console.warn('Hotel salvo não encontrado:', err);
@@ -752,10 +851,20 @@ class HotelService {
     if (myHotels.success && myHotels.data.length > 0) {
       const first = myHotels.data[0];
       localStorage.setItem('activeHotelId', first.id);
-      return first;
+      return first; // Retorna o Hotel do tipo do serviço
     }
 
     return null;
+  }
+
+  /**
+   * Obtém o hotel ativo já convertido para o tipo compartilhado
+   * (com images: string[] e amenities: string[] obrigatórios)
+   */
+  async getActiveHotelConverted(): Promise<any> {
+    const hotel = await this.getActiveHotel();
+    if (!hotel) return null;
+    return convertServiceHotelToSharedHotel(hotel);
   }
 
   // ==================== MÉTODOS AUXILIARES ====================

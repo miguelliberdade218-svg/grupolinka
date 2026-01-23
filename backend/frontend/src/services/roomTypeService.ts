@@ -225,6 +225,7 @@ class RoomTypeService {
    */
   async bulkUpdateAvailability(hotelId: string, roomTypeId: string, updates: any[]): Promise<ApiResponse<{ updatedCount: number }>> {
     try {
+      console.log('📤 Service payload:', JSON.stringify({ roomTypeId, updates }, null, 2));
       // ✅ CORREÇÃO: /api/hotels/${hotelId}/availability/bulk (sem v2)
       const response = await apiService.post<ApiResponse<{ updatedCount: number }>>(
         `/api/hotels/${hotelId}/availability/bulk`,

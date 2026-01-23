@@ -1,3 +1,10 @@
+// ===== CARREGAMENTO DO .env NO TOPO ABSOLUTO (obrigatório!) =====
+import 'dotenv/config'; // Carrega .env ANTES de qualquer coisa
+
+// Debug imediato para confirmar .env
+console.log('DEBUG INICIAL - DATABASE_URL do .env:', process.env.DATABASE_URL || 'NÃO ENCONTRADA! Verifique .env e dotenv');
+
+// ===== IMPORTS =====
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
@@ -18,7 +25,7 @@ import chatRoutes from './chat';
 // ===== ROTAS DE LOCALIDADES =====
 import locationsRouter from './locations';
 
-// ===== NOVO SISTEMA DE HOTÉIS (o que construímos juntos) =====
+// ===== NOVO SISTEMA DE HOTÉIS =====
 import hotelController from '../src/modules/hotels/hotelController';
 
 // ===== NOVO SISTEMA DE EVENTS =====
@@ -54,8 +61,11 @@ import { db } from '../db';
 import { users } from '../shared/schema';
 import { eq, sql } from 'drizzle-orm';
 
-// ===== FIREBASE ADMIN (para debug) =====
+// ===== FIREBASE ADMIN =====
 import admin from 'firebase-admin';
+
+// ===== PG-BOSS JOB =====
+import { boss, runAvailabilityInitialization, JOB_NAME } from '../src/jobs/availabilityJob';
 
 // ===== FUNÇÕES AUXILIARES =====
 const safeString = (value: unknown, defaultValue: string = ''): string => {
@@ -79,7 +89,10 @@ const isValidUid = (uid: string): boolean => {
 };
 
 export async function registerRoutes(app: express.Express): Promise<void> {
-  // ===== CORS DINÂMICO =====
+  // Debug final antes de usar db
+  console.log('DEBUG ANTES DE ROTAS - DATABASE_URL:', process.env.DATABASE_URL?.replace(/:.*@/, ':****@') || 'NÃO DEFINIDA');
+
+  // ===== CORS =====
   app.use(cors({
     origin: (origin, callback) => {
       const allowedOrigins = [
@@ -109,7 +122,7 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   }));
   console.log('CORS configurado com sucesso');
 
-  // ===== LOGGING SIMPLES =====
+  // Logging simples
   app.use((req, res, next) => {
     if (process.env.NODE_ENV !== 'production' || req.method !== 'GET') {
       console.log('Request:', {
@@ -121,14 +134,11 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     next();
   });
 
-  // ===== BODY PARSERS =====
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // ===== DEBUG FIREBASE AUTH =====
+  // Debug Firebase Auth
   app.get('/api/debug/firebase-auth', async (req, res) => {
-    // ... (mantido igual — funciona bem)
-    // código completo do debug que já tinhas
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -155,15 +165,13 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     }
   });
 
-  // ===== ROTAS DE LOCALIDADES =====
+  // Rotas
   app.use('/api/locations', locationsRouter);
   console.log('Rotas de localidades registradas');
 
-  // ===== ROTA RPC =====
   app.use('/api/rpc', rpcRoutes);
   console.log('Rotas RPC registradas');
 
-  // ===== TESTE POSTGIS =====
   app.get('/api/test-postgis', async (req, res) => {
     try {
       const postgisTest = await db.execute(sql`SELECT PostGIS_Version()`);
@@ -189,7 +197,6 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     }
   });
 
-  // ===== SUGESTÕES DE LOCALIZAÇÃO =====
   app.get('/api/locations/suggest', async (req, res) => {
     try {
       const { query, limit = 10 } = req.query;
@@ -224,7 +231,6 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     }
   });
 
-  // ===== UPSERT DE USUÁRIO (mantido) =====
   const upsertUser = async (userData: {
     uid: string;
     email: string;
@@ -232,29 +238,22 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     photoURL?: string;
     roles?: string[];
   }) => {
-    // ... (código completo mantido igual)
-    // (igual ao que tinhas — funciona bem)
+    // ... (mantido igual)
   };
 
-  // ===== ROTAS DE AUTH (mantidas) =====
-  app.post('/api/auth/signup', async (req, res) => { /* ... código mantido ... */ });
-  app.post('/api/auth/check-registration', async (req, res) => { /* ... código mantido ... */ });
-  app.post('/api/auth/setup-roles', async (req, res) => { /* ... código mantido ... */ });
-
-  // ===== REGISTRO DE TODAS AS ROTAS =====
+  app.post('/api/auth/signup', async (req, res) => { /* ... mantido ... */ });
+  app.post('/api/auth/check-registration', async (req, res) => { /* ... mantido ... */ });
+  app.post('/api/auth/setup-roles', async (req, res) => { /* ... mantido ... */ });
 
   app.use('/api/health', sharedHealthRoutes);
   app.use('/api/drizzle', drizzleApiRoutes);
 
-  // Hotéis (novo sistema)
   app.use('/api/hotels', hotelController);
   console.log('Sistema de Hotéis registrado');
 
-  // Events (novo sistema)
   app.use('/api/events', eventController);
   console.log('Sistema de Events registrado');
 
-  // Rides / Drivers / Veículos
   app.use('/api/provider/rides', providerRidesRoutes);
   app.use('/api/provider/dashboard', providerDashboardRoutes);
   app.use('/api/rides', rideController);
@@ -262,30 +261,25 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/vehicles', vehicleRoutes);
   console.log('Rotas de Rides/Drivers/Veículos registradas');
 
-  // Parcerias
   app.use('/api/partnerships', partnershipRoutes);
   app.use('/api/driver/partnerships', driverPartnershipRoutes);
-   console.log('Rotas de parcerias registradas');
+  console.log('Rotas de parcerias registradas');
 
-  // Outros módulos
   app.use('/api/clients', clientController);
   app.use('/api/admin/system', adminController);
   app.use('/api/users', userController);
 
-  // Rotas raiz
   app.use('/api/admin-legacy', adminRoutes);
   app.use('/api/payment', paymentRoutes);
   app.use('/api/profile', profileRoutes);
   app.use('/api/search', searchRoutes);
 
-  // Sistemas funcionais
   app.use('/api/auth', authRoutes);
   app.use('/api/bookings', bookingsRoutes);
   app.use('/api/geo', geoRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/chat', chatRoutes);
 
-  // Health check completo
   app.get('/api/health-check', async (req, res) => {
     try {
       await db.select().from(users).limit(1);
@@ -313,7 +307,6 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     }
   });
 
-  // 404 fallback
   app.use('*', (req, res) => {
     res.status(404).json({
       success: false,
@@ -322,7 +315,6 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     });
   });
 
-  // Error handler
   app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Erro não tratado:', error);
     res.status(500).json({
@@ -333,4 +325,38 @@ export async function registerRoutes(app: express.Express): Promise<void> {
 
   console.log('Todas as rotas registradas com sucesso!');
   console.log('API pronta em /api/*');
+
+  // ===== PG-BOSS =====
+  (async () => {
+    try {
+      console.log('Tentando iniciar pg-boss com DATABASE_URL:', process.env.DATABASE_URL?.replace(/:.*@/, ':****@') || 'NÃO DEFINIDA');
+
+      await boss.start();
+      console.log('✅ pg-boss iniciado com sucesso (schema: pgboss)');
+
+      // Cria a queue explicitamente ANTES de agendar (resolve "Queue not found")
+      await boss.createQueue(JOB_NAME);
+      console.log(`✅ Queue "${JOB_NAME}" criada com sucesso`);
+
+      // Agora agenda o job recorrente
+      await boss.schedule(
+        JOB_NAME,
+        '0 3 * * 1', // segundas às 03:00 CAT
+        {}, // sem dados extras
+        {
+          tz: 'Africa/Maputo',
+          retryLimit: 5,
+          retryDelay: 60 * 1000,
+        }
+      );
+      console.log(`📅 Job "${JOB_NAME}" agendado: segundas 03:00 CAT`);
+
+      // Executa manualmente para teste imediato
+      console.log('🧪 Executando job manualmente para teste...');
+      await runAvailabilityInitialization();
+
+    } catch (err) {
+      console.error('❌ Erro ao iniciar pg-boss ou job:', err);
+    }
+  })();
 }
