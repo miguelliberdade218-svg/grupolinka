@@ -23,7 +23,6 @@ import CreateRoomTypeFormModern from './CreateRoomTypeFormModern';
 import {
   CalendarOptions,
   LoadedPeriod,
-  // CalendarChunk, LazyLoadingConfig (se usar depois)
 } from '@/shared/types/hotels';
 
 interface RoomTypesManagementProps {
@@ -52,19 +51,21 @@ interface CalendarEvent {
     status?: 'available' | 'blocked' | 'occupied' | 'booked';
     date?: string;
     availableUnits?: number;
+    stopSell?: boolean;
   };
 }
 
 /**
  * Componente para gerenciar room types (quartos) do hotel
- * ✅ VERSÃO FINAL 100% - COMPLETA E PROFISSIONAL COM LAZY LOADING
- * ✅ Calendário com lazy loading: carrega 3 meses sob demanda
- * ✅ Navegação "infinita": gestor pode ir até 5+ anos no futuro (com limite suave)
- * ✅ Edição em qualquer data futura (sem limites fixos)
- * ✅ Tooltip bonito, reservas em azul, edição individual
- * ✅ Botão "Recarregar" para atualizar dados em tempo real
- * ✅ UX perfeita: toasts, loading, validações, recarregamento automático
- * ✅ Sistema de promoções completo e profissional
+ * VERSÃO FINAL 100% - COMPLETA E PROFISSIONAL COM LAZY LOADING
+ * Calendário com lazy loading: carrega 3 meses sob demanda
+ * Navegação "infinita": gestor pode ir até 5+ anos no futuro (com limite suave)
+ * Edição em qualquer data futura (sem limites fixos)
+ * Tooltip bonito, reservas em azul, edição individual
+ * Botão "Recarregar" para atualizar dados em tempo real
+ * UX perfeita: toasts, loading, validações, recarregamento automático
+ * Sistema de promoções completo e profissional
+ * CORREÇÕES APLICADAS: Lógica mais clara e cores distintas para preços relativos
  */
 export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelId }) => {
   const [activeSubTab, setActiveSubTab] = useState('list');
@@ -93,7 +94,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
   const [dayUnits, setDayUnits] = useState<string>('');
   const [dayBlocked, setDayBlocked] = useState<boolean>(false);
   
-  // ✅ NOVOS ESTADOS PARA RESET
+  // NOVOS ESTADOS PARA RESET
   const [bulkReset, setBulkReset] = useState(false);
   const [dayReset, setDayReset] = useState(false);
 
@@ -137,21 +138,21 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     'Campo de Ténis', 'Campo de Golfe', 'Mergulho', 'Passeios a Cavalo', 'Ginásio 24h', 'Aulas de Ioga',
   ];
 
-  // ✅ Carregar room types
+  // Carregar room types
   useEffect(() => {
     if (hotelId) {
       loadRoomTypes();
     }
   }, [hotelId]);
 
-  // ✅ Carregar promoções quando abrir a aba
+  // Carregar promoções quando abrir a aba
   useEffect(() => {
     if (hotelId && activeSubTab === 'promotions') {
       loadPromotions();
     }
   }, [hotelId, activeSubTab]);
 
-  // ✅ Resetar estados do calendário quando mudar de room type ou aba
+  // Resetar estados do calendário quando mudar de room type ou aba
   useEffect(() => {
     if (activeSubTab === 'availability' && selectedRoomTypeId) {
       setAllEvents([]);
@@ -190,7 +191,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   };
 
-  // ✅ Carregar promoções
+  // Carregar promoções
   const loadPromotions = async () => {
     setLoadingPromotions(true);
     try {
@@ -210,19 +211,19 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   };
 
-  // ✅ LAZY LOADING: Carregar disponibilidade + reservas por chunks
+  // LAZY LOADING: Carregar disponibilidade + reservas por chunks
   const loadCalendarData = async (
     targetDate: Date = currentViewDate,
     options: CalendarOptions = { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false }
   ) => {
     if (!selectedRoomTypeId || !hotelId) return;
     
-    // ✅ Calcula o chunk baseado no chunkSize (convertendo dias para meses)
+    // Calcula o chunk baseado no chunkSize (convertendo dias para meses)
     const chunkMonths = Math.ceil((options.chunkSize || DEFAULT_CHUNK_DAYS) / 30);
     const start = moment(targetDate).startOf('month').format('YYYY-MM-DD');
     const end = moment(targetDate).add(chunkMonths, 'months').endOf('month').format('YYYY-MM-DD');
 
-    // ✅ Verifica limite suave de meses futuros (5 anos)
+    // Verifica limite suave de meses futuros (5 anos)
     const monthsFromNow = moment(end).diff(moment(), 'months');
     if (monthsFromNow > MAX_MONTHS_FUTURE) {
       toast({
@@ -239,7 +240,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     );
 
     if (isAlreadyLoaded) {
-      console.log('📅 Período já carregado:', start, 'até', end);
+      console.log('Período já carregado:', start, 'até', end);
       return;
     }
 
@@ -247,13 +248,13 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     setForceReloading(options.forceReload || false);
     
     try {
-      console.log('📅 CALENDÁRIO (LAZY): Buscando disponibilidade de', start, 'até', end, 'com opções:', {
+      console.log('CALENDÁRIO (LAZY): Buscando disponibilidade de', start, 'até', end, 'com opções:', {
         chunkSize: options.chunkSize,
         forceReload: options.forceReload,
         chunkMonths
       });
 
-      // ✅ Busca disponibilidade para o chunk
+      // Busca disponibilidade para o chunk
       const availResponse = await hotelService.getAvailabilityCalendar(
         hotelId,
         selectedRoomTypeId,
@@ -263,7 +264,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       );
       const availability = availResponse?.data || [];
       
-      // ✅ CONTAGEM CORRETA DE OVERRIDES E BLOQUEIOS
+      // CONTAGEM CORRETA DE OVERRIDES E BLOQUEIOS
       let comPrecoOverride = 0;
       let bloqueados = 0;
 
@@ -278,24 +279,24 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
         }
       });
 
-      console.log('🔍 Contagem real:', { 
+      console.log('Contagem real:', { 
         comPrecoOverride, 
         bloqueados, 
         totalDias: availability.length 
       });
 
-      // ✅ Atualiza estatísticas
+      // Atualiza estatísticas
       setAvailabilityStats(prev => ({
         totalDias: prev.totalDias + availability.length,
         comPrecoOverride: prev.comPrecoOverride + comPrecoOverride,
         bloqueados: prev.bloqueados + bloqueados,
       }));
 
-      // ✅ Tratamento para quando a API retorna array vazio
+      // Tratamento para quando a API retorna array vazio
       if (availability.length === 0) {
-        console.warn('⚠️ API retornou array vazio de disponibilidade para o período', start, 'até', end);
+        console.warn('API retornou array vazio de disponibilidade para o período', start, 'até', end);
         
-        // ✅ MELHORIA: Aviso apenas para períodos muito futuros ou primeira carga
+        // MELHORIA: Aviso apenas para períodos muito futuros ou primeira carga
         const isFarFuture = moment(end).diff(moment(), 'months') > 12;
         if (loadedPeriods.length === 0 || isFarFuture) {
           toast({
@@ -305,14 +306,14 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           });
         }
       } else {
-        console.log('✅ API retornou', availability.length, 'dias de disponibilidade');
+        console.log('API retornou', availability.length, 'dias de disponibilidade');
       }
 
-      // ✅ Busca reservas para este room type (não limitado por período)
+      // Busca reservas para este room type (não limitado por período)
       const bookingsResponse = await hotelService.getBookingsByRoomType(hotelId, selectedRoomTypeId);
       const bookings = bookingsResponse?.success ? bookingsResponse.data : [];
 
-      // ✅ Filtra reservas que estão dentro do chunk atual
+      // Filtra reservas que estão dentro do chunk atual
       const filteredBookings = bookings.filter((booking: any) => {
         const bookingStart = moment(booking.checkIn);
         const bookingEnd = moment(booking.checkOut);
@@ -323,7 +324,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
         );
       });
 
-      // ✅ Cria eventos de disponibilidade
+      // Cria eventos de disponibilidade
       const availEvents: CalendarEvent[] = availability.map((item: any) => ({
         id: `avail-${item.date}`,
         title: item.availableUnits > 0 && !item.stopSell
@@ -338,10 +339,11 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           status: item.stopSell ? 'blocked' : item.availableUnits > 0 ? 'available' : 'occupied',
           date: item.date,
           availableUnits: item.availableUnits,
+          stopSell: item.stopSell,
         },
       }));
 
-      // ✅ Cria eventos de reservas (apenas para o chunk atual)
+      // Cria eventos de reservas (apenas para o chunk atual)
       const bookingEvents: CalendarEvent[] = filteredBookings.map((booking: any) => ({
         id: `booking-${booking.id}`,
         title: `Reserva: ${booking.guestName || 'Cliente'}`,
@@ -351,20 +353,20 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
         resource: { status: 'booked' },
       }));
 
-      // ✅ Adiciona novos eventos, evitando duplicações
+      // Adiciona novos eventos, evitando duplicações
       setAllEvents(prev => {
         const existingIds = new Set(prev.map(e => e.id));
         const newEvents = [...availEvents, ...bookingEvents].filter(e => !existingIds.has(e.id));
         return [...prev, ...newEvents];
       });
 
-      // ✅ Marca o período como carregado
+      // Marca o período como carregado
       setLoadedPeriods(prev => [...prev, { start, end }]);
       
-      console.log('📅 Período carregado:', start, 'até', end, '| Total períodos:', loadedPeriods.length + 1);
+      console.log('Período carregado:', start, 'até', end, '| Total períodos:', loadedPeriods.length + 1);
 
     } catch (err) {
-      console.error('❌ Erro ao carregar calendário (lazy):', err);
+      console.error('Erro ao carregar calendário (lazy):', err);
       toast({
         title: 'Erro',
         description: 'Não foi possível carregar disponibilidade/reservas',
@@ -376,7 +378,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   };
 
-  // ✅ Função para recarregar calendário manualmente (com reset)
+  // Função para recarregar calendário manualmente (com reset)
   const reloadCalendarData = async () => {
     if (!selectedRoomTypeId || !hotelId) {
       toast({
@@ -403,7 +405,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     await loadCalendarData(currentViewDate, { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: true });
   };
 
-  // ✅ Função para carregar mais meses à frente
+  // Função para carregar mais meses à frente
   const loadMoreMonths = async (additionalMonths: number = 6) => {
     if (!selectedRoomTypeId || !hotelId) return;
     
@@ -416,9 +418,64 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     });
   };
 
+  // FUNÇÃO eventPropGetter ATUALIZADA COM LÓGICA MAIS CLARA E CORES DISTINTAS
+  const eventPropGetter = (event: any) => {
+    // Obtém o base_price do room type selecionado
+    const basePrice = roomTypes.find(r => r.id === selectedRoomTypeId)?.base_price || 0;
+    const currentPrice = event.resource?.price || basePrice; // Fallback para base se não override
+    const availableUnits = event.resource?.availableUnits || 0; // Unidades disponíveis
+    const stopSell = event.resource?.stopSell || false; // Bloqueio
+    const status = event.resource?.status || ''; // Ex.: 'booked'
+    
+    // Calcular ratio relativo ao base_price (ex.: 1.2 = +20%)
+    const priceRatio = basePrice > 0 ? currentPrice / basePrice : 1;
+    
+    let backgroundColor = '#e0f2fe'; // Disponível (azul claro)
+    let color = '#000000'; // Texto padrão
+    let title = `Disponível: ${availableUnits} unidades | Preço: ${currentPrice} MZN`; // Tooltip default
+    
+    // Lógica prioritária: Status primeiro, depois preço
+    if (status === 'booked') {
+      backgroundColor = '#3b82f6'; // Reserva (azul médio)
+      color = '#ffffff';
+      title = `Reserva: ${availableUnits} unidades reservadas | Preço: ${currentPrice} MZN`;
+    } else if (stopSell || status === 'blocked') {
+      backgroundColor = '#dc2626'; // Bloqueado (vermelho forte) — mais distinto
+      color = '#ffffff';
+      title = `Bloqueado: 0 unidades | Preço: ${currentPrice} MZN`;
+    } else if (availableUnits === 0) {
+      backgroundColor = '#f87171'; // Indisponível (vermelho médio) — distinto de bloqueado
+      color = '#ffffff';
+      title = `Indisponível: 0 unidades | Preço: ${currentPrice} MZN`;
+    } else if (priceRatio > 1.5) { // Preço Muito Alto: +50% do base (ex.: alta temporada)
+      backgroundColor = '#f59e0b'; // Laranja (aviso alto)
+      color = '#000000';
+      title = `Preço Muito Alto: ${currentPrice} MZN (+${Math.round((priceRatio - 1) * 100)}%)`;
+    } else if (priceRatio > 1.2) { // Preço Especial: +20% do base (ex.: evento especial)
+      backgroundColor = '#fef3c7'; // Amarelo claro
+      color = '#000000';
+      title = `Preço Especial: ${currentPrice} MZN (+${Math.round((priceRatio - 1) * 100)}%)`;
+    }
+    
+    // Retorno com estilo e tooltip
+    return {
+      style: { 
+        backgroundColor, 
+        color,
+        borderRadius: '4px',
+        opacity: 0.9,
+        border: '0px',
+        display: 'block',
+        padding: '2px 6px',
+        fontSize: '12px',
+      },
+      title, // Tooltip mostrado ao hover (Big Calendar suporta via title prop)
+    };
+  };
+
   const handleDeleteRoomType = async (roomTypeId: string, roomName: string) => {
     if (!hotelId) {
-      toast({ title: "❌ Erro", description: "Nenhum hotel selecionado", variant: "destructive" });
+      toast({ title: "Erro", description: "Nenhum hotel selecionado", variant: "destructive" });
       return;
     }
     if (!window.confirm(`Tem certeza que deseja deletar "${roomName}"?`)) return;
@@ -430,18 +487,18 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
         if (selectedRoomTypeId === roomTypeId) {
           setSelectedRoomTypeId(roomTypes.length > 1 ? roomTypes[1].id : null);
         }
-        toast({ title: "✅ Quarto deletado", description: `${roomName} removido com sucesso` });
+        toast({ title: "Quarto deletado", description: `${roomName} removido com sucesso` });
       } else {
-        toast({ title: "❌ Erro", description: response.error || 'Falha ao deletar', variant: "destructive" });
+        toast({ title: "Erro", description: response.error || 'Falha ao deletar', variant: "destructive" });
       }
     } catch (err) {
-      toast({ title: "❌ Erro", description: "Falha ao deletar quarto", variant: "destructive" });
+      toast({ title: "Erro", description: "Falha ao deletar quarto", variant: "destructive" });
     }
   };
 
   const handleAddRoom = () => {
     if (!hotelId) {
-      toast({ title: "⚠️ Selecione um hotel", description: "É preciso selecionar um hotel primeiro", variant: "default" });
+      toast({ title: "Selecione um hotel", description: "É preciso selecionar um hotel primeiro", variant: "default" });
       return;
     }
     setEditingId(null);
@@ -475,7 +532,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       return;
     }
 
-    // ✅ Reset: Envia reset: true para backend deletar
+    // Reset: Envia reset: true para backend deletar
     if (bulkReset) {
       if (!window.confirm('Resetar datas ao padrão? Remove overrides.')) return;
       const updates = [];
@@ -484,7 +541,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
         updates.push({ date: current.format('YYYY-MM-DD'), reset: true });
         current.add(1, 'day');
       }
-      console.log('📤 Bulk payload (reset):', JSON.stringify({ updates }, null, 2));
+      console.log('Bulk payload (reset):', JSON.stringify({ updates }, null, 2));
       await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, updates);
       toast({ title: 'Sucesso', description: 'Resetado' });
       setShowBulkModal(false);
@@ -509,7 +566,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       return;
     }
 
-    // ✅ Validação normal
+    // Validação normal
     if (!bulkAction && !bulkPrice && !bulkUnits) {
       toast({ title: 'Erro', description: 'Selecione ação/valores', variant: 'destructive' });
       return;
@@ -542,7 +599,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       const dateStr = current.format('YYYY-MM-DD');
       const update: any = { date: dateStr };
 
-      // ✅ Combinação de ações
+      // Combinação de ações
       if (bulkAction === 'block') {
         update.stop_sell = true;
         update.available_units = 0;
@@ -556,14 +613,14 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
         update.stop_sell = validatedUnits === 0;
       }
 
-      // ✅ Preço: Explicit se valor, non-explicit null para reset
+      // Preço: Explicit se valor, non-explicit null para reset
       if (validatedPrice !== null) {
         update.price_override = validatedPrice;
       } else if (bulkPrice.trim() === '' && bulkAction !== 'block') {
         update.price_override = null;  // Non-explicit reset
       }
 
-      // ✅ Units: Similar
+      // Units: Similar
       if (validatedUnits !== null) {
         update.available_units = validatedUnits;
       } else if (bulkUnits.trim() === '' && bulkAction !== 'block') {
@@ -579,13 +636,13 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       return;
     }
 
-    console.log('📤 Bulk payload:', JSON.stringify({ updates }, null, 2));
+    console.log('Bulk payload:', JSON.stringify({ updates }, null, 2));
     await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, updates);
     toast({ title: 'Sucesso!', description: `Aplicado em ${updates.length} dias` });
     setShowBulkModal(false);
     setBulkReset(false);
     
-    // ✅ Recarrega os períodos afetados
+    // Recarrega os períodos afetados
     const affectedPeriods = loadedPeriods.filter(p => {
       const periodStart = moment(p.start);
       const periodEnd = moment(p.end);
@@ -605,14 +662,14 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   };
 
-  // ✅ Função para edição individual de dia
+  // Função para edição individual de dia
   const handleUpdateDay = async () => {
     if (!selectedRoomTypeId || !selectedDay || !hotelId) return;
 
     if (dayReset) {
       if (!window.confirm('Resetar dia ao padrão? Remove overrides.')) return;
       const updates = [{ date: moment(selectedDay).format('YYYY-MM-DD'), reset: true }];
-      console.log('📤 Day payload (reset):', JSON.stringify({ updates }, null, 2));
+      console.log('Day payload (reset):', JSON.stringify({ updates }, null, 2));
       await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, updates);
       toast({ title: 'Sucesso', description: 'Dia resetado' });
       setShowDayModal(false);
@@ -669,7 +726,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
       return;
     }
 
-    console.log('📤 Day payload:', JSON.stringify({ updates: [update] }, null, 2));
+    console.log('Day payload:', JSON.stringify({ updates: [update] }, null, 2));
     await hotelService.bulkUpdateAvailability(hotelId, selectedRoomTypeId, [update]);
     toast({ title: 'Sucesso!', description: 'Dia atualizado' });
     setShowDayModal(false);
@@ -685,7 +742,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   };
 
-  // ✅ Funções para promoções
+  // Funções para promoções
   const handleSavePromo = async () => {
     if (!promoForm.name || !promoForm.code || !promoForm.discount_percent) {
       toast({ 
@@ -877,7 +934,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     }
   }, [editingPromo]);
 
-  // ✅ Estado: Nenhum hotel selecionado
+  // Estado: Nenhum hotel selecionado
   if (!hotelId) {
     return (
       <div className="flex flex-col items-center justify-center py-12 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border border-dashed">
@@ -895,7 +952,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     );
   }
 
-  // ✅ Formulário de criação/edição de room type
+  // Formulário de criação/edição de room type
   if (showCreateForm) {
     return (
       <CreateRoomTypeFormModern
@@ -920,7 +977,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
 
   return (
     <div className="space-y-6">
-      {/* ✅ Header com ID do hotel */}
+      {/* Header com ID do hotel */}
       <div className="mb-2">
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Building2 className="w-4 h-4" />
@@ -939,7 +996,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           <TabsTrigger value="reviews" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Reviews</TabsTrigger>
         </TabsList>
 
-        {/* ✅ SUB-TAB: LISTA */}
+        {/* SUB-TAB: LISTA */}
         <TabsContent value="list" className="space-y-6">
           {/* Header com botão */}
           <div className="flex items-center justify-between">
@@ -1037,7 +1094,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                             ? 'bg-green-500 hover:bg-green-600'
                             : 'bg-gray-500 hover:bg-gray-600'
                         } text-white`}>
-                          {room.is_active ? '✓ Ativo' : 'Inativo'}
+                          {room.is_active ? 'Ativo' : 'Inativo'}
                         </Badge>
                         <Badge className="bg-blue-600 text-white text-xs font-semibold">
                           {room.total_units} uni.
@@ -1153,7 +1210,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           )}
         </TabsContent>
 
-        {/* ✅ SUB-TAB: DISPONIBILIDADE COM LAZY LOADING PERFEITO */}
+        {/* SUB-TAB: DISPONIBILIDADE COM LAZY LOADING PERFEITO */}
         <TabsContent value="availability" className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
@@ -1190,7 +1247,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                 </SelectContent>
               </Select>
 
-              {/* ✅ Botão recarregar */}
+              {/* Botão recarregar */}
               <Button
                 variant="outline"
                 onClick={reloadCalendarData}
@@ -1203,7 +1260,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
             </div>
           </div>
 
-          {/* ✅ Mostrar estatísticas de disponibilidade */}
+          {/* Mostrar estatísticas de disponibilidade */}
           {selectedRoomTypeId && availabilityStats.totalDias > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
@@ -1221,7 +1278,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     <p className="text-sm text-green-700 font-medium">Com Preço Override</p>
                     <p className="text-2xl font-bold text-green-900">{availabilityStats.comPrecoOverride}</p>
                   </div>
-                  <Badge className="bg-green-500 text-white">💰</Badge>
+                  <Badge className="bg-green-500 text-white"></Badge>
                 </div>
               </Card>
               <Card className="p-4 bg-gradient-to-r from-red-50 to-red-100 border-red-200">
@@ -1230,13 +1287,13 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     <p className="text-sm text-red-700 font-medium">Dias Bloqueados</p>
                     <p className="text-2xl font-bold text-red-900">{availabilityStats.bloqueados}</p>
                   </div>
-                  <Badge className="bg-red-500 text-white">🚫</Badge>
+                  <Badge className="bg-red-500 text-white"></Badge>
                 </div>
               </Card>
             </div>
           )}
 
-          {/* ✅ Aviso quando não há room types */}
+          {/* Aviso quando não há room types */}
           {roomTypes.length === 0 && (
             <Card className="p-8 text-center bg-gradient-to-br from-gray-50 to-gray-100 border-dashed border-2 border-gray-300">
               <CalendarIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -1257,7 +1314,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           {/* Calendário com LAZY LOADING e proteção contra navegação rápida */}
           {roomTypes.length > 0 && (
             <Card className="p-4 md:p-6 shadow-sm relative">
-              {/* ✅ Loader overlay durante navegação com mensagem específica */}
+              {/* Loader overlay durante navegação com mensagem específica */}
               {loadingCalendar && loadedPeriods.length > 0 && (
                 <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-20 rounded-lg">
                   <div className="text-center">
@@ -1269,7 +1326,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                 </div>
               )}
               
-              {/* ✅ Loader inicial */}
+              {/* Loader inicial */}
               {loadingCalendar && loadedPeriods.length === 0 ? (
                 <div className="h-96 flex items-center justify-center">
                   <Loader2 className="w-10 h-10 animate-spin text-purple-600" />
@@ -1297,7 +1354,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       onSelectEvent={handleSelectEvent}
                       date={currentViewDate}
                       onNavigate={async (newDate: Date, view: string, action: NavigateAction) => {
-                        // ✅ Prevenção contra navegação rápida múltipla
+                        // Prevenção contra navegação rápida múltipla
                         if (isNavigating) return;
                         
                         setIsNavigating(true);
@@ -1305,40 +1362,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         await loadCalendarData(newDate, { chunkSize: DEFAULT_CHUNK_DAYS, forceReload: false });
                         setIsNavigating(false);
                       }}
-                      eventPropGetter={(event) => {
-                        let backgroundColor = '#e0f2fe';
-                        let color = '#000000';
-
-                        if (event.resource?.status === 'booked') {
-                          backgroundColor = '#3b82f6';
-                          color = '#ffffff';
-                        } else if (!event.resource?.available) {
-                          backgroundColor = '#fee2e2';
-                          color = '#dc2626';
-                        } else if (event.resource?.status === 'blocked') {
-                          backgroundColor = '#fca5a5';
-                          color = '#991b1b';
-                        } else if (event.resource?.price > 10000) {
-                          backgroundColor = '#fef3c7';
-                          color = '#92400e';
-                        } else if (event.resource?.price > 15000) {
-                          backgroundColor = '#f87171';
-                          color = '#7f1d1d';
-                        }
-
-                        return {
-                          style: {
-                            backgroundColor,
-                            borderRadius: '4px',
-                            opacity: 0.9,
-                            color,
-                            border: '0px',
-                            display: 'block',
-                            padding: '2px 6px',
-                            fontSize: '12px',
-                          },
-                        };
-                      }}
+                      eventPropGetter={eventPropGetter}
                       messages={{
                         month: 'Mês',
                         previous: 'Anterior',
@@ -1347,14 +1371,14 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         noEventsInRange: 'Nenhum evento neste período',
                       }}
                       components={{
-                        // ✅ Tooltip melhorado para eventos do calendário
+                        // Tooltip melhorado para eventos do calendário
                         event: ({ event }: any) => (
                           <div
                             className="cursor-pointer hover:opacity-80 transition-opacity"
                             title={
                               event.resource?.status === 'booked'
-                                ? `📅 RESERVA\n👤 Cliente: ${event.title.replace('Reserva: ', '')}\n📅 Check-in: ${moment(event.start).format('DD/MM/YYYY')}\n📅 Check-out: ${moment(event.end).format('DD/MM/YYYY')}`
-                                : `📅 ${moment(event.start).format('DD/MM/YYYY')}\n💰 Preço: ${event.resource?.price || 'Padrão'} MZN\n📦 Unidades: ${event.resource?.availableUnits || 'Padrão'}\n📊 Status: ${event.resource?.status === 'available' ? '✅ Disponível' : event.resource?.status === 'blocked' ? '🚫 Bloqueado' : '❌ Indisponível'}`
+                                ? `RESERVA\nCliente: ${event.title.replace('Reserva: ', '')}\nCheck-in: ${moment(event.start).format('DD/MM/YYYY')}\nCheck-out: ${moment(event.end).format('DD/MM/YYYY')}`
+                                : `${moment(event.start).format('DD/MM/YYYY')}\nPreço: ${event.resource?.price || 'Padrão'} MZN\nUnidades: ${event.resource?.availableUnits || 'Padrão'}\nStatus: ${event.resource?.status === 'available' ? 'Disponível' : event.resource?.status === 'blocked' ? 'Bloqueado' : 'Indisponível'}`
                             }
                           >
                             {event.title}
@@ -1430,7 +1454,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     />
                   </div>
                   
-                  {/* ✅ Botões para carregar mais meses à frente (desabilitados durante loading) */}
+                  {/* Botões para carregar mais meses à frente (desabilitados durante loading) */}
                   <div className="mt-6 flex flex-wrap gap-3 justify-center">
                     <Button
                       variant="outline"
@@ -1464,7 +1488,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     </Button>
                   </div>
                   
-                  {/* ✅ Info sobre o lazy loading */}
+                  {/* Info sobre o lazy loading */}
                   <div className="mt-4 text-center">
                     <div className="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm">
                       <Info className="w-4 h-4" />
@@ -1484,7 +1508,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
             </Card>
           )}
 
-          {/* Legenda do calendário */}
+          {/* Legenda do calendário ATUALIZADA */}
           {selectedRoomTypeId && (
             <div className="flex flex-wrap gap-4 justify-center text-sm">
               <div className="flex items-center gap-2">
@@ -1496,25 +1520,25 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                 <span>Reserva</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#fee2e2] rounded"></div>
+                <div className="w-4 h-4 bg-[#f87171] rounded"></div>
                 <span>Indisponível</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#fca5a5] rounded"></div>
+                <div className="w-4 h-4 bg-[#dc2626] rounded"></div>
                 <span>Bloqueado</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 bg-[#fef3c7] rounded"></div>
-                <span>Preço Especial</span>
+                <span>Preço Especial (+20%)</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-[#f87171] rounded"></div>
-                <span>Preço Muito Alto</span>
+                <div className="w-4 h-4 bg-[#f59e0b] rounded"></div>
+                <span>Preço Muito Alto (+50%)</span>
               </div>
             </div>
           )}
 
-          {/* ✅ Modal de ações em bulk */}
+          {/* Modal de ações em bulk */}
           {showBulkModal && selectedRange && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <Card className="w-full max-w-md p-6">
@@ -1553,7 +1577,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                           : 'bg-red-600 hover:bg-red-700 text-white'
                       }`}
                     >
-                      🚫 Bloquear
+                      Bloquear
                     </Button>
                     <Button
                       onClick={() => {
@@ -1566,11 +1590,11 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                           : 'bg-green-600 hover:bg-green-700 text-white'
                       }`}
                     >
-                      ✅ Desbloquear
+                      Desbloquear
                     </Button>
                   </div>
 
-                  {/* ✅ Campo de Unidades Disponíveis */}
+                  {/* Campo de Unidades Disponíveis */}
                   <div>
                     <Label htmlFor="bulkUnits">Definir Unidades Disponíveis</Label>
                     <Input
@@ -1591,7 +1615,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       disabled={bulkReset}
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      💡 Use para reservas externas. Ex: 3 unidades, 2 reservadas no Booking → defina <strong>1</strong> aqui.
+                      Use para reservas externas. Ex: 3 unidades, 2 reservadas no Booking → defina 1 aqui.
                     </p>
                   </div>
 
@@ -1617,11 +1641,11 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                       disabled={bulkReset}
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      ⚠️ Deve ser maior que 0 MZN. Deixe vazio para não alterar.
+                      Deve ser maior que 0 MZN. Deixe vazio para não alterar.
                     </p>
                   </div>
 
-                  {/* ✅ NOVO: Checkbox Reset */}
+                  {/* NOVO: Checkbox Reset */}
                   <div className="flex items-center space-x-2 mt-4">
                     <Checkbox
                       id="bulkReset"
@@ -1666,7 +1690,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
             </div>
           )}
 
-          {/* ✅ Modal para edição individual de dia */}
+          {/* Modal para edição individual de dia */}
           {showDayModal && selectedDay && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <Card className="w-full max-w-md p-6">
@@ -1712,7 +1736,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                     />
                   </div>
 
-                  {/* ✅ Campo de Unidades Disponíveis */}
+                  {/* Campo de Unidades Disponíveis */}
                   {!dayBlocked && (
                     <div>
                       <Label htmlFor="dayUnits">Unidades Disponíveis</Label>
@@ -1735,7 +1759,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         disabled={dayReset || dayBlocked}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        💡 Deixe vazio para usar o total padrão ({roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || '?'} unidades)
+                        Deixe vazio para usar o total padrão ({roomTypes.find(r => r.id === selectedRoomTypeId)?.total_units || '?'} unidades)
                       </p>
                     </div>
                   )}
@@ -1763,12 +1787,12 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
                         disabled={dayReset || dayBlocked}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        ⚠️ Deve ser maior que 0 MZN. Deixe vazio para preço padrão.
+                        Deve ser maior que 0 MZN. Deixe vazio para preço padrão.
                       </p>
                     </div>
                   )}
 
-                  {/* ✅ NOVO: Checkbox Reset */}
+                  {/* NOVO: Checkbox Reset */}
                   <div className="flex items-center space-x-2 mt-4">
                     <Checkbox
                       id="dayReset"
@@ -1813,7 +1837,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           )}
         </TabsContent>
 
-        {/* ✅ SUB-TAB: PROMOÇÕES (CORRIGIDA COM MELHORIAS) */}
+        {/* SUB-TAB: PROMOÇÕES (CORRIGIDA COM MELHORIAS) */}
         <TabsContent value="promotions" className="space-y-6">
           {/* Loading state */}
           {loadingPromotions && (
@@ -2157,7 +2181,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
           )}
         </TabsContent>
 
-        {/* ✅ SUB-TAB: REVIEWS */}
+        {/* SUB-TAB: REVIEWS */}
         <TabsContent value="reviews">
           <Card className="p-8">
             <div className="flex items-center gap-2 mb-6">
