@@ -2,7 +2,7 @@
 import 'dotenv/config'; // Carrega .env ANTES de qualquer coisa
 
 // Debug imediato para confirmar .env
-console.log('DEBUG INICIAL - DATABASE_URL do .env:', process.env.DATABASE_URL || 'NÃO ENCONTRADA! Verifique .env e dotenv');
+console.log('DEBUG INICIAL - DATABASE_URL do .env:', process.env.DATABASE_URL?.replace(/:.*@/, ':****@') || 'NÃO ENCONTRADA! Verifique .env e dotenv');
 
 // ===== IMPORTS =====
 import express from 'express';
@@ -64,8 +64,12 @@ import { eq, sql } from 'drizzle-orm';
 // ===== FIREBASE ADMIN =====
 import admin from 'firebase-admin';
 
-// ===== PG-BOSS JOB =====
-import { boss, runAvailabilityInitialization, JOB_NAME } from '../src/jobs/availabilityJob';
+// ===== PG-BOSS JOBS (APENAS HOTÉIS - events removido) =====
+import { 
+  boss as hotelBoss, 
+  runAvailabilityInitialization, 
+  JOB_NAME as HOTEL_JOB_NAME 
+} from '../src/jobs/availabilityJob';
 
 // ===== FUNÇÕES AUXILIARES =====
 const safeString = (value: unknown, defaultValue: string = ''): string => {
@@ -87,6 +91,45 @@ const isValidEmail = (email: string): boolean => {
 const isValidUid = (uid: string): boolean => {
   return uid.length >= 10 && uid.length <= 128;
 };
+
+// ✅ CORREÇÃO: Função para inicializar jobs (agora só hotéis)
+async function initializeAllJobs() {
+  console.log('🔄 Iniciando jobs PG-BOSS necessários...');
+  
+  try {
+    // Apenas job de hotéis
+    console.log('🏨 Configurando job de disponibilidade de hotéis...');
+    await hotelBoss.start();
+    console.log('✅ pg-boss (hotéis) iniciado com sucesso');
+    
+    await hotelBoss.createQueue(HOTEL_JOB_NAME);
+    console.log(`✅ Queue "${HOTEL_JOB_NAME}" criada com sucesso`);
+    
+    await hotelBoss.schedule(
+      HOTEL_JOB_NAME,
+      '0 3 * * 1', // segundas às 03:00 CAT
+      {}, 
+      {
+        tz: 'Africa/Maputo',
+        retryLimit: 5,
+        retryDelay: 60 * 1000,
+      }
+    );
+    console.log(`📅 Job "${HOTEL_JOB_NAME}" agendado: segundas 03:00 CAT`);
+    
+    // Executar manualmente para teste imediato (opcional)
+    if (process.env.RUN_HOTEL_JOB_ON_STARTUP === 'true') {
+      console.log('🧪 Executando job de hotéis manualmente para teste...');
+      await runAvailabilityInitialization();
+    }
+    
+    console.log('🎪 Job de events desativado permanentemente (disponibilidade implícita)');
+    
+  } catch (err) {
+    console.error('❌ Erro ao iniciar jobs PG-BOSS:', err);
+    // Não interrompe o servidor
+  }
+}
 
 export async function registerRoutes(app: express.Express): Promise<void> {
   // Debug final antes de usar db
@@ -137,7 +180,84 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // Debug Firebase Auth
+  // ===== ROTAS DE ADMINISTRAÇÃO DOS JOBS (apenas hotéis mantido) =====
+  
+  // ✅ CORREÇÃO: Removida rota /api/admin/jobs/events/run
+  
+  // Rota para executar job de hotéis manualmente
+  app.post('/api/admin/jobs/hotels/run', async (req, res) => {
+    try {
+      console.log('🎬 Executando job de hotéis manualmente...');
+      
+      const result = await runAvailabilityInitialization();
+      
+      res.json({
+        success: true,
+        message: 'Job de hotéis executado com sucesso',
+        result
+      });
+    } catch (error: any) {
+      console.error('❌ Erro ao executar job de hotéis:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao executar job de hotéis',
+        details: error.message
+      });
+    }
+  });
+
+  // Status dos jobs (apenas hotéis)
+  app.get('/api/admin/jobs/status', async (req, res) => {
+    try {
+      const pgbossCheck = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.schemata 
+          WHERE schema_name = 'pgboss'
+        ) as schema_exists
+      `);
+      
+      const schemaExists = (pgbossCheck as any).rows?.[0]?.schema_exists || false;
+      
+      let hotelJobs = 0;
+      
+      if (schemaExists) {
+        const hotelJobsResult = await db.execute(sql`
+          SELECT COUNT(*) as count FROM pgboss.job 
+          WHERE name = ${HOTEL_JOB_NAME} AND state = 'created'
+        `);
+        
+        hotelJobs = Number((hotelJobsResult as any).rows?.[0]?.count || 0);
+      }
+      
+      res.json({
+        success: true,
+        jobs: {
+          hotels: {
+            name: HOTEL_JOB_NAME,
+            enabled: true,
+            pendingJobs: hotelJobs,
+            schedule: 'segundas 03:00 CAT',
+            status: hotelJobs > 0 ? 'active' : 'idle'
+          },
+          events: {
+            enabled: false,
+            note: 'Desativado permanentemente (disponibilidade implícita)'
+          }
+        },
+        pgboss: {
+          schemaExists,
+          schema: 'pgboss'
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erro ao verificar status dos jobs'
+      });
+    }
+  });
+
+  // Debug Firebase Auth (mantido)
   app.get('/api/debug/firebase-auth', async (req, res) => {
     try {
       const authHeader = req.headers.authorization;
@@ -165,7 +285,7 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     }
   });
 
-  // Rotas
+  // Rotas principais
   app.use('/api/locations', locationsRouter);
   console.log('Rotas de localidades registradas');
 
@@ -238,12 +358,20 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     photoURL?: string;
     roles?: string[];
   }) => {
-    // ... (mantido igual)
+    // ... (mantido igual - implementação original)
   };
 
-  app.post('/api/auth/signup', async (req, res) => { /* ... mantido ... */ });
-  app.post('/api/auth/check-registration', async (req, res) => { /* ... mantido ... */ });
-  app.post('/api/auth/setup-roles', async (req, res) => { /* ... mantido ... */ });
+  app.post('/api/auth/signup', async (req, res) => { 
+    // ... (implementação original mantida)
+  });
+
+  app.post('/api/auth/check-registration', async (req, res) => { 
+    // ... (implementação original mantida)
+  });
+
+  app.post('/api/auth/setup-roles', async (req, res) => { 
+    // ... (implementação original mantida)
+  });
 
   app.use('/api/health', sharedHealthRoutes);
   app.use('/api/drizzle', drizzleApiRoutes);
@@ -280,6 +408,11 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/billing', billingRoutes);
   app.use('/api/chat', chatRoutes);
 
+  // ✅ CORREÇÃO: REMOVIDAS rotas obsoletas de events/availability
+  // ❌ /api/events/availability/check (removido)
+  // ❌ /api/events/availability/initialize (removido)
+
+  // ✅ CORREÇÃO: Health-check limpo (sem referências a events antigo)
   app.get('/api/health-check', async (req, res) => {
     try {
       await db.select().from(users).limit(1);
@@ -294,16 +427,20 @@ export async function registerRoutes(app: express.Express): Promise<void> {
         services: {
           auth: 'operational',
           hotels: 'operational',
-          events: 'operational',
+          events: 'operational (disponibilidade implícita)',
           rides: 'operational',
           vehicles: 'operational',
           partnerships: 'operational',
           rpc: 'operational',
+          jobs: {
+            hotels: 'configured',
+            events: 'desativado (não necessário)'
+          }
         },
-        version: '2.0.0'
+        version: '2.1.0'
       });
     } catch (error) {
-      res.status(500).json({ success: false, status: 'unhealthy' });
+      res.status(500).json({ success: false, status: 'unhealthy', error: String(error) });
     }
   });
 
@@ -326,37 +463,10 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   console.log('Todas as rotas registradas com sucesso!');
   console.log('API pronta em /api/*');
 
-  // ===== PG-BOSS =====
-  (async () => {
-    try {
-      console.log('Tentando iniciar pg-boss com DATABASE_URL:', process.env.DATABASE_URL?.replace(/:.*@/, ':****@') || 'NÃO DEFINIDA');
-
-      await boss.start();
-      console.log('✅ pg-boss iniciado com sucesso (schema: pgboss)');
-
-      // Cria a queue explicitamente ANTES de agendar (resolve "Queue not found")
-      await boss.createQueue(JOB_NAME);
-      console.log(`✅ Queue "${JOB_NAME}" criada com sucesso`);
-
-      // Agora agenda o job recorrente
-      await boss.schedule(
-        JOB_NAME,
-        '0 3 * * 1', // segundas às 03:00 CAT
-        {}, // sem dados extras
-        {
-          tz: 'Africa/Maputo',
-          retryLimit: 5,
-          retryDelay: 60 * 1000,
-        }
-      );
-      console.log(`📅 Job "${JOB_NAME}" agendado: segundas 03:00 CAT`);
-
-      // Executa manualmente para teste imediato
-      console.log('🧪 Executando job manualmente para teste...');
-      await runAvailabilityInitialization();
-
-    } catch (err) {
-      console.error('❌ Erro ao iniciar pg-boss ou job:', err);
-    }
-  })();
+  // ===== INICIALIZAR JOBS (apenas hotéis) =====
+  if (process.env.ENABLE_JOBS !== 'false') {
+    await initializeAllJobs();
+  } else {
+    console.log('⚠️ Jobs PG-BOSS desabilitados (ENABLE_JOBS=false)');
+  }
 }

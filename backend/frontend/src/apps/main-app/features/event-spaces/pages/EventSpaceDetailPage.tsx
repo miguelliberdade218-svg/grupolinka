@@ -5,7 +5,7 @@ import { Card } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import { MapPin, CheckCircle2, Star, Users, Ruler } from 'lucide-react';
-import { useEventSpaceCompleteData } from '../hooks/useEventSpaceCompleteData';
+import { useEventSpacesComplete } from '../hooks/useEventSpacesComplete';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 
 /**

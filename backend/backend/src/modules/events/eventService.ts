@@ -1,14 +1,20 @@
-// src/modules/events/eventService.ts
+// src/modules/events/eventService.ts - VERSÃO FINAL PARA SISTEMA DE DIÁRIAS
 
 import { db } from "../../../db";
 import {
   eventSpaces,
   eventAvailability,
   eventBookings,
-  hotels_base,
   hotels
 } from "../../../shared/schema";
 import { eq, and, sql, ilike, or, desc, gte, lte, inArray, asc } from "drizzle-orm";
+
+// Importar apenas as funções que realmente existem no eventSpaceService
+import {
+  getEventSpacesByHotel as getSpacesByHotelFromSpaceService,
+  getEventSpaceById,
+  isEventSpaceAvailable as checkSpaceAvailability
+} from './eventSpaceService';
 
 // ==================== FUNÇÕES HELPER ====================
 const toNumber = (value: string | number | null | undefined): number => {
@@ -18,32 +24,31 @@ const toNumber = (value: string | number | null | undefined): number => {
   return isNaN(num) ? 0 : num;
 };
 
-const toString = (value: any): string => {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
-  return String(value);
+// Função para converter Date para string YYYY-MM-DD
+const dateToYMD = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Converter string para Date no início do dia
+const ymdToDateStart = (dateStr: string): Date => {
+  return new Date(dateStr + 'T00:00:00');
+};
+
+// Converter string para Date no final do dia
+const ymdToDateEnd = (dateStr: string): Date => {
+  return new Date(dateStr + 'T23:59:59');
 };
 
 // ==================== ESPAÇOS POR HOTEL ====================
-
 export const getEventSpacesByHotel = async (
   hotelId: string,
   includeInactive = false
 ) => {
   try {
-    const conditions = [eq(eventSpaces.hotelId, hotelId)];
-    
-    if (!includeInactive) {
-      conditions.push(eq(eventSpaces.isActive, true));
-    }
-
-    const spaces = await db
-      .select()
-      .from(eventSpaces)
-      .where(and(...conditions))
-      .orderBy(asc(eventSpaces.name));
-
-    return spaces;
+    return await getSpacesByHotelFromSpaceService(hotelId, includeInactive);
   } catch (error) {
     console.error('Erro ao buscar espaços de eventos por hotel:', error);
     return [];
@@ -56,10 +61,11 @@ export async function searchEventSpaces(filters: {
   query?: string;
   locality?: string;
   province?: string;
-  eventDate?: string;
+  startDate?: string;
+  endDate?: string;
   capacity?: number;
   eventType?: string;
-  maxPrice?: number;
+  maxPricePerDay?: number;
   amenities?: string[];
   hotelId?: string;
 }) {
@@ -67,10 +73,11 @@ export async function searchEventSpaces(filters: {
     query,
     locality,
     province,
-    eventDate,
+    startDate,
+    endDate,
     capacity,
     eventType,
-    maxPrice,
+    maxPricePerDay,
     amenities,
     hotelId,
   } = filters;
@@ -103,14 +110,11 @@ export async function searchEventSpaces(filters: {
   }
 
   if (capacity) {
-    conditions.push(
-      gte(eventSpaces.capacityMax, capacity),
-      lte(eventSpaces.capacityMin, capacity)
-    );
+    conditions.push(gte(eventSpaces.capacityMax, capacity));
   }
 
   if (eventType) {
-    conditions.push(sql`${eventType} = ANY(${eventSpaces.eventTypes})`);
+    conditions.push(sql`${eventType} = ANY(${eventSpaces.allowedEventTypes})`);
   }
 
   if (amenities && amenities.length > 0) {
@@ -122,52 +126,84 @@ export async function searchEventSpaces(filters: {
     }
   }
 
+  // Buscar espaços que atendem aos critérios básicos
   let spaces = await db
     .select({
       space: eventSpaces,
       hotel: hotels,
-      basePrice: eventSpaces.basePriceHourly,
-      priceHalfDay: eventSpaces.basePriceHalfDay,
-      priceFullDay: eventSpaces.basePriceFullDay,
-      pricePerHour: eventSpaces.pricePerHour,
+      basePricePerDay: eventSpaces.basePricePerDay,
+      weekendSurchargePercent: eventSpaces.weekendSurchargePercent,
     })
     .from(eventSpaces)
     .innerJoin(hotels, eq(hotels.id, eventSpaces.hotelId))
     .where(and(...conditions))
     .orderBy(desc(eventSpaces.capacityMax), eventSpaces.name);
 
-  // Filtro por disponibilidade na data - AGORA CONSIDERA SEM REGISTO COMO DISPONÍVEL
-  if (eventDate && spaces.length > 0) {
+  // Filtro por disponibilidade no período (sistema de diárias)
+  if (startDate && endDate && spaces.length > 0) {
     const spaceIds = spaces.map(s => s.space.id);
-
-    const availableSpaces = await db
-      .selectDistinct({ eventSpaceId: eventAvailability.eventSpaceId })
-      .from(eventAvailability)
-      .where(
-        and(
-          inArray(eventAvailability.eventSpaceId, spaceIds),
-          sql`${eventAvailability.date}::date = ${eventDate}::date`,
-          eq(eventAvailability.isAvailable, true),
-          eq(eventAvailability.stopSell, false)
-        )
-      );
-
-    const availableIds = new Set(availableSpaces.map(a => a.eventSpaceId));
-
-    // Espaços sem registo na data são considerados disponíveis
-    spaces = spaces.filter(s => {
-      // Se tem registo e está bloqueado → remove
-      // Se não tem registo → mantém (disponível por padrão)
-      return !availableIds.has(s.space.id) || true; // true = mantém todos sem registo + os disponíveis com registo
-    });
+    
+    const start = ymdToDateStart(startDate);
+    const end = ymdToDateEnd(endDate);
+    const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    
+    const availableSpaces = [];
+    
+    for (const space of spaces) {
+      let isAvailableForAllDays = true;
+      
+      for (let i = 0; i < daysDifference; i++) {
+        const currentDate = new Date(start);
+        currentDate.setDate(start.getDate() + i);
+        const currentDateStr = dateToYMD(currentDate);
+        
+        const conflictingBooking = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(eventBookings)
+          .where(
+            and(
+              eq(eventBookings.eventSpaceId, space.space.id),
+              eq(eventBookings.status, "confirmed"),
+              sql`${eventBookings.startDate}::date <= ${currentDateStr}::date`,
+              sql`${eventBookings.endDate}::date > ${currentDateStr}::date`
+            )
+          );
+        
+        if (conflictingBooking[0]?.count > 0) {
+          isAvailableForAllDays = false;
+          break;
+        }
+        
+        const availability = await db
+          .select()
+          .from(eventAvailability)
+          .where(
+            and(
+              eq(eventAvailability.eventSpaceId, space.space.id),
+              sql`${eventAvailability.date}::date = ${currentDateStr}::date`
+            )
+          )
+          .limit(1);
+        
+        if (availability.length > 0 && 
+            (availability[0].stopSell || !availability[0].isAvailable)) {
+          isAvailableForAllDays = false;
+          break;
+        }
+      }
+      
+      if (isAvailableForAllDays) {
+        availableSpaces.push(space);
+      }
+    }
+    
+    spaces = availableSpaces;
   }
 
-  // Filtro de preço máximo
-  if (maxPrice !== undefined) {
+  if (maxPricePerDay !== undefined) {
     spaces = spaces.filter(s => {
-      const priceValue = s.priceFullDay || s.priceHalfDay || s.basePrice || s.pricePerHour || 0;
-      const priceNumber = toNumber(priceValue);
-      return priceNumber <= maxPrice;
+      const priceNumber = toNumber(s.basePricePerDay);
+      return priceNumber <= maxPricePerDay;
     });
   }
 
@@ -190,8 +226,9 @@ export const getEventDashboardSummary = async (hotelId: string) => {
   }
 
   const today = new Date();
-  const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayDateOnly = dateToYMD(today);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthStartStr = dateToYMD(monthStart);
 
   const bookingsThisMonth = await db
     .select({
@@ -202,7 +239,7 @@ export const getEventDashboardSummary = async (hotelId: string) => {
     .where(
       and(
         eq(eventBookings.hotelId, hotelId),
-        gte(eventBookings.startDatetime, monthStart),
+        sql`${eventBookings.startDate}::date >= ${monthStartStr}::date`,
         inArray(eventBookings.status, ["confirmed", "checked_in"])
       )
     );
@@ -213,8 +250,7 @@ export const getEventDashboardSummary = async (hotelId: string) => {
     .where(
       and(
         eq(eventBookings.hotelId, hotelId),
-        gte(eventBookings.startDatetime, todayDateOnly),
-        lte(eventBookings.startDatetime, new Date(todayDateOnly.getTime() + 24 * 60 * 60 * 1000)),
+        sql`${eventBookings.startDate}::date = ${todayDateOnly}::date`,
         eq(eventBookings.status, "confirmed")
       )
     );
@@ -225,7 +261,7 @@ export const getEventDashboardSummary = async (hotelId: string) => {
     .where(
       and(
         eq(eventBookings.hotelId, hotelId),
-        gte(eventBookings.startDatetime, todayDateOnly),
+        sql`${eventBookings.startDate}::date >= ${todayDateOnly}::date`,
         inArray(eventBookings.status, ["confirmed", "pending"])
       )
     );
@@ -233,13 +269,27 @@ export const getEventDashboardSummary = async (hotelId: string) => {
   const totalRevenue = toNumber(bookingsThisMonth[0]?.revenue || 0);
   const bookingsCount = Number(bookingsThisMonth[0]?.count || 0);
 
+  const occupiedDays = await db
+    .select({ totalDays: sql<number>`COALESCE(SUM(${eventBookings.durationDays}), 0)` })
+    .from(eventBookings)
+    .where(
+      and(
+        eq(eventBookings.hotelId, hotelId),
+        sql`${eventBookings.startDate}::date >= ${monthStartStr}::date`,
+        inArray(eventBookings.status, ["confirmed", "checked_in"])
+      )
+    );
+
+  const totalOccupiedDays = toNumber(occupiedDays[0]?.totalDays || 0);
+  const totalPossibleDays = spaces.length * 30;
+  
   return {
     totalSpaces: spaces.length,
     upcomingEvents: Number(upcoming[0]?.count || 0),
     todayEvents: Number(todayEvents[0]?.count || 0),
     totalRevenueThisMonth: totalRevenue,
-    occupancyRate: spaces.length > 0
-      ? Math.round((bookingsCount / (spaces.length * 30)) * 100)
+    occupancyRate: totalPossibleDays > 0
+      ? Math.round((totalOccupiedDays / totalPossibleDays) * 100)
       : 0,
   };
 };
@@ -249,7 +299,7 @@ export const getUpcomingEventsForHotel = async (
   limit: number = 10
 ) => {
   const today = new Date();
-  const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayDateOnly = dateToYMD(today);
 
   return await db
     .select({
@@ -261,11 +311,11 @@ export const getUpcomingEventsForHotel = async (
     .where(
       and(
         eq(eventBookings.hotelId, hotelId),
-        gte(eventBookings.startDatetime, todayDateOnly),
+        sql`${eventBookings.startDate}::date >= ${todayDateOnly}::date`,
         inArray(eventBookings.status, ["confirmed", "pending"])
       )
     )
-    .orderBy(eventBookings.startDatetime)
+    .orderBy(eventBookings.startDate)
     .limit(limit);
 };
 
@@ -275,6 +325,7 @@ export const getEventSpacesOverview = async (hotelId: string) => {
       space: eventSpaces,
       totalBookings: sql<number>`COUNT(${eventBookings.id})`.as("total_bookings"),
       revenue: sql<number>`COALESCE(SUM("totalPrice"), 0)`.as("revenue"),
+      totalDaysBooked: sql<number>`COALESCE(SUM(${eventBookings.durationDays}), 0)`.as("total_days_booked"),
     })
     .from(eventSpaces)
     .leftJoin(eventBookings, and(
@@ -286,119 +337,99 @@ export const getEventSpacesOverview = async (hotelId: string) => {
     .orderBy(desc(sql`"revenue"`));
 };
 
+// ==================== DETALHES DO ESPAÇO ====================
 export const getEventSpaceDetails = async (spaceId: string) => {
-  const result = await db
-    .select({
-      space: eventSpaces,
-      hotel: hotels,
-    })
-    .from(eventSpaces)
-    .innerJoin(hotels, eq(hotels.id, eventSpaces.hotelId))
-    .where(eq(eventSpaces.id, spaceId))
+  const space = await getEventSpaceById(spaceId);
+  if (!space) return null;
+
+  const [hotel] = await db
+    .select()
+    .from(hotels)
+    .where(eq(hotels.id, space.hotelId))
     .limit(1);
 
-  return result[0] || null;
+  return hotel ? { space, hotel } : null;
 };
 
 // ==================== DISPONIBILIDADE ====================
-
 export const checkEventSpaceAvailability = async (
   eventSpaceId: string,
-  date: string,
-  startTime?: string,
-  endTime?: string
+  startDate: string,
+  endDate: string
 ): Promise<{
   isAvailable: boolean;
-  availability?: typeof eventAvailability.$inferSelect;
   message?: string;
 }> => {
-  const dateObj = new Date(date);
-  
-  const [availability] = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, dateObj)
-      )
-    )
-    .limit(1);
-
-  // NOVA LÓGICA: disponibilidade eterna/implícita
-  if (!availability) {
+  try {
+    const start = ymdToDateStart(startDate);
+    const end = ymdToDateEnd(endDate);
+    const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    
+    const conflictingBooking = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(eventBookings)
+      .where(
+        and(
+          eq(eventBookings.eventSpaceId, eventSpaceId),
+          eq(eventBookings.status, "confirmed"),
+          or(
+            sql`(${eventBookings.startDate}::date <= ${startDate}::date AND ${eventBookings.endDate}::date > ${startDate}::date)`,
+            sql`(${eventBookings.startDate}::date <= ${endDate}::date AND ${eventBookings.endDate}::date > ${endDate}::date)`,
+            sql`(${eventBookings.startDate}::date >= ${startDate}::date AND ${eventBookings.endDate}::date <= ${endDate}::date)`
+          )
+        )
+      );
+    
+    if (conflictingBooking[0]?.count > 0) {
+      return {
+        isAvailable: false,
+        message: 'Espaço já reservado para este período'
+      };
+    }
+    
+    for (let i = 0; i < daysDifference; i++) {
+      const currentDate = new Date(start);
+      currentDate.setDate(start.getDate() + i);
+      const currentDateStr = dateToYMD(currentDate);
+      
+      const availability = await db
+        .select()
+        .from(eventAvailability)
+        .where(
+          and(
+            eq(eventAvailability.eventSpaceId, eventSpaceId),
+            sql`${eventAvailability.date}::date = ${currentDateStr}::date`
+          )
+        )
+        .limit(1);
+      
+      if (availability.length > 0) {
+        if (availability[0].stopSell) {
+          return {
+            isAvailable: false,
+            message: `Dia ${currentDate.toLocaleDateString()} não disponível para reserva`
+          };
+        }
+        if (!availability[0].isAvailable) {
+          return {
+            isAvailable: false,
+            message: `Dia ${currentDate.toLocaleDateString()} indisponível`
+          };
+        }
+      }
+    }
+    
     return {
       isAvailable: true,
-      message: 'Disponível por padrão (sem bloqueios ou reservas registadas)'
+      message: 'Espaço disponível para reserva'
     };
-  }
-
-  if (!availability.isAvailable || availability.stopSell) {
+  } catch (error) {
+    console.error('Erro ao verificar disponibilidade:', error);
     return {
       isAvailable: false,
-      availability,
-      message: availability.stopSell ? 'Venda bloqueada para esta data' : 'Espaço não disponível'
+      message: 'Erro ao verificar disponibilidade'
     };
   }
-
-  if (startTime && endTime && availability.slots) {
-    try {
-      const slots = availability.slots as any[];
-      
-      const hasConflict = slots.some(slot => {
-        const slotStart = slot.startTime || '';
-        const slotEnd = slot.endTime || '';
-        return (
-          (startTime >= slotStart && startTime < slotEnd) ||
-          (endTime > slotStart && endTime <= slotEnd) ||
-          (startTime <= slotStart && endTime >= slotEnd)
-        );
-      });
-
-      if (hasConflict) {
-        return {
-          isAvailable: false,
-          availability,
-          message: 'Conflito de horário com reserva existente'
-        };
-      }
-    } catch (error) {
-      console.error('Erro ao analisar slots:', error);
-    }
-  }
-
-  return {
-    isAvailable: true,
-    availability
-  };
-};
-
-export const getMultiDateAvailability = async (
-  eventSpaceId: string,
-  dates: string[]
-): Promise<Record<string, typeof eventAvailability.$inferSelect>> => {
-  if (dates.length === 0) return {};
-
-  const dateObjects = dates.map(d => new Date(d));
-  
-  const availability = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        inArray(eventAvailability.date, dateObjects)
-      )
-    );
-
-  const result: Record<string, typeof eventAvailability.$inferSelect> = {};
-  
-  availability.forEach(entry => {
-    const dateKey = entry.date.toISOString().split('T')[0];
-    result[dateKey] = entry;
-  });
-
-  return result;
 };
 
 // ==================== OUTRAS FUNÇÕES ====================
@@ -419,47 +450,32 @@ export const hasActiveEventBookings = async (eventSpaceId: string): Promise<bool
 
 export const calculateEventBasePrice = async (
   eventSpaceId: string,
-  date: string,
-  durationHours?: number
+  startDate: string,
+  endDate: string,
+  cateringRequired: boolean = false
 ): Promise<number> => {
-  const [space] = await db
-    .select()
-    .from(eventSpaces)
-    .where(eq(eventSpaces.id, eventSpaceId));
-
+  const space = await getEventSpaceById(eventSpaceId);
   if (!space) throw new Error('Espaço de evento não encontrado');
 
-  const [availability] = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, new Date(date))
-      )
-    );
+  const start = ymdToDateStart(startDate);
+  const end = ymdToDateEnd(endDate);
+  const days = Math.ceil((end.getTime() - start.getTime()) / 86400000);
 
-  let basePrice = toNumber(space.basePriceHourly || space.pricePerHour || "0");
+  let total = toNumber(space.basePricePerDay) * days;
 
-  // Se houver registo e priceOverride, usa-o; senão, usa base
-  if (availability?.priceOverride) {
-    basePrice = toNumber(availability.priceOverride);
+  let current = new Date(start);
+  for (let i = 0; i < days; i++) {
+    if (current.getDay() === 0 || current.getDay() === 6) {
+      total += toNumber(space.basePricePerDay) * (toNumber(space.weekendSurchargePercent) / 100);
+    }
+    current.setDate(current.getDate() + 1);
   }
 
-  if (durationHours && space.pricePerHour) {
-    const hourlyRate = toNumber(space.pricePerHour);
-    return hourlyRate * durationHours;
+  if (cateringRequired && space.offersCatering) {
+    total *= (1 - toNumber(space.cateringDiscountPercent) / 100);
   }
 
-  const dateObj = new Date(date);
-  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-  
-  if (isWeekend && space.weekendSurchargePercent) {
-    const surchargePercent = toNumber(space.weekendSurchargePercent);
-    basePrice += basePrice * (surchargePercent / 100);
-  }
-
-  return basePrice;
+  return Math.round(total * 100) / 100;
 };
 
 export const getFutureEventsBySpace = async (
@@ -467,6 +483,7 @@ export const getFutureEventsBySpace = async (
   limit: number = 20
 ) => {
   const today = new Date();
+  const todayStr = dateToYMD(today);
   
   return await db
     .select()
@@ -474,158 +491,12 @@ export const getFutureEventsBySpace = async (
     .where(
       and(
         eq(eventBookings.eventSpaceId, eventSpaceId),
-        gte(eventBookings.startDatetime, today),
+        sql`${eventBookings.startDate}::date >= ${todayStr}::date`,
         inArray(eventBookings.status, ["confirmed", "pending"])
       )
     )
-    .orderBy(eventBookings.startDatetime)
+    .orderBy(eventBookings.startDate)
     .limit(limit);
-};
-
-export const getMultiSpaceAvailability = async (
-  spaceIds: string[],
-  date: string
-): Promise<Record<string, typeof eventAvailability.$inferSelect>> => {
-  if (spaceIds.length === 0) return {};
-
-  const dateObj = new Date(date);
-  
-  const availability = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        inArray(eventAvailability.eventSpaceId, spaceIds),
-        eq(eventAvailability.date, dateObj)
-      )
-    );
-
-  const result: Record<string, typeof eventAvailability.$inferSelect> = {};
-  
-  availability.forEach(entry => {
-    result[entry.eventSpaceId as string] = entry;
-  });
-
-  return result;
-};
-
-export const updateEventAvailabilityAfterBooking = async (
-  eventSpaceId: string,
-  date: string,
-  startTime?: string,
-  endTime?: string
-): Promise<boolean> => {
-  try {
-    const dateObj = new Date(date);
-    
-    const [currentAvailability] = await db
-      .select()
-      .from(eventAvailability)
-      .where(
-        and(
-          eq(eventAvailability.eventSpaceId, eventSpaceId),
-          eq(eventAvailability.date, dateObj)
-        )
-      )
-      .limit(1);
-
-    if (!currentAvailability) {
-      const slots = startTime && endTime ? [{ startTime, endTime }] : [];
-      
-      await db.insert(eventAvailability).values({
-        eventSpaceId,
-        date: dateObj,
-        slots: slots,
-        isAvailable: true,
-        stopSell: false,
-        minBookingHours: 4
-      });
-    } else if (startTime && endTime) {
-      const currentSlots = (currentAvailability.slots as any[]) || [];
-      const newSlot = { startTime, endTime };
-      
-      await db
-        .update(eventAvailability)
-        .set({
-          slots: [...currentSlots, newSlot],
-          updatedAt: new Date()
-        })
-        .where(
-          and(
-            eq(eventAvailability.eventSpaceId, eventSpaceId),
-            eq(eventAvailability.date, dateObj)
-          )
-        );
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Erro ao atualizar disponibilidade após reserva:', error);
-    return false;
-  }
-};
-
-export const releaseEventAvailabilityAfterCancellation = async (
-  eventSpaceId: string,
-  date: string,
-  startTime?: string,
-  endTime?: string
-): Promise<boolean> => {
-  try {
-    const dateObj = new Date(date);
-    
-    if (!startTime || !endTime) {
-      await db
-        .update(eventAvailability)
-        .set({
-          isAvailable: true,
-          stopSell: false,
-          updatedAt: new Date()
-        })
-        .where(
-          and(
-            eq(eventAvailability.eventSpaceId, eventSpaceId),
-            eq(eventAvailability.date, dateObj)
-          )
-        );
-    } else {
-      const [currentAvailability] = await db
-        .select()
-        .from(eventAvailability)
-        .where(
-          and(
-            eq(eventAvailability.eventSpaceId, eventSpaceId),
-            eq(eventAvailability.date, dateObj)
-          )
-        )
-        .limit(1);
-
-      if (currentAvailability?.slots) {
-        const currentSlots = currentAvailability.slots as any[];
-        const updatedSlots = currentSlots.filter(
-          slot => !(slot.startTime === startTime && slot.endTime === endTime)
-        );
-
-        await db
-          .update(eventAvailability)
-          .set({
-            slots: updatedSlots,
-            updatedAt: new Date()
-          })
-          .where(
-            and(
-              eq(eventAvailability.eventSpaceId, eventSpaceId),
-              eq(eventAvailability.date, dateObj)
-            )
-          );
-      }
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Erro ao liberar disponibilidade após cancelamento:', error);
-    return false;
-  }
 };
 
 export const getEventStatsForHotel = async (hotelId: string) => {
@@ -639,13 +510,14 @@ export const getEventStatsForHotel = async (hotelId: string) => {
       confirmedBookings: sql<number>`COUNT(*) FILTER (WHERE status = 'confirmed')`,
       cancelledBookings: sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled')`,
       averageAttendees: sql<number>`COALESCE(AVG("expectedAttendees"), 0)`,
-      averageDuration: sql<number>`COALESCE(AVG("durationHours"), 0)`,
+      averageDurationDays: sql<number>`COALESCE(AVG(${eventBookings.durationDays}), 0)`,
+      totalDaysBooked: sql<number>`COALESCE(SUM(${eventBookings.durationDays}), 0)`,
     })
     .from(eventBookings)
     .where(
       and(
         inArray(eventBookings.eventSpaceId, spaceIds),
-        gte(eventBookings.createdAt, sql`NOW() - INTERVAL '30 days'`)
+        sql`${eventBookings.createdAt} >= NOW() - INTERVAL '30 days'`
       )
     );
 
@@ -668,7 +540,8 @@ export const getEventStatsForHotel = async (hotelId: string) => {
       confirmedBookings: 0,
       cancelledBookings: 0,
       averageAttendees: 0,
-      averageDuration: 0,
+      averageDurationDays: 0,
+      totalDaysBooked: 0,
     },
     byEventType,
     totalSpaces: spaces.length,
@@ -678,26 +551,20 @@ export const getEventStatsForHotel = async (hotelId: string) => {
 
 export const checkBookingConflicts = async (
   eventSpaceId: string,
-  startDatetime: Date,
-  endDatetime: Date,
+  startDate: string,
+  endDate: string,
   excludeBookingId?: string
 ): Promise<{ hasConflict: boolean; conflictingBookings: any[] }> => {
+  const startDateStr = dateToYMD(new Date(startDate));
+  const endDateStr = dateToYMD(new Date(endDate));
+  
   const conditions: any[] = [
     eq(eventBookings.eventSpaceId, eventSpaceId),
     eq(eventBookings.status, "confirmed"),
     or(
-      and(
-        lte(eventBookings.startDatetime, startDatetime),
-        gte(eventBookings.endDatetime, startDatetime)
-      ),
-      and(
-        lte(eventBookings.startDatetime, endDatetime),
-        gte(eventBookings.endDatetime, endDatetime)
-      ),
-      and(
-        gte(eventBookings.startDatetime, startDatetime),
-        lte(eventBookings.endDatetime, endDatetime)
-      )
+      sql`(${eventBookings.startDate}::date <= ${startDateStr}::date AND ${eventBookings.endDate}::date > ${startDateStr}::date)`,
+      sql`(${eventBookings.startDate}::date <= ${endDateStr}::date AND ${eventBookings.endDate}::date > ${endDateStr}::date)`,
+      sql`(${eventBookings.startDate}::date >= ${startDateStr}::date AND ${eventBookings.endDate}::date <= ${endDateStr}::date)`
     )
   ];
 
@@ -721,7 +588,7 @@ export const getEventsByOrganizer = async (email: string) => {
     .select()
     .from(eventBookings)
     .where(eq(eventBookings.organizerEmail, email))
-    .orderBy(desc(eventBookings.startDatetime))
+    .orderBy(desc(eventBookings.startDate))
     .limit(50);
 };
 
@@ -751,18 +618,11 @@ export const calculateEventDeposit = async (
 export const isEventSpaceAvailableForImmediateBooking = async (
   eventSpaceId: string
 ): Promise<boolean> => {
-  const [space] = await db
-    .select()
-    .from(eventSpaces)
-    .where(eq(eventSpaces.id, eventSpaceId));
+  const space = await getEventSpaceById(eventSpaceId);
 
   if (!space) return false;
-
   if (!space.isActive) return false;
-
-  if (space.approvalRequired !== undefined && space.approvalRequired === true) {
-    return false;
-  }
+  if (space.approvalRequired === true) return false;
 
   return true;
 };
@@ -808,6 +668,38 @@ export const getEventBookingSecurityDeposit = async (
   return Math.round(toNumber(booking.totalPrice) * 0.3);
 };
 
+// ==================== FUNÇÕES PARA SISTEMA DE CATERING ====================
+export const offersCatering = async (eventSpaceId: string): Promise<boolean> => {
+  const [space] = await db
+    .select({ offersCatering: eventSpaces.offersCatering })
+    .from(eventSpaces)
+    .where(eq(eventSpaces.id, eventSpaceId))
+    .limit(1);
+
+  return space?.offersCatering === true;
+};
+
+export const getCateringDiscountPercent = async (eventSpaceId: string): Promise<number> => {
+  const [space] = await db
+    .select({ cateringDiscountPercent: eventSpaces.cateringDiscountPercent })
+    .from(eventSpaces)
+    .where(eq(eventSpaces.id, eventSpaceId))
+    .limit(1);
+
+  return toNumber(space?.cateringDiscountPercent || 0);
+};
+
+export const getCateringMenuUrls = async (eventSpaceId: string): Promise<string[]> => {
+  const [space] = await db
+    .select({ cateringMenuUrls: eventSpaces.cateringMenuUrls })
+    .from(eventSpaces)
+    .where(eq(eventSpaces.id, eventSpaceId))
+    .limit(1);
+
+  return space?.cateringMenuUrls || [];
+};
+
+// ==================== FUNÇÕES SIMPLES ====================
 export const isAlcoholAllowed = async (eventSpaceId: string): Promise<boolean> => {
   const [space] = await db
     .select({ alcoholAllowed: eventSpaces.alcoholAllowed })
@@ -828,22 +720,12 @@ export const getSpaceMaxCapacity = async (eventSpaceId: string): Promise<number>
   return space?.capacityMax || 0;
 };
 
-export const includesCatering = async (eventSpaceId: string): Promise<boolean> => {
+export const getSpaceMinCapacity = async (eventSpaceId: string): Promise<number> => {
   const [space] = await db
-    .select({ includesCatering: eventSpaces.includesCatering })
+    .select({ capacityMin: eventSpaces.capacityMin })
     .from(eventSpaces)
     .where(eq(eventSpaces.id, eventSpaceId))
     .limit(1);
 
-  return space?.includesCatering === true;
-};
-
-export const includesFurniture = async (eventSpaceId: string): Promise<boolean> => {
-  const [space] = await db
-    .select({ includesFurniture: eventSpaces.includesFurniture })
-    .from(eventSpaces)
-    .where(eq(eventSpaces.id, eventSpaceId))
-    .limit(1);
-
-  return space?.includesFurniture === true;
+  return space?.capacityMin || 0;
 };

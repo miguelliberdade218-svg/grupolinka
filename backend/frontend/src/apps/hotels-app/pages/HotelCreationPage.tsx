@@ -1,6 +1,6 @@
 // src/apps/hotels-app/pages/HotelCreationPage.tsx
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'wouter'; // ← Mudado de react-router-dom para wouter
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -27,7 +27,7 @@ export default function HotelCreationPage() {
 
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation(); // ← Mudado para wouter
 
   const amenitiesOptions = [
     'Wi-Fi Gratuito',
@@ -102,7 +102,7 @@ export default function HotelCreationPage() {
         });
 
         // REDIRECIONA PARA DASHBOARD (sem selecionar automaticamente)
-        navigate('/hotels/manage'); // Ajuste a rota do dashboard se for diferente
+        setLocation('/hotels/manage'); // ← Mudado para wouter
       } else {
         throw new Error(response.error || 'Falha ao criar hotel');
       }
@@ -119,7 +119,7 @@ export default function HotelCreationPage() {
   };
 
   const handleCancel = () => {
-    navigate('/hotels/manage'); // Volta para o dashboard sem criar
+    setLocation('/hotels/manage'); // ← Mudado para wouter
   };
 
   return (

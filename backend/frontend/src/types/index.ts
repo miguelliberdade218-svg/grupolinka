@@ -397,16 +397,29 @@ export type PaymentStatus = 'pending' | 'paid' | 'refunded' | 'failed';
 export interface Booking {
   id: string;
   type: 'ride' | 'hotel' | 'event';
-  bookingDate: string;
+  bookingDate?: string;  // CORREÇÃO: Tornado opcional
   status: string;
   passengerId?: string;
   guestName?: string;
   guestEmail?: string;
   guestPhone?: string;
-  totalPrice?: number;
+  totalPrice?: number | string;  // CORREÇÃO: Aceita string também
   details?: any;
+  // Adicionar campos específicos de cada tipo
+  rideId?: string;
+  hotelId?: string;
+  eventSpaceId?: string;
+  seatsBooked?: number;
+  adults?: number;
+  children?: number;
+  units?: number;
+  eventTitle?: string;
+  startDate?: string;
+  endDate?: string;
+  durationDays?: number;
+  createdAt?: string;  // Pode ser usado como fallback para bookingDate
+  updatedAt?: string;
 }
-
 export interface HotelBookingRequest {
   hotelId: string;
   roomTypeId: string;

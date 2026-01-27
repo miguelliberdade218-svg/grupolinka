@@ -1,1350 +1,662 @@
 // src/services/eventSpaceService.ts
-// Serviço para gerenciamento de espaços de eventos - CORRIGIDO para usar a estrutura real do backend (sem /v2)
-import { apiService } from './api';
+// VERSÃO FINAL CORRIGIDA - 26/01/2026 - COM TODAS AS MELHORIAS APLICADAS
+// Completa, alinhada com apiService.ts e shared/types/event-spaces.ts
+// Usa SOMENTE métodos do apiService, retorna formato uniforme { success, data?, error?, message? }
 
-// ==================== TIPOS ====================
-export interface EventSpace {
-  id: string;
-  hotel_id: string;
-  name: string;
-  description?: string;
-  capacity_min: number;
-  capacity_max: number;
-  base_price_hourly?: string;
-  base_price_half_day?: string;
-  base_price_full_day?: string;
-  price_per_hour?: string;
-  price_per_day?: string;
-  price_per_event?: string;
-  weekend_surcharge_percent?: number;
-  area_sqm?: number;
-  space_type?: string;
-  ceiling_height?: string;
-  natural_light: boolean;
-  has_stage: boolean;
-  stage_dimensions?: string;
-  loading_access: boolean;
-  dressing_rooms?: number;
-  security_deposit?: string;
-  insurance_required: boolean;
-  max_duration_hours?: number;
-  min_booking_hours?: number;
-  noise_restriction?: string;
-  alcohol_allowed: boolean;
-  floor_plan_image?: string;
-  virtual_tour_url?: string;
-  approval_required: boolean;
-  includes_catering: boolean;
-  includes_furniture: boolean;
-  includes_cleaning: boolean;
-  includes_security: boolean;
-  amenities?: string[];
-  event_types?: string[];
-  allowed_event_types?: string[];
-  prohibited_event_types?: string[];
-  equipment?: Record<string, any>;
-  setup_options?: string[];
-  images?: string[];
-  is_active: boolean;
-  is_featured: boolean;
-  slug?: string;
-  rating?: number;
-  total_reviews?: number;
-  created_at: string;
-  updated_at: string;
-}
+import { apiService } from './api'; // ← Ajusta o path se for '@/services/apiService' ou outro
+import type {
+  EventSpace,
+  EventSpaceSearchParams,
+  EventBooking,
+  EventBookingRequest,
+  EventAvailabilityResponse,
+  EventSpaceReview,
+  EventDashboardSummary,
+  CreateEventSpaceRequest,
+  UpdateEventSpaceRequest,
+  EventSpaceDetails,
+  EventSpaceSearchResponse,
+  EventBookingResponse,
+} from '@/shared/types/event-spaces';
 
-export interface EventSpaceCreateRequest {
-  hotel_id: string;
-  name: string;
-  description?: string;
-  capacity_min: number;
-  capacity_max: number;
-  base_price_hourly?: string;
-  base_price_half_day?: string;
-  base_price_full_day?: string;
-  price_per_hour?: string;
-  price_per_day?: string;
-  price_per_event?: string;
-  weekend_surcharge_percent?: number;
-  area_sqm?: number;
-  space_type?: string;
-  ceiling_height?: string;
-  natural_light?: boolean;
-  has_stage?: boolean;
-  stage_dimensions?: string;
-  loading_access?: boolean;
-  dressing_rooms?: number;
-  security_deposit?: string;
-  insurance_required?: boolean;
-  max_duration_hours?: number;
-  min_booking_hours?: number;
-  noise_restriction?: string;
-  alcohol_allowed?: boolean;
-  floor_plan_image?: string;
-  virtual_tour_url?: string;
-  approval_required?: boolean;
-  includes_catering?: boolean;
-  includes_furniture?: boolean;
-  includes_cleaning?: boolean;
-  includes_security?: boolean;
-  amenities?: string[];
-  event_types?: string[];
-  allowed_event_types?: string[];
-  prohibited_event_types?: string[];
-  equipment?: Record<string, any>;
-  setup_options?: string[];
-  images?: string[];
-  is_active?: boolean;
-  is_featured?: boolean;
-}
-
-export interface EventSpaceUpdateRequest {
-  name?: string;
-  description?: string | null;
-  capacity_min?: number;
-  capacity_max?: number;
-  base_price_hourly?: string | null;
-  base_price_half_day?: string | null;
-  base_price_full_day?: string | null;
-  price_per_hour?: string | null;
-  price_per_day?: string | null;
-  price_per_event?: string | null;
-  weekend_surcharge_percent?: number;
-  area_sqm?: number | null;
-  space_type?: string | null;
-  ceiling_height?: string | null;
-  natural_light?: boolean;
-  has_stage?: boolean;
-  stage_dimensions?: string | null;
-  loading_access?: boolean;
-  dressing_rooms?: number | null;
-  security_deposit?: string | null;
-  insurance_required?: boolean;
-  max_duration_hours?: number | null;
-  min_booking_hours?: number | null;
-  noise_restriction?: string | null;
-  alcohol_allowed?: boolean;
-  floor_plan_image?: string | null;
-  virtual_tour_url?: string | null;
-  approval_required?: boolean;
-  includes_catering?: boolean;
-  includes_furniture?: boolean;
-  includes_cleaning?: boolean;
-  includes_security?: boolean;
-  amenities?: string[];
-  event_types?: string[];
-  allowed_event_types?: string[];
-  prohibited_event_types?: string[];
-  equipment?: Record<string, any>;
-  setup_options?: string[];
-  images?: string[];
-  is_active?: boolean;
-  is_featured?: boolean;
-}
-
-export interface EventBooking {
-  id: string;
-  event_space_id: string;
-  hotel_id: string;
-  organizer_name: string;
-  organizer_email: string;
-  organizer_phone?: string;
-  event_title: string;
-  event_description?: string;
-  event_type: string;
-  start_datetime: string;
-  end_datetime: string;
-  expected_attendees: number;
-  special_requests?: string;
-  additional_services?: Record<string, any>;
-  base_price?: string;
-  total_price?: string;
-  security_deposit?: string;
-  status: 'pending_approval' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected';
-  payment_status: 'pending' | 'partial' | 'paid' | 'refunded';
-  payment_reference?: string;
-  user_id?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface EventSpaceReview {
-  id: string;
-  booking_id: string;
-  event_space_id: string;
-  hotel_id: string;
-  user_id?: string;
-  ratings: {
-    venue: number;
-    facilities: number;
-    location: number;
-    services: number;
-    staff: number;
-    value: number;
-  };
-  title: string;
-  comment: string;
-  pros?: string;
-  cons?: string;
-  helpful_votes: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ApiResponse<T = any> {
+export interface ServiceResponse<T = any> {
   success: boolean;
   data?: T;
-  message?: string;
   error?: string;
-  errors?: Array<{ path: string; message: string }>;
-}
-
-// ✅ CORREÇÃO: Expandir ListResponse para incluir propriedades de erro
-export interface ListResponse<T> {
-  success: boolean;
-  data: T[];
-  count: number;
   message?: string;
-  error?: string; // ✅ ADICIONADO
-  errors?: Array<{ path: string; message: string }>; // ✅ ADICIONADO
+  details?: any; // Para erros de validação detalhados
 }
 
-// ✅ CORREÇÃO: Criar uma interface para respostas de erro específicas
-export interface ErrorResponse {
-  success: false;
-  error: string;
-  data?: never;
-  count?: number;
-  message?: string;
-}
+// ✅ FUNÇÃO MELHORADA: toSnakeCase que preserva campos JSON com recursão controlada
+const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<string, any> => {
+  // Prevenir recursão infinita
+  if (depth > 5 || obj === null || typeof obj !== 'object') {
+    return obj;
+  }
 
-// ✅ CORREÇÃO: Criar um tipo union para lidar com ambos os casos
-export type ServiceResponse<T> = ListResponse<T> | ErrorResponse;
+  const result: Record<string, any> = {};
+  
+  Object.entries(obj).forEach(([key, value]) => {
+    // Se for undefined, pular (não incluir no resultado)
+    if (value === undefined) {
+      return;
+    }
+    
+    let snakeKey = key;
+    // Converter para snake_case apenas se tiver letras maiúsculas
+    if (/[A-Z]/.test(key)) {
+      snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+    }
+    
+    // Preservar campos especiais que já são objetos JSON
+    if (['equipment', 'additionalServices', 'equipmentValue'].includes(key) && 
+        typeof value === 'object' && value !== null) {
+      result[snakeKey] = value;
+      return;
+    }
+    
+    // Processar arrays
+    if (Array.isArray(value)) {
+      result[snakeKey] = value.map(item => {
+        if (typeof item === 'object' && item !== null) {
+          return toSnakeCaseForEventSpaces(item, depth + 1);
+        }
+        return item;
+      });
+      return;
+    }
+    
+    // Processar objetos aninhados (exceto os campos especiais)
+    if (typeof value === 'object' && value !== null) {
+      result[snakeKey] = toSnakeCaseForEventSpaces(value, depth + 1);
+      return;
+    }
+    
+    // Valores primitivos
+    result[snakeKey] = value;
+  });
+  
+  return result;
+};
 
-export interface EventSpaceWithHotel {
-  space: EventSpace;
-  hotel: any;
-  base_price?: string;
-  price_half_day?: string;
-  price_full_day?: string;
-  price_per_hour?: string;
-}
+// ✅ CORREÇÃO MELHORADA: Função para processar equipment corretamente
+const processEquipmentField = (equipment: any): any => {
+  // Se não existir, retornar objeto vazio
+  if (!equipment) return {};
+  
+  // Se já for objeto válido, usar diretamente
+  if (typeof equipment === 'object' && equipment !== null && !Array.isArray(equipment)) {
+    // Garantir que não tenha propriedades undefined
+    const cleanObj: Record<string, any> = {};
+    Object.entries(equipment).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        cleanObj[key] = value;
+      }
+    });
+    return cleanObj;
+  }
+  
+  // Se for string, tentar parsear
+  if (typeof equipment === 'string') {
+    try {
+      // Remover escapes duplos e aspas extras
+      let cleaned = equipment.trim();
+      
+      // Remover aspas externas se existirem
+      if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+        cleaned = cleaned.slice(1, -1);
+      }
+      
+      // Remover escapes
+      cleaned = cleaned.replace(/\\"/g, '"');
+      cleaned = cleaned.replace(/\\\\/g, '\\');
+      
+      const parsed = JSON.parse(cleaned);
+      
+      // Verificar se é objeto (não array)
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        return parsed;
+      }
+      
+      // Se for array, transformar em objeto com chave "items"
+      if (Array.isArray(parsed)) {
+        console.log('⚠️ Equipment é array, convertendo para objeto');
+        return { items: parsed };
+      }
+      
+      // Se não for objeto nem array, criar objeto com o valor
+      return { value: parsed };
+    } catch (e) {
+      console.warn('⚠️ equipment não é JSON válido, usando objeto vazio:', equipment);
+      return {};
+    }
+  }
+  
+  // Se for array, transformar em objeto com chave "items"
+  if (Array.isArray(equipment)) {
+    console.log('⚠️ Equipment é array, convertendo para objeto');
+    return { items: equipment };
+  }
+  
+  // Qualquer outro caso, objeto vazio
+  return {};
+};
 
-export interface EventAvailability {
-  date: string;
-  is_available: boolean;
-  stop_sell?: boolean;
-  price_override?: string;
-  min_booking_hours?: number;
-  slots?: Array<{
-    startTime: string;
-    endTime: string;
-    bookingId?: string;
-    status?: string;
-  }>;
-}
-
-export interface EventBookingDetails {
-  booking: EventBooking;
-  space: EventSpace;
-  hotel: any;
-}
-
-export interface CreateEventBookingRequest {
-  organizer_name: string;
-  organizer_email: string;
-  organizer_phone?: string;
-  event_title: string;
-  event_description?: string;
-  event_type: string;
-  start_datetime: string;
-  end_datetime: string;
-  expected_attendees: number;
-  special_requests?: string;
-  additional_services?: Record<string, any>;
-  user_id?: string;
-}
+// ✅ FUNÇÃO AUXILIAR: Extrair EventSpace de EventSpaceDetails
+const extractEventSpace = (data: any): EventSpace | null => {
+  if (!data) return null;
+  
+  // Se já for EventSpace (tem id, name, etc)
+  if (data.id && data.name) {
+    return data as EventSpace;
+  }
+  
+  // Se for EventSpaceDetails (tem propriedade space)
+  if (data.space && typeof data.space === 'object' && data.space.id) {
+    return data.space as EventSpace;
+  }
+  
+  return null;
+};
 
 class EventSpaceService {
-  // ==================== ESPAÇOS DE EVENTOS ====================
+  // ==================== ESPAÇOS ====================
 
-  /**
-   * Buscar espaços de eventos com filtros
-   */
-  async searchEventSpaces(filters?: {
-    query?: string;
-    locality?: string;
-    province?: string;
-    eventDate?: string;
-    capacity?: number;
-    eventType?: string;
-    maxPrice?: number;
-    amenities?: string[];
-    hotelId?: string;
-  }): Promise<ServiceResponse<EventSpaceWithHotel>> {
+  async createEventSpace(data: CreateEventSpaceRequest): Promise<ServiceResponse<EventSpace>> {
+    // ✅ CORREÇÃO: Vamos assumir que o apiService não suporta AbortSignal
+    // Se necessário, implemente timeout de outra forma
     try {
-      const params = new URLSearchParams();
-      if (filters?.query) params.append('query', filters.query);
-      if (filters?.locality) params.append('locality', filters.locality);
-      if (filters?.province) params.append('province', filters.province);
-      if (filters?.eventDate) params.append('eventDate', filters.eventDate);
-      if (filters?.capacity) params.append('capacity', filters.capacity.toString());
-      if (filters?.eventType) params.append('eventType', filters.eventType);
-      if (filters?.maxPrice) params.append('maxPrice', filters.maxPrice.toString());
-      if (filters?.amenities?.length) params.append('amenities', filters.amenities.join(','));
-      if (filters?.hotelId) params.append('hotelId', filters.hotelId);
-
-      const queryString = params.toString();
-      const url = `/api/events/spaces${queryString ? '?' + queryString : ''}`;
-      
-      const response = await apiService.get<ListResponse<EventSpaceWithHotel>>(url);
-      
-      if (response.success && response.data) {
-        return response;
-      }
-      
-      // ✅ CORREÇÃO: Retornar ErrorResponse quando falha
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar espaços'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar espaços de eventos:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar espaços'
-      };
-    }
-  }
-
-  /**
-   * Obter espaço de evento por ID
-   */
-  async getEventSpaceById(spaceId: string): Promise<ApiResponse<{
-    space: EventSpace;
-    hotel: any;
-    pricing: Record<string, string | null>;
-    available_for_immediate_booking: boolean;
-    alcohol_allowed: boolean;
-    max_capacity: number;
-    includes_catering: boolean;
-    includes_furniture: boolean;
-  }>> {
-    try {
-      const response = await apiService.get<ApiResponse<any>>(`/api/events/spaces/${spaceId}`);
-      
-      if (response.success && response.data) {
-        return {
-          success: true,
-          data: response.data
-        };
-      }
-      
-      return {
-        success: false,
-        message: response.message || 'Espaço não encontrado',
-        error: response.error
-      };
-    } catch (error) {
-      console.error('Erro ao buscar espaço:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar espaço'
-      };
-    }
-  }
-
-  /**
-   * Criar novo espaço de evento
-   */
-  async createEventSpace(data: EventSpaceCreateRequest): Promise<ApiResponse<EventSpace>> {
-    try {
-      if (!data.hotel_id) {
-        return {
-          success: false,
-          error: 'hotel_id é obrigatório'
-        };
-      }
-
-      const payload = {
+      // ✅ CORREÇÃO: Preparar dados com campos JSON corretos
+      const preparedData = {
         ...data,
-        capacity_min: Number(data.capacity_min) || 10,
-        capacity_max: Number(data.capacity_max) || 50,
-        base_price_hourly: data.base_price_hourly || '100.00',
-        price_per_hour: data.price_per_hour || '90.00',
-        name: data.name || 'Espaço Sem Nome',
-        description: data.description || null,
-        natural_light: data.natural_light !== false,
-        has_stage: data.has_stage === true,
-        loading_access: data.loading_access === true,
-        insurance_required: data.insurance_required === true,
-        alcohol_allowed: data.alcohol_allowed === true,
-        approval_required: data.approval_required === true,
-        includes_catering: data.includes_catering === true,
-        includes_furniture: data.includes_furniture !== false,
-        includes_cleaning: data.includes_cleaning === true,
-        includes_security: data.includes_security === true,
-        is_active: data.is_active !== false,
-        is_featured: data.is_featured === true,
-        amenities: data.amenities || [],
-        event_types: data.event_types || [],
-        images: data.images || [],
-        weekend_surcharge_percent: data.weekend_surcharge_percent || 0
+        // ✅ CORREÇÃO: Usar a função processEquipmentField para garantir objeto válido
+        equipment: processEquipmentField(data.equipment),
+        // Outros campos que devem ser arrays
+        setupOptions: Array.isArray(data.setupOptions) ? data.setupOptions : [],
+        allowedEventTypes: Array.isArray(data.allowedEventTypes) ? data.allowedEventTypes : [],
+        prohibitedEventTypes: Array.isArray(data.prohibitedEventTypes) ? data.prohibitedEventTypes : [],
+        cateringMenuUrls: Array.isArray(data.cateringMenuUrls) ? data.cateringMenuUrls : [],
+        images: Array.isArray(data.images) ? data.images : [],
       };
-
-      const response = await apiService.post<ApiResponse<EventSpace>>('/api/events/spaces', payload);
       
-      return response;
-    } catch (error) {
-      console.error('Erro ao criar espaço:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao criar espaço'
-      };
-    }
-  }
-
-  /**
-   * Atualizar espaço de evento
-   */
-  async updateEventSpace(spaceId: string, data: EventSpaceUpdateRequest): Promise<ApiResponse<EventSpace>> {
-    try {
-      const payload = { ...data };
+      // ✅ IMPORTANTE: Log detalhado para debug
+      console.log('🔍 Dados FINAIS antes de enviar para backend:', {
+        equipment: preparedData.equipment,
+        equipmentType: typeof preparedData.equipment,
+        equipmentStringified: JSON.stringify(preparedData.equipment),
+        isObject: typeof preparedData.equipment === 'object' && preparedData.equipment !== null,
+        isString: typeof preparedData.equipment === 'string',
+      });
       
-      if (payload.capacity_min !== undefined) {
-        payload.capacity_min = Number(payload.capacity_min);
-      }
-      if (payload.capacity_max !== undefined) {
-        payload.capacity_max = Number(payload.capacity_max);
-      }
-      if (payload.weekend_surcharge_percent !== undefined) {
-        payload.weekend_surcharge_percent = Number(payload.weekend_surcharge_percent);
-      }
-      if (payload.area_sqm !== undefined) {
-        payload.area_sqm = payload.area_sqm ? Number(payload.area_sqm) : null;
-      }
-      if (payload.dressing_rooms !== undefined) {
-        payload.dressing_rooms = payload.dressing_rooms ? Number(payload.dressing_rooms) : null;
-      }
-      if (payload.max_duration_hours !== undefined) {
-        payload.max_duration_hours = payload.max_duration_hours ? Number(payload.max_duration_hours) : null;
-      }
-      if (payload.min_booking_hours !== undefined) {
-        payload.min_booking_hours = payload.min_booking_hours ? Number(payload.min_booking_hours) : null;
-      }
-
-      const response = await apiService.put<ApiResponse<EventSpace>>(`/api/events/spaces/${spaceId}`, payload);
+      // ✅ CORREÇÃO: Usar a nova função toSnakeCaseForEventSpaces
+      const backendData = toSnakeCaseForEventSpaces(preparedData);
       
-      return response;
-    } catch (error) {
-      console.error('Erro ao atualizar espaço:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao atualizar espaço'
-      };
-    }
-  }
-
-  /**
-   * Deletar espaço de evento
-   */
-  async deleteEventSpace(spaceId: string): Promise<ApiResponse<void>> {
-    try {
-      return await apiService.delete<ApiResponse<void>>(`/api/events/spaces/${spaceId}`);
-    } catch (error) {
-      console.error('Erro ao deletar espaço:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao deletar espaço'
-      };
-    }
-  }
-
-  /**
-   * Buscar espaços de eventos do hotel
-   */
-  async getEventSpacesByHotel(hotelId: string, includeInactive = false): Promise<ServiceResponse<EventSpace>> {
-    try {
-      const url = `/api/events/hotel/${hotelId}/spaces${includeInactive ? '?includeInactive=true' : ''}`;
-      const response = await apiService.get<ListResponse<EventSpace>>(url);
+      // ✅ Log do backendData após conversão
+      console.log('🔍 backendData após toSnakeCaseForEventSpaces:', {
+        equipment: backendData.equipment,
+        equipmentType: typeof backendData.equipment,
+      });
       
-      if (response.success && response.data) {
-        return response;
+      const res = await apiService.post<any>('/api/events/spaces', backendData);
+      
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao criar espaço' };
       }
       
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar espaços do hotel'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar espaços do hotel:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar espaços'
-      };
-    }
-  }
-
-  /**
-   * Buscar espaços em destaque
-   */
-  async getFeaturedEventSpaces(limit = 10): Promise<ServiceResponse<EventSpaceWithHotel>> {
-    try {
-      const response = await apiService.get<ListResponse<EventSpaceWithHotel>>(
-        `/api/events/spaces/featured?limit=${limit}`
-      );
-      
-      if (response.success && response.data) {
-        return response;
+      // Extrair EventSpace da resposta
+      const eventSpace = extractEventSpace(res.data);
+      if (!eventSpace) {
+        return { success: false, error: 'Dados do espaço não retornados corretamente' };
       }
       
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar espaços em destaque'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar espaços em destaque:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar espaços em destaque'
-      };
-    }
-  }
+      return { success: true, data: eventSpace, message: 'Espaço criado com sucesso' };
+    } catch (err: any) {
+      console.error('[createEventSpace]', err);
+      
+      // ✅ CORREÇÃO: Tratamento granular de erros (incluindo validação Zod do backend)
+      let errorMessage = err.message || 'Falha ao criar espaço';
+      let validationErrors = null;
 
-  // ==================== RESERVAS DE EVENTOS ====================
-
-  /**
-   * Criar reserva de evento
-   */
-  async createEventBooking(spaceId: string, data: CreateEventBookingRequest): Promise<ApiResponse<EventBooking>> {
-    try {
-      if (!data.start_datetime || !data.end_datetime) {
-        return {
-          success: false,
-          error: 'start_datetime e end_datetime são obrigatórios'
-        };
+      // Se o backend retornar Zod errors no formato { errors: [...] }
+      if (err.response?.data?.errors) {
+        validationErrors = err.response.data.errors;
+        errorMessage = 'Dados inválidos: verifique os campos obrigatórios';
       }
 
-      const response = await apiService.post<ApiResponse<EventBooking>>(
-        `/api/events/spaces/${spaceId}/bookings`, 
-        data
-      );
-      
-      return response;
-    } catch (error) {
-      console.error('Erro ao criar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao criar reserva'
+      return { 
+        success: false, 
+        error: errorMessage,
+        details: validationErrors 
       };
     }
   }
 
-  /**
-   * Obter reserva de evento por ID com detalhes completos
-   */
-  async getEventBookingById(bookingId: string): Promise<ApiResponse<EventBookingDetails>> {
+  async updateEventSpace(spaceId: string, data: UpdateEventSpaceRequest): Promise<ServiceResponse<EventSpace>> {
     try {
-      const response = await apiService.get<ApiResponse<EventBookingDetails>>(`/api/events/bookings/${bookingId}`);
+      // ✅ CORREÇÃO: Preparar dados com campos JSON corretos
+      const preparedData: any = { ...data };
       
-      return response;
-    } catch (error) {
-      console.error('Erro ao buscar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar reserva'
-      };
-    }
-  }
-
-  /**
-   * Buscar reservas do espaço
-   */
-  async getEventBookingsBySpace(
-    spaceId: string, 
-    options?: {
-      status?: string[];
-      startDate?: string;
-      endDate?: string;
-      limit?: number;
-      offset?: number;
-    }
-  ): Promise<ServiceResponse<EventBooking>> {
-    try {
-      const params = new URLSearchParams();
-      if (options?.status?.length) params.append('status', options.status.join(','));
-      if (options?.startDate) params.append('startDate', options.startDate);
-      if (options?.endDate) params.append('endDate', options.endDate);
-      if (options?.limit) params.append('limit', options.limit.toString());
-      if (options?.offset) params.append('offset', options.offset.toString());
-
-      const queryString = params.toString();
-      const url = `/api/events/spaces/${spaceId}/bookings${queryString ? '?' + queryString : ''}`;
-      
-      const response = await apiService.get<ListResponse<EventBooking>>(url);
-      
-      if (response.success) {
-        return response;
+      // ✅ CORREÇÃO: Processar equipment se existir usando a função correta
+      if (data.equipment !== undefined) {
+        preparedData.equipment = processEquipmentField(data.equipment);
       }
       
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar reservas'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar reservas:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar reservas'
-      };
-    }
-  }
-
-  /**
-   * Buscar próximas reservas do espaço
-   */
-  async getUpcomingEventBookings(spaceId: string, limit = 10): Promise<ServiceResponse<EventBooking>> {
-    try {
-      const response = await apiService.get<ListResponse<EventBooking>>(
-        `/api/events/spaces/${spaceId}/bookings/upcoming?limit=${limit}`
-      );
-      
-      if (response.success) {
-        return response;
+      // Processar outros campos de array se existirem
+      if (data.setupOptions !== undefined) {
+        preparedData.setupOptions = Array.isArray(data.setupOptions) ? data.setupOptions : [];
       }
       
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar próximas reservas'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar próximas reservas:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar próximas reservas'
-      };
-    }
-  }
-
-  /**
-   * Buscar minhas reservas (organizador)
-   */
-  async getMyEventBookings(email?: string): Promise<ServiceResponse<EventBooking>> {
-    try {
-      const url = email 
-        ? `/api/events/my-bookings?email=${email}`
-        : `/api/events/my-bookings`;
-      
-      const response = await apiService.get<ListResponse<EventBooking>>(url);
-      
-      if (response.success) {
-        return response;
+      if (data.allowedEventTypes !== undefined) {
+        preparedData.allowedEventTypes = Array.isArray(data.allowedEventTypes) ? data.allowedEventTypes : [];
       }
       
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar minhas reservas'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar minhas reservas:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar minhas reservas'
-      };
-    }
-  }
-
-  /**
-   * Buscar eventos do organizador
-   */
-  async getOrganizerEvents(email?: string): Promise<ServiceResponse<EventBooking>> {
-    try {
-      const url = email
-        ? `/api/events/organizer/events?email=${email}`
-        : `/api/events/organizer/events`;
-      
-      const response = await apiService.get<ListResponse<EventBooking>>(url);
-      
-      if (response.success) {
-        return response;
+      if (data.prohibitedEventTypes !== undefined) {
+        preparedData.prohibitedEventTypes = Array.isArray(data.prohibitedEventTypes) ? data.prohibitedEventTypes : [];
       }
       
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar eventos'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar eventos do organizador:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar eventos'
+      if (data.cateringMenuUrls !== undefined) {
+        preparedData.cateringMenuUrls = Array.isArray(data.cateringMenuUrls) ? data.cateringMenuUrls : [];
+      }
+      
+      if (data.images !== undefined) {
+        preparedData.images = Array.isArray(data.images) ? data.images : [];
+      }
+      
+      // ✅ IMPORTANTE: Log para debug
+      if (data.equipment !== undefined) {
+        console.log('🔍 Dados para atualizar espaço (antes da conversão):', {
+          equipment: preparedData.equipment,
+          equipmentType: typeof preparedData.equipment,
+          equipmentStringified: JSON.stringify(preparedData.equipment),
+          isObject: typeof preparedData.equipment === 'object' && preparedData.equipment !== null,
+          isString: typeof preparedData.equipment === 'string',
+        });
+      }
+      
+      // Remover campos undefined (para evitar sobrescrever com undefined)
+      const cleanData: any = {};
+      Object.entries(preparedData).forEach(([key, value]) => {
+        if (value !== undefined && key !== 'id') { // Não enviar id no corpo
+          cleanData[key] = value;
+        }
+      });
+      
+      // ✅ CORREÇÃO: Usar a nova função toSnakeCaseForEventSpaces
+      const backendData = toSnakeCaseForEventSpaces(cleanData);
+      
+      // ✅ Log do backendData após conversão
+      console.log('🔍 backendData após toSnakeCaseForEventSpaces:', {
+        equipment: backendData.equipment,
+        equipmentType: typeof backendData.equipment,
+      });
+      
+      const res = await apiService.put<any>(`/api/events/spaces/${spaceId}`, backendData);
+      
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao atualizar espaço' };
+      }
+      
+      // Extrair EventSpace da resposta
+      const eventSpace = extractEventSpace(res.data);
+      if (!eventSpace) {
+        return { success: false, error: 'Dados do espaço não retornados corretamente' };
+      }
+      
+      return { success: true, data: eventSpace, message: 'Espaço atualizado com sucesso' };
+    } catch (err: any) {
+      console.error('[updateEventSpace]', err);
+      
+      // ✅ CORREÇÃO: Tratamento granular de erros (incluindo validação Zod do backend)
+      let errorMessage = err.message || 'Falha ao atualizar espaço';
+      let validationErrors = null;
+
+      // Se o backend retornar Zod errors no formato { errors: [...] }
+      if (err.response?.data?.errors) {
+        validationErrors = err.response.data.errors;
+        errorMessage = 'Dados inválidos: verifique os campos obrigatórios';
+      }
+
+      return { 
+        success: false, 
+        error: errorMessage,
+        details: validationErrors 
       };
     }
   }
 
-  /**
-   * Confirmar reserva de evento
-   */
-  async confirmEventBooking(bookingId: string, notes?: string): Promise<ApiResponse<EventBooking>> {
+  async getEventSpaceById(spaceId: string): Promise<ServiceResponse<EventSpace>> {
     try {
-      return await apiService.post<ApiResponse<EventBooking>>(
-        `/api/events/bookings/${bookingId}/confirm`, 
-        { notes }
-      );
-    } catch (error) {
-      console.error('Erro ao confirmar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao confirmar reserva'
-      };
+      const res = await apiService.getEventSpaceDetails(spaceId);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Espaço não encontrado' };
+      }
+      
+      // ✅ CORREÇÃO: Extrair EventSpace corretamente
+      const eventSpace = extractEventSpace(res.data);
+      if (!eventSpace) {
+        return { success: false, error: 'Dados do espaço não retornados corretamente' };
+      }
+      
+      return { success: true, data: eventSpace };
+    } catch (err: any) {
+      console.error('[getEventSpaceById]', err);
+      return { success: false, error: err.message || 'Erro ao buscar espaço' };
     }
   }
 
-  /**
-   * Rejeitar reserva de evento
-   */
-  async rejectEventBooking(bookingId: string, reason: string): Promise<ApiResponse<EventBooking>> {
+  async getEventSpacesByHotel(hotelId: string, includeInactive = false): Promise<ServiceResponse<EventSpace[]>> {
     try {
-      return await apiService.post<ApiResponse<EventBooking>>(
-        `/api/events/bookings/${bookingId}/reject`, 
-        { reason }
-      );
-    } catch (error) {
-      console.error('Erro ao rejeitar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao rejeitar reserva'
-      };
+      const res = await apiService.getEventSpacesByHotel(hotelId, includeInactive);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao listar espaços' };
+      }
+      
+      // Garantir que seja array de EventSpace
+      const eventSpaces = Array.isArray(res.data) 
+        ? res.data.map(item => extractEventSpace(item) || item)
+        : [];
+        
+      return { success: true, data: eventSpaces };
+    } catch (err: any) {
+      console.error('[getEventSpacesByHotel]', err);
+      return { success: false, error: err.message || 'Falha ao buscar espaços do hotel' };
     }
   }
 
-  /**
-   * Cancelar reserva de evento
-   */
-  async cancelEventBooking(bookingId: string, reason?: string): Promise<ApiResponse<EventBooking>> {
+  async searchEventSpaces(filters: EventSpaceSearchParams): Promise<ServiceResponse<EventSpace[]>> {
     try {
-      return await apiService.post<ApiResponse<EventBooking>>(
-        `/api/events/bookings/${bookingId}/cancel`, 
-        { reason }
-      );
-    } catch (error) {
-      console.error('Erro ao cancelar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao cancelar reserva'
-      };
+      const res = await apiService.searchEventSpaces(filters);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro na busca de espaços' };
+      }
+      
+      // Garantir que seja array de EventSpace
+      const eventSpaces = Array.isArray(res.data) 
+        ? res.data.map(item => extractEventSpace(item) || item)
+        : [];
+        
+      return { success: true, data: eventSpaces };
+    } catch (err: any) {
+      console.error('[searchEventSpaces]', err);
+      return { success: false, error: err.message || 'Falha na busca de espaços' };
     }
   }
 
-  /**
-   * Atualizar reserva de evento
-   */
-  async updateEventBooking(bookingId: string, data: Partial<EventBooking>): Promise<ApiResponse<EventBooking>> {
+  async getFeaturedEventSpaces(limit = 10): Promise<ServiceResponse<EventSpace[]>> {
     try {
-      return await apiService.put<ApiResponse<EventBooking>>(
-        `/api/events/bookings/${bookingId}`,
-        data
-      );
-    } catch (error) {
-      console.error('Erro ao atualizar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao atualizar reserva'
-      };
+      const res = await apiService.getFeaturedEventSpaces(limit);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao buscar espaços em destaque' };
+      }
+      
+      // Garantir que seja array de EventSpace
+      const eventSpaces = Array.isArray(res.data) 
+        ? res.data.map(item => extractEventSpace(item) || item)
+        : [];
+        
+      return { success: true, data: eventSpaces };
+    } catch (err: any) {
+      console.error('[getFeaturedEventSpaces]', err);
+      return { success: false, error: err.message || 'Falha ao buscar destacados' };
     }
   }
 
-  // ==================== DISPONIBILIDADE ====================
+  // ==================== DELETE ====================
 
-  /**
-   * Verificar disponibilidade de evento
-   */
-  async checkEventAvailability(spaceId: string, data: {
-    date: string;
-    startTime?: string;
-    endTime?: string;
-  }): Promise<ApiResponse<{ available: boolean; message?: string }>> {
+  async deleteEventSpace(spaceId: string): Promise<ServiceResponse<{ message: string }>> {
     try {
-      return await apiService.post<ApiResponse<{ available: boolean; message?: string }>>(
-        `/api/events/spaces/${spaceId}/availability/check`, 
-        data
-      );
-    } catch (error) {
-      console.error('Erro ao verificar disponibilidade:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao verificar disponibilidade'
+      const res = await apiService.delete<any>(`/api/events/spaces/${spaceId}`);
+      
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao deletar espaço' };
+      }
+      
+      return { 
+        success: true, 
+        data: { message: res.message || 'Espaço deletado com sucesso' },
+        message: 'Espaço removido'
+      };
+    } catch (err: any) {
+      console.error('[deleteEventSpace]', err);
+      return { 
+        success: false, 
+        error: err.message || 'Falha ao deletar espaço. Verifique permissões ou conexão.' 
       };
     }
   }
 
-  /**
-   * Obter calendário de disponibilidade
-   */
-  async getEventAvailability(
-    spaceId: string, 
-    startDate: string, 
+  // ==================== BOOKINGS ====================
+
+  async createBooking(bookingData: EventBookingRequest): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const res = await apiService.createEventBooking(bookingData);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao criar reserva' };
+      }
+      
+      return { 
+        success: true, 
+        data: res.data, 
+        message: res.message || 'Reserva criada (aguardando aprovação)' 
+      };
+    } catch (err: any) {
+      console.error('[createBooking]', err);
+      return { success: false, error: err.message || 'Falha ao criar reserva' };
+    }
+  }
+
+  async getBookingDetails(bookingId: string): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const res = await apiService.getEventBookingDetails(bookingId);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Reserva não encontrada' };
+      }
+      if (!res.data) {
+        return { success: false, error: 'Dados da reserva não retornados' };
+      }
+      return { success: true, data: res.data };
+    } catch (err: any) {
+      console.error('[getBookingDetails]', err);
+      return { success: false, error: err.message || 'Erro ao buscar detalhes da reserva' };
+    }
+  }
+
+  async confirmBooking(bookingId: string): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const res = await apiService.confirmEventBooking(bookingId);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao confirmar reserva' };
+      }
+      if (!res.data) {
+        return { success: false, error: 'Dados da reserva não retornados após confirmação' };
+      }
+      return { success: true, data: res.data, message: 'Reserva confirmada com sucesso' };
+    } catch (err: any) {
+      console.error('[confirmBooking]', err);
+      return { success: false, error: err.message || 'Falha ao confirmar reserva' };
+    }
+  }
+
+  async cancelBooking(bookingId: string, reason?: string): Promise<ServiceResponse<{ message: string }>> {
+    try {
+      const res = await apiService.cancelEventBooking(bookingId, reason);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao cancelar reserva' };
+      }
+      return { success: true, data: { message: res.message || 'Cancelada com sucesso' } };
+    } catch (err: any) {
+      console.error('[cancelBooking]', err);
+      return { success: false, error: err.message || 'Falha ao cancelar reserva' };
+    }
+  }
+
+  async getMyBookings(email?: string): Promise<ServiceResponse<EventBooking[]>> {
+    try {
+      const res = await apiService.getMyEventBookings(email);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao buscar minhas reservas' };
+      }
+      return { success: true, data: res.data || [] };
+    } catch (err: any) {
+      console.error('[getMyBookings]', err);
+      return { success: false, error: err.message || 'Falha ao buscar reservas' };
+    }
+  }
+
+  // ✅ NOVO: Método para buscar reservas de um espaço específico
+  async getBookings(
+    spaceId: string,
+    params?: { status?: string; startDate?: string; endDate?: string; limit?: number }
+  ): Promise<ServiceResponse<EventBooking[]>> {
+    try {
+      const res = await apiService.getEventSpaceBookings(spaceId, params);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao listar reservas' };
+      }
+      return { success: true, data: res.data || [] };
+    } catch (err: any) {
+      console.error('[getBookings]', err);
+      return { success: false, error: err.message || 'Falha ao buscar reservas do espaço' };
+    }
+  }
+
+  // ==================== DISPONIBILIDADE & PREÇO ====================
+
+  async checkAvailability(
+    spaceId: string,
+    startDate: string,
     endDate: string
-  ): Promise<ServiceResponse<EventAvailability>> {
+  ): Promise<ServiceResponse<EventAvailabilityResponse>> {
     try {
-      const response = await apiService.get<ListResponse<EventAvailability>>(
-        `/api/events/spaces/${spaceId}/availability?startDate=${startDate}&endDate=${endDate}`
-      );
-      
-      if (response.success) {
-        return response;
+      const res = await apiService.checkEventSpaceAvailability(spaceId, startDate, endDate);
+      if (!res.success) {
+        return { success: false, error: res.message || 'Erro na verificação de disponibilidade' };
       }
-      
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar disponibilidade'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar disponibilidade:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar disponibilidade'
-      };
+      return { success: true, data: res };
+    } catch (err: any) {
+      console.error('[checkAvailability]', err);
+      return { success: false, error: err.message || 'Falha na verificação de disponibilidade' };
     }
   }
 
-  /**
-   * Atualizar disponibilidade em massa
-   */
-  async bulkUpdateAvailability(spaceId: string, updates: EventAvailability[]): Promise<ApiResponse<void>> {
+  async calculatePrice(
+    spaceId: string,
+    startDate: string,
+    endDate: string,
+    cateringRequired = false
+  ): Promise<ServiceResponse<{ price: number; breakdown: any }>> {
     try {
-      const formattedUpdates = updates.map(update => ({
-        date: update.date,
-        is_available: update.is_available,
-        stop_sell: update.stop_sell,
-        price_override: update.price_override,
-        min_booking_hours: update.min_booking_hours,
-        slots: update.slots
-      }));
-
-      return await apiService.post<ApiResponse<void>>(
-        `/api/events/spaces/${spaceId}/availability/bulk`, 
-        formattedUpdates
-      );
-    } catch (error) {
-      console.error('Erro ao atualizar disponibilidade:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao atualizar disponibilidade'
-      };
+      const res = await apiService.calculateEventPrice(spaceId, startDate, endDate, cateringRequired);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao calcular preço' };
+      }
+      return { success: true, data: res.data || { price: 0, breakdown: {} } };
+    } catch (err: any) {
+      console.error('[calculatePrice]', err);
+      return { success: false, error: err.message || 'Falha ao calcular preço' };
     }
   }
 
-  /**
-   * Buscar estatísticas de disponibilidade
-   */
-  async getAvailabilityStats(spaceId: string, startDate: string, endDate: string): Promise<ApiResponse<any>> {
+  // ==================== DISPONIBILIDADE (CALENDÁRIO) ====================
+
+  // ✅ NOVO: Wrapper para calendário de disponibilidade
+  async getCalendar(
+    spaceId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<ServiceResponse<any[]>> {
     try {
-      return await apiService.get<ApiResponse<any>>(
-        `/api/events/spaces/${spaceId}/availability/stats?startDate=${startDate}&endDate=${endDate}`
-      );
-    } catch (error) {
-      console.error('Erro ao buscar estatísticas:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar estatísticas'
-      };
+      const res = await apiService.getEventSpaceCalendar(spaceId, startDate, endDate);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao carregar calendário' };
+      }
+      return { success: true, data: res.data || [] };
+    } catch (err: any) {
+      console.error('[getCalendar]', err);
+      return { success: false, error: err.message || 'Falha ao carregar disponibilidade' };
     }
   }
 
-  /**
-   * Verificar capacidade do espaço
-   */
-  async checkEventSpaceCapacity(spaceId: string, expectedAttendees: number): Promise<ApiResponse<{
-    valid: boolean;
-    message?: string;
-  }>> {
+  // ✅ NOVO: Wrapper para atualizar disponibilidade de um dia
+  async updateDayAvailability(
+    spaceId: string,
+    data: { date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number | null }
+  ): Promise<ServiceResponse<any>> {
     try {
-      return await apiService.post<ApiResponse<{ valid: boolean; message?: string }>>(
-        `/api/events/spaces/${spaceId}/capacity/check`,
-        { expected_attendees: expectedAttendees }
-      );
-    } catch (error) {
-      console.error('Erro ao verificar capacidade:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao verificar capacidade'
-      };
+      const res = await apiService.updateEventSpaceDayAvailability(spaceId, data);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao atualizar dia' };
+      }
+      return { success: true, data: res.data, message: 'Dia atualizado' };
+    } catch (err: any) {
+      console.error('[updateDayAvailability]', err);
+      return { success: false, error: err.message || 'Falha ao atualizar disponibilidade' };
+    }
+  }
+
+  // ✅ NOVO: Wrapper para atualização em massa de disponibilidade
+  async bulkUpdateAvailability(
+    spaceId: string,
+    updates: Array<{ date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number | null }>
+  ): Promise<ServiceResponse<{ updated: number; message: string }>> {
+    try {
+      const res = await apiService.bulkUpdateEventSpaceAvailability(spaceId, updates);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro na atualização em massa' };
+      }
+      return { success: true, data: res.data, message: 'Atualização em massa concluída' };
+    } catch (err: any) {
+      console.error('[bulkUpdateAvailability]', err);
+      return { success: false, error: err.message || 'Falha na atualização em massa' };
     }
   }
 
   // ==================== REVIEWS ====================
 
-  /**
-   * Buscar reviews do espaço
-   */
-  async getEventSpaceReviews(
-    spaceId: string, 
-    options?: {
-      limit?: number;
-      offset?: number;
-      minRating?: number;
-      sortBy?: 'recent' | 'highest_rating' | 'most_helpful';
-    }
-  ): Promise<ServiceResponse<EventSpaceReview>> {
+  async getReviews(
+    spaceId: string,
+    limit = 10,
+    offset = 0
+  ): Promise<ServiceResponse<EventSpaceReview[]>> {
     try {
-      const params = new URLSearchParams();
-      if (options?.limit) params.append('limit', options.limit.toString());
-      if (options?.offset) params.append('offset', options.offset.toString());
-      if (options?.minRating) params.append('minRating', options.minRating.toString());
-      if (options?.sortBy) params.append('sortBy', options.sortBy);
-
-      const queryString = params.toString();
-      const url = `/api/events/spaces/${spaceId}/reviews${queryString ? '?' + queryString : ''}`;
-      
-      const response = await apiService.get<ListResponse<EventSpaceReview>>(url);
-      
-      if (response.success) {
-        return response;
+      const res = await apiService.getEventSpaceReviews(spaceId, limit, offset);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao buscar reviews' };
       }
-      
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar reviews'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar reviews:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar reviews'
-      };
+      return { success: true, data: res.data || [] };
+    } catch (err: any) {
+      console.error('[getReviews]', err);
+      return { success: false, error: err.message || 'Falha ao buscar avaliações' };
     }
   }
 
-  /**
-   * Buscar estatísticas de reviews
-   */
-  async getEventSpaceReviewStats(spaceId: string): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.get<ApiResponse<any>>(`/api/events/spaces/${spaceId}/reviews/stats`);
-    } catch (error) {
-      console.error('Erro ao buscar estatísticas de reviews:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar estatísticas'
-      };
-    }
-  }
+  // ==================== DASHBOARD ====================
 
-  /**
-   * Submeter review
-   */
-  async submitEventSpaceReview(data: {
-    bookingId: string;
-    ratings: {
-      venue: number;
-      facilities: number;
-      location: number;
-      services: number;
-      staff: number;
-      value: number;
-    };
-    title: string;
-    comment: string;
-    pros?: string;
-    cons?: string;
-  }): Promise<ApiResponse<EventSpaceReview>> {
+  async getDashboardSummary(hotelId: string): Promise<ServiceResponse<EventDashboardSummary>> {
     try {
-      return await apiService.post<ApiResponse<EventSpaceReview>>(
-        `/api/events/spaces/reviews/submit`, 
-        data
-      );
-    } catch (error) {
-      console.error('Erro ao submeter review:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao submeter review'
-      };
-    }
-  }
-
-  /**
-   * Votar em review como útil
-   */
-  async voteHelpfulReview(reviewId: string, isHelpful: boolean): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.post<ApiResponse<any>>(
-        `/api/events/spaces/reviews/${reviewId}/vote-helpful`,
-        { isHelpful }
-      );
-    } catch (error) {
-      console.error('Erro ao votar review:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao votar review'
-      };
-    }
-  }
-
-  /**
-   * Responder a um review
-   */
-  async respondToEventSpaceReview(
-    spaceId: string, 
-    reviewId: string, 
-    responseText: string
-  ): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.post<ApiResponse<any>>(
-        `/api/events/spaces/${spaceId}/reviews/${reviewId}/respond`,
-        { responseText }
-      );
-    } catch (error) {
-      console.error('Erro ao responder review:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao responder review'
-      };
+      const res = await apiService.getEventDashboardSummary(hotelId);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao buscar dashboard' };
+      }
+      return { success: true, data: res.data };
+    } catch (err: any) {
+      console.error('[getDashboardSummary]', err);
+      return { success: false, error: err.message || 'Falha ao buscar resumo do dashboard' };
     }
   }
 
   // ==================== PAGAMENTOS ====================
 
-  /**
-   * Registrar pagamento manual
-   */
-  async registerEventPayment(bookingId: string, data: {
-    amount: number;
-    payment_method: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
-    reference: string;
-    notes?: string;
-    payment_type?: string;
-  }): Promise<ApiResponse<any>> {
+  async getBookingPayments(bookingId: string): Promise<ServiceResponse<any[]>> {
     try {
-      return await apiService.post<ApiResponse<any>>(
-        `/api/events/bookings/${bookingId}/payments`, 
-        data
-      );
-    } catch (error) {
-      console.error('Erro ao registrar pagamento:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao registrar pagamento'
-      };
-    }
-  }
-
-  /**
-   * Obter detalhes de pagamento
-   */
-  async getEventPaymentDetails(bookingId: string): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.get<ApiResponse<any>>(`/api/events/bookings/${bookingId}/payment`);
-    } catch (error) {
-      console.error('Erro ao buscar detalhes de pagamento:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar pagamento'
-      };
-    }
-  }
-
-  /**
-   * Calcular depósito necessário
-   */
-  async calculateEventDeposit(bookingId: string): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.get<ApiResponse<any>>(`/api/events/bookings/${bookingId}/deposit`);
-    } catch (error) {
-      console.error('Erro ao calcular depósito:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao calcular depósito'
-      };
-    }
-  }
-
-  /**
-   * Obter recibo
-   */
-  async getEventReceipt(bookingId: string): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.get<ApiResponse<any>>(`/api/events/bookings/${bookingId}/receipt`);
-    } catch (error) {
-      console.error('Erro ao gerar recibo:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao gerar recibo'
-      };
-    }
-  }
-
-  /**
-   * Confirmar pagamento (apenas hotel owner/admin)
-   */
-  async confirmEventPayment(bookingId: string, paymentId: string): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.post<ApiResponse<any>>(
-        `/api/events/bookings/${bookingId}/payments/confirm`,
-        { paymentId }
-      );
-    } catch (error) {
-      console.error('Erro ao confirmar pagamento:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao confirmar pagamento'
-      };
-    }
-  }
-
-  // ==================== DASHBOARD E RELATÓRIOS ====================
-
-  /**
-   * Obter dashboard do hotel (eventos)
-   */
-  async getEventDashboard(hotelId: string): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.get<ApiResponse<any>>(`/api/events/hotel/${hotelId}/dashboard`);
-    } catch (error) {
-      console.error('Erro ao buscar dashboard:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar dashboard'
-      };
-    }
-  }
-
-  /**
-   * Obter resumo financeiro do hotel
-   */
-  async getEventFinancialSummary(
-    hotelId: string, 
-    startDate?: string, 
-    endDate?: string
-  ): Promise<ApiResponse<any>> {
-    try {
-      const params = new URLSearchParams();
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
-
-      const queryString = params.toString();
-      const url = `/api/events/hotel/${hotelId}/financial-summary${queryString ? '?' + queryString : ''}`;
-      
-      return await apiService.get<ApiResponse<any>>(url);
-    } catch (error) {
-      console.error('Erro ao buscar resumo financeiro:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar resumo financeiro'
-      };
-    }
-  }
-
-  /**
-   * Obter estatísticas dos espaços do hotel
-   */
-  async getHotelEventSpacesStats(hotelId: string): Promise<ServiceResponse<any>> {
-    try {
-      const response = await apiService.get<ListResponse<any>>(`/api/events/hotel/${hotelId}/spaces/stats`);
-      
-      if (response.success) {
-        return response;
-      }
-      
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar estatísticas'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar estatísticas dos espaços:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar estatísticas'
-      };
-    }
-  }
-
-  /**
-   * Obter reservas do hotel
-   */
-  async getHotelEventBookings(
-    hotelId: string, 
-    status?: string[]
-  ): Promise<ServiceResponse<EventBooking>> {
-    try {
-      const statusQuery = status && status.length > 0 ? `?status=${status.join(',')}` : '';
-      const response = await apiService.get<ListResponse<EventBooking>>(
-        `/api/events/hotel/${hotelId}/bookings${statusQuery}`
-      );
-      
-      if (response.success) {
-        return response;
-      }
-      
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao buscar reservas'
-      };
-    } catch (error) {
-      console.error('Erro ao buscar reservas do hotel:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar reservas'
-      };
-    }
-  }
-
-  // ==================== GESTÃO AVANÇADA ====================
-
-  /**
-   * Atualizar status em massa de espaços
-   */
-  async bulkUpdateEventSpacesStatus(spaceIds: string[], isActive: boolean): Promise<ApiResponse<{ updated_count: number }>> {
-    try {
-      return await apiService.post<ApiResponse<{ updated_count: number }>>(
-        '/api/events/spaces/bulk/status',
-        { spaceIds, is_active: isActive }
-      );
-    } catch (error) {
-      console.error('Erro ao atualizar status em massa:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao atualizar status'
-      };
-    }
-  }
-
-  /**
-   * Sincronizar disponibilidade com configuração do espaço
-   */
-  async syncEventSpaceAvailability(spaceId: string, startDate: string, endDate: string): Promise<ApiResponse<{ updated_days: number }>> {
-    try {
-      return await apiService.post<ApiResponse<{ updated_days: number }>>(
-        `/api/events/spaces/${spaceId}/sync-availability`,
-        { startDate, endDate }
-      );
-    } catch (error) {
-      console.error('Erro ao sincronizar disponibilidade:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao sincronizar disponibilidade'
-      };
-    }
-  }
-
-  /**
-   * Exportar calendário de disponibilidade
-   */
-  async exportEventSpaceAvailability(
-    spaceId: string, 
-    startDate: string, 
-    endDate: string
-  ): Promise<ServiceResponse<EventAvailability>> {
-    try {
-      const response = await apiService.get<ListResponse<EventAvailability>>(
-        `/api/events/spaces/${spaceId}/export-availability?startDate=${startDate}&endDate=${endDate}`
-      );
-      
-      if (response.success) {
-        return response;
-      }
-      
-      // ✅ CORREÇÃO: Retornar ErrorResponse
-      return {
-        success: false,
-        error: response.error || 'Erro ao exportar calendário'
-      };
-    } catch (error) {
-      console.error('Erro ao exportar calendário:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao exportar calendário'
-      };
-    }
-  }
-
-  /**
-   * Verificar saúde do módulo
-   */
-  async healthCheck(): Promise<ApiResponse<any>> {
-    try {
-      return await apiService.get<ApiResponse<any>>('/api/events/health');
-    } catch (error) {
-      console.error('Health check failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro no health check'
-      };
-    }
-  }
-
-  // ==================== FUNÇÕES AUXILIARES ====================
-
-  /**
-   * Formatar preço para exibição
-   */
-  formatPrice(price?: string | number | null): string {
-    if (!price) return 'A combinar';
-    
-    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
-    if (isNaN(numPrice)) return 'A combinar';
-    
-    return new Intl.NumberFormat('pt-MZ', {
-      style: 'currency',
-      currency: 'MZN',
-      minimumFractionDigits: 2
-    }).format(numPrice);
-  }
-
-  /**
-   * Calcular preço estimado
-   */
-  async calculateEstimatedPrice(spaceId: string, date: string, durationHours: number): Promise<ApiResponse<{ price: number }>> {
-    try {
-      return {
-        success: false,
-        error: 'Função não implementada - use createEventBooking para cálculo automático'
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao calcular preço'
-      };
-    }
-  }
-
-  /**
-   * Verificar disponibilidade para múltiplas datas
-   */
-  async checkMultiDateAvailability(
-    spaceId: string, 
-    dates: string[]
-  ): Promise<ApiResponse<Record<string, boolean>>> {
-    try {
-      const results: Record<string, boolean> = {};
-      
-      for (const date of dates) {
-        const result = await this.checkEventAvailability(spaceId, { date });
-        results[date] = result.success && result.data?.available === true;
-      }
-      
-      return {
-        success: true,
-        data: results
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao verificar disponibilidade para múltiplas datas'
-      };
+      const res = await apiService.get<any>(`/api/events/bookings/${bookingId}/payments`);
+      return { success: true, data: res.data || [] };
+    } catch (err: any) {
+      console.error('[getBookingPayments]', err);
+      return { success: false, error: err.message || 'Erro ao buscar pagamentos' };
     }
   }
 }
 
 export const eventSpaceService = new EventSpaceService();
+export default eventSpaceService;

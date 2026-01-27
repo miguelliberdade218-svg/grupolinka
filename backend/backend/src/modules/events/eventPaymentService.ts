@@ -1,5 +1,5 @@
 // src/modules/events/eventPaymentService.ts - VERSÃO COMPLETAMENTE CORRIGIDA
-// Todas as queries SQL corrigidas para usar os nomes de colunas corretos
+// Sistema de diárias puro - TODAS as queries e campos atualizados para startDate/endDate
 
 import { db } from "../../../db";
 import {
@@ -342,7 +342,7 @@ export const cancelEventBookingForNonPayment = async (
   }
 };
 
-// ==================== FUNÇões DE FATURAÇÃO ====================
+// ==================== FUNÇÕES DE FATURAÇÃO ====================
 
 export const createEventInvoice = async (
   bookingId: string,
@@ -470,7 +470,7 @@ export const getEventBookingPaymentDetails = async (bookingId: string) => {
       .where(eq(eventPayments.eventBookingId!, bookingId))
       .orderBy(desc(eventPayments.paidAt));
 
-    // CORREÇÃO: Incluir status "partial" no cálculo do total pago
+    // ✅ CORREÇÃO: Incluir status "partial" no cálculo do total pago
     const totalPaid = paymentRecords
       .filter(p => p.status === "confirmed" || p.status === "paid" || p.status === "partial")
       .reduce((sum, p) => sum + toNumber(p.amount), 0);
@@ -478,7 +478,7 @@ export const getEventBookingPaymentDetails = async (bookingId: string) => {
     const totalPrice = toNumber(booking.totalPrice);
     const remaining = totalPrice - totalPaid;
 
-    // Busque faturas associadas - CORREÇÃO: Usar SQL direto
+    // Busque faturas associadas - ✅ CORREÇÃO: Usar SQL direto
     let activeInvoice: EventInvoice | null = null;
     
     try {
@@ -506,17 +506,21 @@ export const getEventBookingPaymentDetails = async (bookingId: string) => {
         eventName: booking.eventTitle,
         organizerName: booking.organizerName,
         organizerEmail: booking.organizerEmail,
-        startDatetime: booking.startDatetime,
-        endDatetime: booking.endDatetime,
-        durationHours: toNumber(booking.durationHours),
+        // ✅ CORREÇÃO: Campos atualizados para sistema diário
+        startDate: booking.startDate,  
+        endDate: booking.endDate,      
+        durationDays: toNumber(booking.durationDays),  
         attendees: booking.expectedAttendees,
         totalPrice: totalPrice,
         basePrice: toNumber(booking.basePrice),
-        equipmentFees: toNumber(booking.equipmentFees),
-        serviceFees: toNumber(booking.serviceFees),
-        weekendSurcharge: toNumber(booking.weekendSurcharge),
+        securityDeposit: toNumber(booking.securityDeposit),
         status: booking.status,
         paymentStatus: booking.paymentStatus,
+        // ✅ CORREÇÃO: Adicionado campo catering para diárias
+        cateringRequired: booking.cateringRequired || false,
+        // ✅ REMOVIDO: Campos obsoletos do sistema horário
+        // startDatetime, endDatetime, durationHours
+        // equipmentFees, serviceFees, weekendSurcharge
       },
       invoice: activeInvoice ? {
         id: activeInvoice.id,
@@ -695,17 +699,23 @@ export const getEventFinancialSummary = async (
       eq(eventBookings.hotelId, hotelId)
     ];
 
-    let startDateObj: Date | undefined;
-    let endDateObj: Date | undefined;
+    let startDateStr: string | undefined;
+    let endDateStr: string | undefined;
 
     if (startDate && endDate) {
-      startDateObj = new Date(startDate);
-      endDateObj = new Date(endDate);
-      conditions.push(gte(eventBookings.startDatetime, startDateObj));
-      conditions.push(lte(eventBookings.startDatetime, endDateObj));
+      // ✅ CORREÇÃO: Converte Date para string YYYY-MM-DD (compatível com coluna startDate)
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      startDateStr = start.toISOString().split('T')[0];
+      endDateStr = end.toISOString().split('T')[0];
+
+      // ✅ CORREÇÃO: Usar strings em vez de objetos Date
+      conditions.push(gte(eventBookings.startDate, startDateStr));
+      conditions.push(lte(eventBookings.startDate, endDateStr));
     }
 
-    // CORREÇÃO: Usar SQL direto com nomes de colunas corretos
+    // ✅ CORREÇÃO: SQL atualizado para usar start_date (sistema diário)
     const bookingsQuery = sql`
       SELECT 
         COALESCE(SUM(total_price::numeric), 0) as total_revenue,
@@ -713,7 +723,9 @@ export const getEventFinancialSummary = async (
         COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) as paid_events
       FROM event_bookings
       WHERE hotel_id = ${hotelId}
-        ${startDateObj && endDateObj ? sql`AND start_datetime >= ${startDateObj} AND start_datetime <= ${endDateObj}` : sql``}
+        ${startDateStr && endDateStr 
+          ? sql`AND start_date >= ${startDateStr} AND start_date <= ${endDateStr}` 
+          : sql``}
     `;
 
     const bookingsResult = await db.execute(bookingsQuery);
@@ -723,13 +735,13 @@ export const getEventFinancialSummary = async (
       paid_events: string | number;
     }>;
 
-    const bookingsRow = bookingsData && bookingsData.length > 0 ? bookingsData[0] : { 
+    const bookingsRow = bookingsData?.[0] ?? { 
       total_revenue: 0, 
       total_events: 0, 
       paid_events: 0 
     };
 
-    // CORREÇÃO: Query para pagamentos com nomes corretos
+    // ✅ CORREÇÃO: Query para pagamentos com nomes corretos e usando paid_at
     const paymentsQuery = sql`
       SELECT 
         COALESCE(SUM(ep.amount::numeric), 0) as total_paid,
@@ -738,7 +750,9 @@ export const getEventFinancialSummary = async (
       FROM event_payments ep
       INNER JOIN event_bookings eb ON eb.id = ep.event_booking_id
       WHERE eb.hotel_id = ${hotelId}
-        ${startDateObj && endDateObj ? sql`AND ep.created_at >= ${startDateObj} AND ep.created_at <= ${endDateObj}` : sql``}
+        ${startDateStr && endDateStr 
+          ? sql`AND ep.paid_at >= ${new Date(startDateStr)} AND ep.paid_at <= ${new Date(endDateStr + 'T23:59:59')}` 
+          : sql``}
     `;
 
     const paymentsResult = await db.execute(paymentsQuery);
@@ -748,7 +762,7 @@ export const getEventFinancialSummary = async (
       pending_payments: string | number;
     }>;
 
-    const paymentsRow = paymentsData && paymentsData.length > 0 ? paymentsData[0] : {
+    const paymentsRow = paymentsData?.[0] ?? {
       total_paid: 0,
       confirmed_payments: 0,
       pending_payments: 0

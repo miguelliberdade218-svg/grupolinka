@@ -1,29 +1,44 @@
-// src/modules/events/eventBookingService.ts - VERSÃO FINAL COMPLETA CORRIGIDA (11/01/2026)
-// Inclui função rejectEventBooking para status "rejected"
-// Alinhado com tabela real: performedBy em vez de userId
+// src/modules/events/eventBookingService.ts - VERSÃO FINAL (SISTEMA DE DIÁRIAS) - TOTALMENTE CORRIGIDO E OTIMIZADO
 
 import { db } from "../../../db";
 import {
   eventBookings,
   eventBookingLogs,
   eventSpaces,
-  eventAvailability,
   hotels,
 } from "../../../shared/schema";
-import { eq, and, sql, desc, inArray } from "drizzle-orm";
-import { isEventSpaceAvailable } from "./eventSpaceService";
-import type { TimeSlot } from "./eventSpaceService";
+import { eq, and, sql, desc, inArray, or } from "drizzle-orm";
+import { isEventSpaceAvailable, getEventSpaceById } from "./eventSpaceService";
+import { calculateEventBasePrice } from "./eventService";
 
 // ==================== TIPOS ====================
 export type EventBooking = typeof eventBookings.$inferSelect;
 export type EventBookingInsert = typeof eventBookings.$inferInsert;
 
+// ✅ CORRIGIDO: Removidos status e paymentStatus do input - sempre controlados pelo backend
+export type CreateEventBookingInput = {
+  eventSpaceId: string;
+  hotelId: string;
+  organizerName: string;
+  organizerEmail: string;
+  organizerPhone?: string;
+  eventTitle: string;
+  eventDescription?: string;
+  eventType: string;
+  startDate: string;  // YYYY-MM-DD
+  endDate: string;    // YYYY-MM-DD
+  expectedAttendees: number;
+  specialRequests?: string;
+  additionalServices?: any;
+  cateringRequired?: boolean;
+  userId?: string;
+  // ✅ REMOVIDO: status e paymentStatus - sempre controlados pelo backend
+};
+
 // ==================== CONSTANTES ====================
 const VALID_BOOKING_STATUSES = [
   'pending_approval',
   'confirmed',
-  'in_progress',
-  'completed',
   'cancelled',
   'rejected'
 ] as const;
@@ -56,14 +71,13 @@ const toNullableString = (value: number | string | null | undefined): string | n
   return typeof value === 'string' ? value : value.toString();
 };
 
-// ✅ HELPER PARA LOGS - Evita problemas com colunas (usa performedBy corretamente)
+// ✅ HELPER PARA LOGS
 const createSafeLogEntry = (
   bookingId: string,
   action: string,
   details: any,
   performedBy?: string
 ) => {
-  // Coloca performedBy dentro de details se existir
   if (performedBy) {
     details = { ...details, performedBy };
   }
@@ -76,66 +90,6 @@ const createSafeLogEntry = (
   };
 };
 
-const checkForTimeSlotConflicts = async (
-  eventSpaceId: string,
-  date: Date,
-  startTime: string,
-  endTime: string,
-  excludeBookingId?: string
-): Promise<boolean> => {
-  try {
-    const [availability] = await db
-      .select({ slots: eventAvailability.slots })
-      .from(eventAvailability)
-      .where(and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, date)
-      ))
-      .limit(1);
-
-    if (!availability?.slots || !Array.isArray(availability.slots)) return false;
-
-    const slots = availability.slots as TimeSlot[];
-    const timeToMinutes = (timeStr: string): number => {
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-
-    const newStart = timeToMinutes(startTime);
-    const newEnd = timeToMinutes(endTime);
-
-    for (const slot of slots) {
-      if (excludeBookingId && slot.bookingId === excludeBookingId) continue;
-
-      const existingStart = timeToMinutes(slot.startTime);
-      const existingEnd = timeToMinutes(slot.endTime);
-
-      const hasOverlap = 
-        (newStart >= existingStart && newStart < existingEnd) ||
-        (newEnd > existingStart && newEnd <= existingEnd) ||
-        (newStart <= existingStart && newEnd >= existingEnd);
-
-      if (hasOverlap) return true;
-    }
-
-    return false;
-  } catch (error) {
-    console.error('Erro ao verificar conflitos:', error);
-    return true;
-  }
-};
-
-const createTimeSlot = (
-  startTime: string,
-  endTime: string,
-  bookingId: string
-): TimeSlot => ({
-  startTime,
-  endTime,
-  bookingId,
-  status: 'pending_approval',
-});
-
 const validateBookingStatus = (status: string): BookingStatus => {
   if (VALID_BOOKING_STATUSES.includes(status as BookingStatus)) {
     return status as BookingStatus;
@@ -143,25 +97,21 @@ const validateBookingStatus = (status: string): BookingStatus => {
   throw new Error(`Status inválido: ${status}. Status permitidos: ${VALID_BOOKING_STATUSES.join(', ')}`);
 };
 
-// ==================== CRIAÇÃO DE RESERVA ====================
+// ✅ Converter string para Date no início do dia
+const ymdToDateStart = (dateStr: string): Date => {
+  return new Date(dateStr + 'T00:00:00');
+};
+
+// ✅ Converter string para Date no final do dia
+const ymdToDateEnd = (dateStr: string): Date => {
+  return new Date(dateStr + 'T23:59:59');
+};
+
+// ==================== CRIAÇÃO DE RESERVA (SISTEMA DE DIÁRIAS) ====================
 
 export const createEventBooking = async (
-  data: {
-    eventSpaceId: string;
-    hotelId: string;
-    organizerName: string;
-    organizerEmail: string;
-    organizerPhone?: string;
-    eventTitle: string;
-    eventDescription?: string;
-    eventType: string;
-    startDatetime: string;
-    endDatetime: string;
-    expectedAttendees: number;
-    specialRequests?: string;
-    additionalServices?: any;
-  },
-  performedByUserId?: string  // ✅ Renomeado para refletir a coluna real
+  data: CreateEventBookingInput,
+  performedBy?: string
 ): Promise<EventBooking> => {
   return await db.transaction(async (tx) => {
     try {
@@ -174,34 +124,40 @@ export const createEventBooking = async (
         eventTitle,
         eventDescription,
         eventType,
-        startDatetime,
-        endDatetime,
+        startDate,
+        endDate,
         expectedAttendees,
         specialRequests,
         additionalServices,
+        cateringRequired = false,
+        userId,
+        // ✅ REMOVIDO: paymentStatus - sempre 'pending' na criação
       } = data;
 
-      console.log('📝 Criando reserva com dados:', { 
+      console.log('📝 Criando reserva (sistema diárias):', { 
         eventSpaceId, 
         hotelId, 
         organizerName, 
         organizerEmail,
         eventTitle,
         eventType,
-        startDatetime,
-        endDatetime
+        startDate,
+        endDate,
+        cateringRequired
       });
 
       // 1. Validações básicas
-      const [space] = await tx
-        .select()
-        .from(eventSpaces)
-        .where(and(eq(eventSpaces.id, eventSpaceId), eq(eventSpaces.hotelId, hotelId)));
-
-      if (!space || !space.isActive) {
+      const space = await getEventSpaceById(eventSpaceId);
+      if (!space || space.hotelId !== hotelId || !space.isActive) {
         throw new Error("Espaço de evento inválido ou inativo");
       }
 
+      // ✅ CORREÇÃO: Validar catering
+      if (cateringRequired && !space.offersCatering) {
+        throw new Error("Este espaço não oferece serviço de catering");
+      }
+
+      // 2. Verificar capacidade
       const capacityMin = toNumber(space.capacityMin);
       const capacityMax = toNumber(space.capacityMax);
 
@@ -209,66 +165,64 @@ export const createEventBooking = async (
         throw new Error(`Número de participantes deve estar entre ${capacityMin} e ${capacityMax}`);
       }
 
-      // 2. Verifica disponibilidade
-      const startDateObj = new Date(startDatetime);
-      const endDateObj = new Date(endDatetime);
-      const date = startDatetime.split("T")[0];
-      const dateObj = new Date(date);
-      const startTime = startDateObj.toTimeString().split(' ')[0].substring(0, 5);
-      const endTime = endDateObj.toTimeString().split(' ')[0].substring(0, 5);
+      // 3. Validar tipo de evento
+      if (space.allowedEventTypes && space.allowedEventTypes.length > 0) {
+        if (!space.allowedEventTypes.includes(eventType)) {
+          throw new Error(`Tipo de evento "${eventType}" não permitido neste espaço. Tipos permitidos: ${space.allowedEventTypes.join(', ')}`);
+        }
+      }
 
+      // 4. Verificar disponibilidade (sistema de diárias)
       const { available, message } = await isEventSpaceAvailable(
         eventSpaceId,
-        date,
-        startTime,
-        endTime
+        startDate,
+        endDate
       );
 
       if (!available) {
         throw new Error(`Espaço indisponível: ${message}`);
       }
 
-      // 3. Verificar conflitos
-      const hasConflicts = await checkForTimeSlotConflicts(eventSpaceId, dateObj, startTime, endTime);
-      
-      if (hasConflicts) {
-        throw new Error(`O horário ${startTime} - ${endTime} já está reservado para esta data`);
+      // 5. Verificar conflitos
+      const conflictingBookings = await tx
+        .select()
+        .from(eventBookings)
+        .where(
+          and(
+            eq(eventBookings.eventSpaceId, eventSpaceId),
+            eq(eventBookings.status, "confirmed"),
+            or(
+              sql`${eventBookings.startDate}::date <= ${startDate}::date AND ${eventBookings.endDate}::date > ${startDate}::date`,
+              sql`${eventBookings.startDate}::date <= ${endDate}::date AND ${eventBookings.endDate}::date > ${endDate}::date`,
+              sql`${eventBookings.startDate}::date >= ${startDate}::date AND ${eventBookings.endDate}::date <= ${endDate}::date`
+            )
+          )
+        );
+
+      if (conflictingBookings.length > 0) {
+        throw new Error("Espaço já reservado para este período");
       }
 
-      // 4. Calcula preço
-      const durationHours = (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60);
-      const basePriceNum = toNumber(space.basePriceHourly || "0");
-      
-      let basePrice = basePriceNum * durationHours;
-      let weekendSurcharge = 0;
-      const isWeekend = startDateObj.getDay() === 0 || startDateObj.getDay() === 6;
+      // 6. Calcular durationDays
+      const calculatedDurationDays = Math.ceil(
+        (ymdToDateEnd(endDate).getTime() - ymdToDateStart(startDate).getTime()) / 86400000
+      );
 
-      if (isWeekend && space.weekendSurchargePercent) {
-        const weekendPercent = toNumber(space.weekendSurchargePercent);
-        weekendSurcharge = basePrice * (weekendPercent / 100);
+      if (calculatedDurationDays < 1) {
+        throw new Error("A data final deve ser posterior à data inicial");
       }
 
-      let equipmentFees = 0;
-      let serviceFees = 0;
-      if (additionalServices && typeof additionalServices === 'object') {
-        equipmentFees = toNumber(additionalServices.equipment || 0);
-        serviceFees = toNumber(additionalServices.catering || additionalServices.other || 0);
-      }
+      // 7. Calcular preço (diárias + surcharge + catering)
+      const totalPrice = await calculateEventBasePrice(
+        eventSpaceId,
+        startDate,
+        endDate,
+        cateringRequired
+      );
 
-      const totalPrice = basePrice + weekendSurcharge + equipmentFees + serviceFees;
+      const basePriceStr = totalPrice.toFixed(2);
 
-      const bookingStatus: BookingStatus = 'pending_approval';
-      const paymentStatus = 'pending';
-
-      console.log('📊 Calculando preços:', {
-        basePrice,
-        weekendSurcharge,
-        equipmentFees,
-        serviceFees,
-        totalPrice,
-        bookingStatus
-      });
-
+      // 8. Preparar dados da reserva
       const bookingData: EventBookingInsert = {
         eventSpaceId,
         hotelId,
@@ -278,82 +232,51 @@ export const createEventBooking = async (
         eventTitle,
         eventDescription: eventDescription || null,
         eventType,
-        startDatetime: startDateObj,
-        endDatetime: endDateObj,
-        durationHours: toRequiredString(durationHours),
+        startDate: startDate,
+        endDate: endDate,
+        durationDays: calculatedDurationDays,
         expectedAttendees,
         specialRequests: specialRequests || null,
         additionalServices: additionalServices || {},
-        basePrice: toRequiredString(basePrice),
-        totalPrice: toRequiredString(totalPrice),
-        equipmentFees: toNullableString(equipmentFees),
-        serviceFees: toNullableString(serviceFees),
-        weekendSurcharge: toNullableString(weekendSurcharge),
-        status: bookingStatus,
-        paymentStatus: paymentStatus,
+        cateringRequired,
+        basePrice: basePriceStr,
+        totalPrice: totalPrice.toFixed(2),
+        securityDeposit: space.securityDeposit || "0",
+        status: 'pending_approval', // ✅ SEMPRE pendente na criação
+        paymentStatus: 'pending',   // ✅ SEMPRE pendente na criação
+        userId: userId || null,
       };
 
-      console.log('📤 Inserindo booking com status:', bookingStatus);
+      console.log('📤 Inserindo booking (diárias):', { 
+        startDate, 
+        endDate, 
+        durationDays: calculatedDurationDays,
+        status: 'pending_approval',
+        paymentStatus: 'pending',
+        totalPrice: totalPrice.toFixed(2),
+        eventType,
+        cateringRequired
+      });
 
       const [booking] = await tx.insert(eventBookings).values(bookingData).returning();
 
       console.log('✅ Booking criado com ID:', booking.id, 'Status:', booking.status);
 
-      // 5. Bloqueia disponibilidade
-      const [currentAvailability] = await tx
-        .select()
-        .from(eventAvailability)
-        .where(and(
-          eq(eventAvailability.eventSpaceId, eventSpaceId),
-          eq(eventAvailability.date, dateObj)
-        ))
-        .limit(1);
-
-      const newSlot = createTimeSlot(startTime, endTime, booking.id);
-
-      if (currentAvailability) {
-        const currentSlots = (currentAvailability.slots as TimeSlot[]) || [];
-        const slotExists = currentSlots.some(slot => 
-          slot.startTime === startTime && slot.endTime === endTime && slot.bookingId === booking.id
-        );
-        
-        if (!slotExists) {
-          const updatedSlots = [...currentSlots, newSlot];
-          
-          await tx
-            .update(eventAvailability)
-            .set({
-              slots: updatedSlots,
-              updatedAt: new Date()
-            })
-            .where(and(
-              eq(eventAvailability.eventSpaceId, eventSpaceId),
-              eq(eventAvailability.date, dateObj)
-            ));
-        }
-      } else {
-        await tx.insert(eventAvailability).values({
-          eventSpaceId,
-          date: dateObj,
-          slots: [newSlot],
-          isAvailable: true,
-          stopSell: false,
-          minBookingHours: 4
-        });
-      }
-
-      // 6. Log - ✅ Usa helper com performedBy correto
+      // 9. Log da criação
       await tx.insert(eventBookingLogs).values(
         createSafeLogEntry(
           booking.id,
           "booking_created",
           {
-            durationHours,
+            durationDays: calculatedDurationDays,
             attendees: expectedAttendees,
-            totalPrice,
-            status: bookingStatus
+            totalPrice: totalPrice.toFixed(2),
+            eventType,
+            cateringRequired,
+            status: 'pending_approval',
+            paymentStatus: 'pending',
           },
-          performedByUserId  // Agora passa como performedBy
+          performedBy
         )
       );
 
@@ -383,48 +306,6 @@ export const confirmEventBooking = async (
       .returning();
 
     if (updated) {
-      // Atualizar status do slot
-      const startDate = new Date(updated.startDatetime);
-      const date = startDate.toISOString().split("T")[0];
-      const dateObj = new Date(date);
-      const startTime = startDate.toTimeString().split(' ')[0].substring(0, 5);
-      const endTime = new Date(updated.endDatetime).toTimeString().split(' ')[0].substring(0, 5);
-
-      const [currentAvailability] = await db
-        .select()
-        .from(eventAvailability)
-        .where(
-          and(
-            eq(eventAvailability.eventSpaceId, updated.eventSpaceId),
-            eq(eventAvailability.date, dateObj)
-          )
-        )
-        .limit(1);
-
-      if (currentAvailability?.slots && Array.isArray(currentAvailability.slots)) {
-        const currentSlots = currentAvailability.slots as TimeSlot[];
-        const updatedSlots = currentSlots.map(slot => {
-          if (slot.bookingId === bookingId || 
-              (slot.startTime === startTime && slot.endTime === endTime)) {
-            return { ...slot, status: 'confirmed' as const };
-          }
-          return slot;
-        });
-
-        await db
-          .update(eventAvailability)
-          .set({
-            slots: updatedSlots,
-            updatedAt: new Date()
-          })
-          .where(
-            and(
-              eq(eventAvailability.eventSpaceId, updated.eventSpaceId),
-              eq(eventAvailability.date, dateObj)
-            )
-          );
-      }
-
       // Log com helper
       await db.insert(eventBookingLogs).values(
         createSafeLogEntry(
@@ -474,47 +355,6 @@ export const cancelEventBooking = async (
         .set(updateData)
         .where(eq(eventBookings.id, bookingId))
         .returning();
-
-      // Libera disponibilidade
-      const startDate = new Date(booking.startDatetime);
-      const date = startDate.toISOString().split("T")[0];
-      const dateObj = new Date(date);
-      const startTime = startDate.toTimeString().split(' ')[0].substring(0, 5);
-      const endTime = new Date(booking.endDatetime).toTimeString().split(' ')[0].substring(0, 5);
-
-      const [currentAvailability] = await tx
-        .select()
-        .from(eventAvailability)
-        .where(
-          and(
-            eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-            eq(eventAvailability.date, dateObj)
-          )
-        )
-        .limit(1);
-
-      if (currentAvailability?.slots && Array.isArray(currentAvailability.slots)) {
-        const currentSlots = currentAvailability.slots as TimeSlot[];
-        
-        const updatedSlots = currentSlots.filter(slot => {
-          if (slot.bookingId === bookingId) return false;
-          if (slot.startTime === startTime && slot.endTime === endTime) return false;
-          return true;
-        });
-
-        await tx
-          .update(eventAvailability)
-          .set({
-            slots: updatedSlots,
-            updatedAt: new Date()
-          })
-          .where(
-            and(
-              eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-              eq(eventAvailability.date, dateObj)
-            )
-          );
-      }
 
       // Log com helper
       await tx.insert(eventBookingLogs).values(
@@ -570,44 +410,6 @@ export const rejectEventBooking = async (
         .where(eq(eventBookings.id, bookingId))
         .returning();
 
-      // Libera slot (igual ao cancel)
-      const startDate = new Date(booking.startDatetime);
-      const date = startDate.toISOString().split("T")[0];
-      const dateObj = new Date(date);
-      const startTime = startDate.toTimeString().split(' ')[0].substring(0, 5);
-      const endTime = new Date(booking.endDatetime).toTimeString().split(' ')[0].substring(0, 5);
-
-      const [currentAvailability] = await tx
-        .select()
-        .from(eventAvailability)
-        .where(
-          and(
-            eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-            eq(eventAvailability.date, dateObj)
-          )
-        )
-        .limit(1);
-
-      if (currentAvailability?.slots && Array.isArray(currentAvailability.slots)) {
-        const currentSlots = currentAvailability.slots as any[];
-        const updatedSlots = currentSlots.filter(slot => 
-          slot.bookingId !== bookingId
-        );
-
-        await tx
-          .update(eventAvailability)
-          .set({
-            slots: updatedSlots,
-            updatedAt: new Date()
-          })
-          .where(
-            and(
-              eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-              eq(eventAvailability.date, dateObj)
-            )
-          );
-      }
-
       // Log específico de rejeição
       await tx.insert(eventBookingLogs).values(
         createSafeLogEntry(
@@ -630,12 +432,12 @@ export const rejectEventBooking = async (
   });
 };
 
-// ==================== ATUALIZAÇÃO DE HORÁRIO ====================
+// ==================== ATUALIZAÇÃO DE DATAS ====================
 
-export const updateEventBookingTime = async (
+export const updateEventBookingDates = async (
   bookingId: string,
-  newStartDatetime: string,
-  newEndDatetime: string,
+  newStartDate: string,
+  newEndDate: string,
   updatedBy?: string
 ): Promise<EventBooking | null> => {
   return await db.transaction(async (tx) => {
@@ -643,115 +445,53 @@ export const updateEventBookingTime = async (
       const booking = await getEventBookingById(bookingId);
       if (!booking) throw new Error("Reserva não encontrada");
 
-      const newStartDate = new Date(newStartDatetime);
-      const newEndDate = new Date(newEndDatetime);
-      const newDate = newStartDatetime.split("T")[0];
-      const newDateObj = new Date(newDate);
-      const newStartTime = newStartDate.toTimeString().split(' ')[0].substring(0, 5);
-      const newEndTime = newEndDate.toTimeString().split(' ')[0].substring(0, 5);
-
-      const hasConflicts = await checkForTimeSlotConflicts(
-        booking.eventSpaceId,
-        newDateObj,
-        newStartTime,
-        newEndTime,
-        bookingId
+      // Validar novas datas
+      const newDurationDays = Math.ceil(
+        (ymdToDateEnd(newEndDate).getTime() - ymdToDateStart(newStartDate).getTime()) / 86400000
       );
 
-      if (hasConflicts) {
-        throw new Error(`Novo horário ${newStartTime}-${newEndTime} já está reservado`);
+      if (newDurationDays < 1) {
+        throw new Error("A nova data final deve ser posterior à data inicial");
       }
 
-      // Liberar slot antigo
-      const oldStartDate = new Date(booking.startDatetime);
-      const oldDate = oldStartDate.toISOString().split("T")[0];
-      const oldDateObj = new Date(oldDate);
-      const oldStartTime = oldStartDate.toTimeString().split(' ')[0].substring(0, 5);
-      const oldEndTime = new Date(booking.endDatetime).toTimeString().split(' ')[0].substring(0, 5);
-
-      if (oldDate !== newDate || oldStartTime !== newStartTime) {
-        const [oldAvailability] = await tx
-          .select()
-          .from(eventAvailability)
-          .where(
-            and(
-              eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-              eq(eventAvailability.date, oldDateObj)
-            )
-          )
-          .limit(1);
-
-        if (oldAvailability?.slots && Array.isArray(oldAvailability.slots)) {
-          const oldSlots = oldAvailability.slots as TimeSlot[];
-          const updatedOldSlots = oldSlots.filter(slot => 
-            !(slot.bookingId === bookingId || 
-              (slot.startTime === oldStartTime && slot.endTime === oldEndTime))
-          );
-
-          await tx
-            .update(eventAvailability)
-            .set({
-              slots: updatedOldSlots,
-              updatedAt: new Date()
-            })
-            .where(
-              and(
-                eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-                eq(eventAvailability.date, oldDateObj)
-              )
-            );
-        }
-      }
-
-      // Criar novo slot
-      const newSlot = createTimeSlot(newStartTime, newEndTime, bookingId);
-      
-      const [newAvailability] = await tx
+      // Verificar conflitos com novas datas
+      const conflictingBookings = await tx
         .select()
-        .from(eventAvailability)
+        .from(eventBookings)
         .where(
           and(
-            eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-            eq(eventAvailability.date, newDateObj)
-          )
-        )
-        .limit(1);
-
-      if (newAvailability) {
-        const currentSlots = (newAvailability.slots as TimeSlot[]) || [];
-        const updatedSlots = [...currentSlots, newSlot];
-        
-        await tx
-          .update(eventAvailability)
-          .set({
-            slots: updatedSlots,
-            updatedAt: new Date()
-          })
-          .where(
-            and(
-              eq(eventAvailability.eventSpaceId, booking.eventSpaceId),
-              eq(eventAvailability.date, newDateObj)
+            eq(eventBookings.eventSpaceId, booking.eventSpaceId),
+            eq(eventBookings.status, "confirmed"),
+            sql`${eventBookings.id} != ${bookingId}`,
+            or(
+              sql`${eventBookings.startDate}::date <= ${newStartDate}::date AND ${eventBookings.endDate}::date > ${newStartDate}::date`,
+              sql`${eventBookings.startDate}::date <= ${newEndDate}::date AND ${eventBookings.endDate}::date > ${newEndDate}::date`,
+              sql`${eventBookings.startDate}::date >= ${newStartDate}::date AND ${eventBookings.endDate}::date <= ${newEndDate}::date`
             )
-          );
-      } else {
-        await tx.insert(eventAvailability).values({
-          eventSpaceId: booking.eventSpaceId,
-          date: newDateObj,
-          slots: [newSlot],
-          isAvailable: true,
-          stopSell: false,
-          minBookingHours: 4
-        });
+          )
+        );
+
+      if (conflictingBookings.length > 0) {
+        throw new Error("Novo período já está reservado");
       }
 
+      // ✅ CORREÇÃO: Recalcular preço corretamente com cateringRequired do booking
+      const cateringRequired = booking.cateringRequired || false;
+      const newTotalPrice = await calculateEventBasePrice(
+        booking.eventSpaceId,
+        newStartDate,
+        newEndDate,
+        cateringRequired
+      );
+
       // Atualizar booking
-      const durationHours = (newEndDate.getTime() - newStartDate.getTime()) / (1000 * 60 * 60);
       const [updated] = await tx
         .update(eventBookings)
         .set({
-          startDatetime: newStartDate,
-          endDatetime: newEndDate,
-          durationHours: toRequiredString(durationHours),
+          startDate: newStartDate,
+          endDate: newEndDate,
+          durationDays: newDurationDays,
+          totalPrice: newTotalPrice.toFixed(2),
           updatedAt: new Date()
         })
         .where(eq(eventBookings.id, bookingId))
@@ -761,10 +501,13 @@ export const updateEventBookingTime = async (
       await tx.insert(eventBookingLogs).values(
         createSafeLogEntry(
           bookingId,
-          "booking_time_updated",
+          "booking_dates_updated",
           {
-            oldTime: { start: booking.startDatetime, end: booking.endDatetime },
-            newTime: { start: newStartDatetime, end: newEndDatetime },
+            oldDates: { start: booking.startDate, end: booking.endDate },
+            newDates: { start: newStartDate, end: newEndDate },
+            newDurationDays,
+            newTotalPrice: newTotalPrice.toFixed(2),
+            cateringRequired,
             timestamp: new Date().toISOString(),
             updatedBy
           },
@@ -774,7 +517,7 @@ export const updateEventBookingTime = async (
 
       return updated || null;
     } catch (error) {
-      console.error('Erro ao atualizar horário da reserva:', error);
+      console.error('Erro ao atualizar datas da reserva:', error);
       throw error;
     }
   });
@@ -803,7 +546,7 @@ export const getEventBookingsByHotel = async (
     .select()
     .from(eventBookings)
     .where(and(...conditions))
-    .orderBy(desc(eventBookings.startDatetime));
+    .orderBy(desc(eventBookings.startDate));
 };
 
 export const getEventBookingsByOrganizerEmail = async (email: string): Promise<EventBooking[]> => {
@@ -811,7 +554,7 @@ export const getEventBookingsByOrganizerEmail = async (email: string): Promise<E
     .select()
     .from(eventBookings)
     .where(eq(eventBookings.organizerEmail, email))
-    .orderBy(desc(eventBookings.startDatetime));
+    .orderBy(desc(eventBookings.startDate));
 };
 
 export const getEventBookingsBySpace = async (
@@ -821,7 +564,7 @@ export const getEventBookingsBySpace = async (
     .select()
     .from(eventBookings)
     .where(eq(eventBookings.eventSpaceId, eventSpaceId))
-    .orderBy(desc(eventBookings.startDatetime));
+    .orderBy(desc(eventBookings.startDate));
 };
 
 // ==================== ATUALIZAÇÃO DE STATUS DE PAGAMENTO ====================
@@ -888,23 +631,21 @@ export const updateEventBooking = async (
         updateData.status = validateBookingStatus(updateData.status);
       }
       
+      // Converter campos de preço
       if (updateData.basePrice !== undefined) {
         updateData.basePrice = toRequiredString(updateData.basePrice as number | string);
       }
       if (updateData.totalPrice !== undefined) {
         updateData.totalPrice = toRequiredString(updateData.totalPrice as number | string);
       }
-      if (updateData.durationHours !== undefined) {
-        updateData.durationHours = toRequiredString(updateData.durationHours as number | string);
+      if (updateData.securityDeposit !== undefined) {
+        updateData.securityDeposit = toNullableString(updateData.securityDeposit);
       }
-      if (updateData.equipmentFees !== undefined) {
-        updateData.equipmentFees = toNullableString(updateData.equipmentFees);
+      if (updateData.depositPaid !== undefined) {
+        updateData.depositPaid = toNullableString(updateData.depositPaid);
       }
-      if (updateData.serviceFees !== undefined) {
-        updateData.serviceFees = toNullableString(updateData.serviceFees);
-      }
-      if (updateData.weekendSurcharge !== undefined) {
-        updateData.weekendSurcharge = toNullableString(updateData.weekendSurcharge);
+      if (updateData.balanceDue !== undefined) {
+        updateData.balanceDue = toNullableString(updateData.balanceDue);
       }
       
       updateData.updatedAt = new Date();
@@ -1009,12 +750,96 @@ export const getUpcomingEventBookings = async (
     .where(
       and(
         eq(eventBookings.hotelId, hotelId),
-        sql`${eventBookings.startDatetime}::date >= ${today}::date`,
-        sql`${eventBookings.startDatetime}::date <= ${futureStr}::date`,
+        sql`${eventBookings.startDate}::date >= ${today}::date`,
+        sql`${eventBookings.startDate}::date <= ${futureStr}::date`,
         inArray(eventBookings.status, ["pending_approval", "confirmed"])
       )
     )
-    .orderBy(eventBookings.startDatetime);
+    .orderBy(eventBookings.startDate);
+};
+
+// ==================== VERIFICAÇÃO DE CONFLITOS (DIÁRIAS) ====================
+
+export const checkBookingConflicts = async (
+  eventSpaceId: string,
+  startDate: string,
+  endDate: string,
+  excludeBookingId?: string
+): Promise<{ hasConflict: boolean; conflictingBookings: EventBooking[] }> => {
+  const conditions: any[] = [
+    eq(eventBookings.eventSpaceId, eventSpaceId),
+    eq(eventBookings.status, "confirmed"),
+    or(
+      sql`${eventBookings.startDate}::date <= ${startDate}::date AND ${eventBookings.endDate}::date > ${startDate}::date`,
+      sql`${eventBookings.startDate}::date <= ${endDate}::date AND ${eventBookings.endDate}::date > ${endDate}::date`,
+      sql`${eventBookings.startDate}::date >= ${startDate}::date AND ${eventBookings.endDate}::date <= ${endDate}::date`
+    )
+  ];
+
+  if (excludeBookingId) {
+    conditions.push(sql`${eventBookings.id} != ${excludeBookingId}`);
+  }
+
+  const conflicts = await db
+    .select()
+    .from(eventBookings)
+    .where(and(...conditions));
+
+  return {
+    hasConflict: conflicts.length > 0,
+    conflictingBookings: conflicts
+  };
+};
+
+// ==================== FUNÇÕES ADICIONAIS DE VALIDAÇÃO ====================
+
+export const validateBookingData = async (
+  eventSpaceId: string,
+  startDate: string,
+  endDate: string,
+  expectedAttendees: number,
+  eventType: string,
+  cateringRequired: boolean = false
+): Promise<{
+  valid: boolean;
+  message?: string;
+  space?: any;
+}> => {
+  const space = await getEventSpaceById(eventSpaceId);
+  if (!space) {
+    return { valid: false, message: "Espaço de evento não encontrado" };
+  }
+
+  // Verificar capacidade
+  const capacityMin = toNumber(space.capacityMin);
+  const capacityMax = toNumber(space.capacityMax);
+  
+  if (expectedAttendees < capacityMin || expectedAttendees > capacityMax) {
+    return { 
+      valid: false, 
+      message: `Número de participantes deve estar entre ${capacityMin} e ${capacityMax}` 
+    };
+  }
+
+  // Validar tipo de evento
+  if (space.allowedEventTypes && space.allowedEventTypes.length > 0) {
+    if (!space.allowedEventTypes.includes(eventType)) {
+      return { 
+        valid: false, 
+        message: `Tipo de evento "${eventType}" não permitido neste espaço. Tipos permitidos: ${space.allowedEventTypes.join(', ')}` 
+      };
+    }
+  }
+
+  // Validar catering
+  if (cateringRequired && !space.offersCatering) {
+    return { 
+      valid: false, 
+      message: "Este espaço não oferece serviço de catering" 
+    };
+  }
+
+  return { valid: true, space };
 };
 
 // ==================== EXPORTAÇÃO ====================
@@ -1023,8 +848,8 @@ export default {
   createEventBooking,
   confirmEventBooking,
   cancelEventBooking,
-  rejectEventBooking,  // ✅ NOVA FUNÇÃO ADICIONADA
-  updateEventBookingTime,
+  rejectEventBooking,
+  updateEventBookingDates,
   getEventBookingById,
   getEventBookingsByHotel,
   getEventBookingsByOrganizerEmail,
@@ -1036,7 +861,7 @@ export default {
   calculateEventDeposit,
   getPendingApprovalBookings,
   getUpcomingEventBookings,
-  checkForTimeSlotConflicts,
-  createTimeSlot,
+  checkBookingConflicts,
   validateBookingStatus,
+  validateBookingData,
 };

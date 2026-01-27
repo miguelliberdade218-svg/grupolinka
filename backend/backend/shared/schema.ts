@@ -1,8 +1,11 @@
-// shared/schema.ts - VERSÃO COMPLETA FINAL CORRIGIDA (13/01/2026) - SEM POSTGIS
+// shared/schema.ts - VERSÃO COMPLETA FINAL CORRIGIDA (25/01/2026) - SEM POSTGIS
 // REMOVIDO: hotels_base, legacyRoomTypes, accommodations, hotelRooms, hotelFinancialReports (tabelas antigas)
 // CORRIGIDO: Todas referências FK para hotels.id
 // REMOVIDO: geometry - usando lat/lng numéricos e text para geom
 // Nada de rides, vehicles, drivers foi modificado
+// CORRIGIDO: eventSpaces - removidos campos obsoletos de hora e adicionados novos campos
+// CORRIGIDO: Removido método .refine() que não existe no Drizzle
+// CORRIGIDO: Adicionado campo cateringRequired em eventBookings
 
 import { sql } from "drizzle-orm";
 import {
@@ -559,28 +562,18 @@ export const eventSpaces = pgTable("eventSpaces", {
   description: text("description"),
   capacityMin: integer("capacityMin").notNull().default(10),
   capacityMax: integer("capacityMax").notNull().default(100),
-  basePriceHourly: numeric("basePriceHourly", { precision: 10, scale: 2 }),
-  basePriceHalfDay: numeric("basePriceHalfDay", { precision: 10, scale: 2 }),
-  basePriceFullDay: numeric("basePriceFullDay", { precision: 10, scale: 2 }),
-  pricePerHour: numeric("pricePerHour", { precision: 10, scale: 2 }),
-  pricePerDay: numeric("pricePerDay", { precision: 10, scale: 2 }),
-  pricePerEvent: numeric("pricePerEvent", { precision: 10, scale: 2 }),
+  basePricePerDay: numeric("basePricePerDay", { precision: 10, scale: 2 }).notNull().default("0"),
   weekendSurchargePercent: integer("weekendSurchargePercent").default(0),
   eventTypes: text("eventTypes").array().default(sql`ARRAY[]::text[]`),
   amenities: text("amenities").array().default(sql`ARRAY[]::text[]`),
   images: text("images").array().default(sql`ARRAY[]::text[]`),
   spaceType: text("spaceType"),
-  ceilingHeight: numeric("ceilingHeight", { precision: 5, scale: 2 }),
   hasStage: boolean("hasStage").default(false),
   naturalLight: boolean("naturalLight").default(false),
   loadingAccess: boolean("loadingAccess").default(false),
   dressingRooms: integer("dressingRooms").default(0),
   insuranceRequired: boolean("insuranceRequired").default(false),
   alcoholAllowed: boolean("alcoholAllowed").default(false),
-  includesCatering: boolean("includesCatering").default(false),
-  includesFurniture: boolean("includesFurniture").default(false),
-  includesCleaning: boolean("includesCleaning").default(false),
-  includesSecurity: boolean("includesSecurity").default(false),
   floorPlanImage: text("floorPlanImage"),
   virtualTourUrl: text("virtualTourUrl"),
   approvalRequired: boolean("approvalRequired").default(false),
@@ -590,7 +583,7 @@ export const eventSpaces = pgTable("eventSpaces", {
   viewCount: integer("viewCount").default(0),
   averageRating: numeric("averageRating", { precision: 3, scale: 2 }),
   bookingCount: integer("bookingCount").default(0),
-  lastBookedDate: timestamp("lastBookedDate", { mode: 'date' }),
+  lastBookedDate: date("lastBookedDate"),
   managedByHotelManagerId: uuid("managedByHotelManagerId"),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
@@ -598,26 +591,27 @@ export const eventSpaces = pgTable("eventSpaces", {
   lat: numeric("lat", { precision: 10, scale: 7 }),
   lng: numeric("lng", { precision: 10, scale: 7 }),
   locationGeom: text("locationGeom"),
-  distanceFromCenterKm: numeric("distanceFromCenterKm", { precision: 10, scale: 2 }),
-  popularityScore: integer("popularityScore").default(0),
+  mainImage: text("mainImage"),
+  termsAndRules: text("termsAndRules"),
+  offersCatering: boolean("offersCatering").default(false).notNull(),
+  cateringMenuUrls: text("cateringMenuUrls").array().default(sql`ARRAY[]::text[]`).notNull(),
+  cateringDiscountPercent: integer("cateringDiscountPercent").default(0),
+  equipment: jsonb("equipment").default(sql`'{}'::jsonb`),
+  setupOptions: text("setupOptions").array().default(sql`ARRAY[]::text[]`),
   capacityTheater: integer("capacityTheater"),
   capacityClassroom: integer("capacityClassroom"),
   capacityBanquet: integer("capacityBanquet"),
   capacityStanding: integer("capacityStanding"),
   capacityCocktail: integer("capacityCocktail"),
   stageDimensions: text("stageDimensions"),
-  securityDeposit: numeric("securityDeposit", { precision: 10, scale: 2 }),
-  maxDurationHours: integer("maxDurationHours"),
-  minBookingHours: integer("minBookingHours"),
-  noiseRestriction: text("noiseRestriction"),
+  securityDeposit: numeric("securityDeposit", { precision: 10, scale: 2 }).default("0"),
   allowedEventTypes: text("allowedEventTypes").array().default(sql`ARRAY[]::text[]`),
   prohibitedEventTypes: text("prohibitedEventTypes").array().default(sql`ARRAY[]::text[]`),
-  equipment: jsonb("equipment").default(sql`'{}'::jsonb`),
-  setupOptions: text("setupOptions").array().default(sql`ARRAY[]::text[]`),
+  noiseRestriction: text("noiseRestriction"),
 }, (table) => ({
   hotelIdx: index("eventSpaces_hotelId_idx").on(table.hotelId),
   activeIdx: index("eventSpaces_isActive_idx").on(table.isActive),
-  slugIdx: index("eventSpaces_slug_idx").on(table.slug),
+  slugIdx: uniqueIndex("eventSpaces_slug_key").on(table.slug),
 }));
 
 // VIEW para compatibilidade com snake_case
@@ -649,15 +643,14 @@ export const eventSpacesCompatible = pgTable("event_spaces_compatible", {
 export const eventAvailability = pgTable("eventAvailability", {
   id: uuid("id").primaryKey().defaultRandom(),
   eventSpaceId: uuid("eventSpaceId").references(() => eventSpaces.id, { onDelete: "cascade" }).notNull(),
-  date: timestamp("date", { mode: 'date' }).notNull(),
-  slots: jsonb("slots").notNull().default(sql`'[]'::jsonb`),
+  date: date("date").notNull(),
   priceOverride: numeric("priceOverride", { precision: 10, scale: 2 }),
   isAvailable: boolean("isAvailable").default(true),
   stopSell: boolean("stopSell").default(false),
-  minBookingHours: integer("minBookingHours").default(4),
-  isMultiDayEvent: boolean("isMultiDayEvent").default(false),
-  eventStartDate: timestamp("eventStartDate", { mode: 'date' }),
-  eventEndDate: timestamp("eventEndDate", { mode: 'date' }),
+  availableUnits: integer("availableUnits").notNull().default(1),
+  maxUnits: integer("maxUnits").notNull().default(1),
+  price: numeric("price", { precision: 10, scale: 2 }),
+  minBookingHoursDefault: integer("minBookingHoursDefault").default(4),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
 }, (table) => ({
@@ -675,12 +668,14 @@ export const eventBookings = pgTable("eventBookings", {
   eventTitle: text("eventTitle").notNull(),
   eventDescription: text("eventDescription"),
   eventType: text("eventType").notNull(),
-  startDatetime: timestamp("startDatetime").notNull(),
-  endDatetime: timestamp("endDatetime").notNull(),
-  durationHours: numeric("durationHours", { precision: 8, scale: 2 }),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  durationDays: integer("durationDays"),
   expectedAttendees: integer("expectedAttendees").notNull().default(10),
   specialRequests: text("specialRequests"),
   additionalServices: jsonb("additionalServices").default(sql`'{}'::jsonb`),
+  // ✅ ADICIONADO: Campo cateringRequired
+  cateringRequired: boolean("cateringRequired").notNull().default(false),
   basePrice: numeric("basePrice", { precision: 10, scale: 2 }).notNull(),
   equipmentFees: numeric("equipmentFees", { precision: 10, scale: 2 }).default(sql`0.00`),
   serviceFees: numeric("serviceFees", { precision: 10, scale: 2 }).default(sql`0.00`),
@@ -689,7 +684,8 @@ export const eventBookings = pgTable("eventBookings", {
   depositPaid: numeric("depositPaid", { precision: 10, scale: 2 }).default(sql`0.00`),
   balanceDue: numeric("balanceDue", { precision: 10, scale: 2 }).default(sql`0.00`),
   totalPrice: numeric("totalPrice", { precision: 10, scale: 2 }).notNull(),
-  status: text("status").notNull().default('confirmed'),
+  // ✅ CORRIGIDO: Alterado status default para 'pending_approval' (não 'confirmed')
+  status: text("status").notNull().default('pending_approval'),
   paymentStatus: text("paymentStatus").notNull().default('pending'),
   paymentReference: text("paymentReference"),
   invoiceNumber: text("invoiceNumber"),
@@ -704,8 +700,6 @@ export const eventBookings = pgTable("eventBookings", {
   organizerEmailIdx: index("eventBookings_organizerEmail_idx").on(table.organizerEmail),
   statusIdx: index("eventBookings_status_idx").on(table.status),
 }));
-
-// Adicione após a definição de eventBookings (linha ~1896)
 
 export const eventPayments = pgTable("event_payments", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -1620,10 +1614,12 @@ export const insertEventSpaceSchema = createInsertSchema(eventSpaces, {
   description: z.string().optional(),
   capacityMin: z.number().int().positive(),
   capacityMax: z.number().int().positive(),
-  basePriceHourly: z.number().positive().optional(),
-  pricePerHour: z.number().positive().optional(),
+  basePricePerDay: z.number().positive().default(0),
   weekendSurchargePercent: z.number().int().min(0).optional(),
   isActive: z.boolean().default(true),
+  offersCatering: z.boolean().default(false),
+  cateringMenuUrls: z.array(z.string()).default([]),
+  cateringDiscountPercent: z.number().min(0).max(100).default(0),
 }).omit({
   id: true,
   hotelId: true,
@@ -1631,18 +1627,21 @@ export const insertEventSpaceSchema = createInsertSchema(eventSpaces, {
   updatedAt: true,
 });
 
+// ✅ ATUALIZADO: Adicionado cateringRequired ao schema de inserção de eventBooking
 export const insertEventBookingSchema = createInsertSchema(eventBookings, {
   organizerName: z.string().min(1),
   organizerEmail: z.string().email(),
   organizerPhone: z.string().optional(),
   eventTitle: z.string().min(1),
   eventType: z.string().min(1),
-  startDatetime: z.date(),
-  endDatetime: z.date(),
+  startDate: z.date(),
+  endDate: z.date(),
+  durationDays: z.number().int().positive().optional(),
   expectedAttendees: z.number().int().positive(),
+  cateringRequired: z.boolean().default(false),
   basePrice: z.number().positive(),
   totalPrice: z.number().positive(),
-  status: z.string().default('confirmed'),
+  status: z.string().default('pending_approval'), // ✅ Alterado para pending_approval
   paymentStatus: z.string().default('pending'),
 }).omit({
   id: true,
@@ -1742,7 +1741,6 @@ export type EventBookingLogInsert = typeof eventBookingLogs.$inferInsert;
 export type EventSpaceLog = typeof eventSpaceLogs.$inferSelect;
 export type EventSpaceLogInsert = typeof eventSpaceLogs.$inferInsert;
 
-// Adicione também ao tipo inferido (linha ~1896)
 export type EventPayment = typeof eventPayments.$inferSelect;
 export type EventPaymentInsert = typeof eventPayments.$inferInsert;
 
@@ -1938,4 +1936,4 @@ export interface CompleteHotelSystem {
   user_roles: UserRole[];
   advance_payment_promotions: AdvancePaymentPromotion[];
   payment_options: PaymentOption[];
-}
+};

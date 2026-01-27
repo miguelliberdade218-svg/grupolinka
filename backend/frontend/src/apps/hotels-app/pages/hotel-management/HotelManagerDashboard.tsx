@@ -33,16 +33,33 @@ const HotelManagerDashboard: React.FC = () => {
   // CORREÇÃO: Usando import normal do contexto (não mais require)
   const { activeHotel: contextHotel, isLoading: contextLoading, refreshActiveHotel } = useActiveHotel();
 
-  const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
+    const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingHotel, setEditingHotel] = useState(false);
+  const [myHotelsCount, setMyHotelsCount] = useState<number>(0);
   const { toast } = useToast();
 
   // CORREÇÃO: Converter o hotel do contexto para o tipo compartilhado
   const activeHotel = contextHotel ? convertServiceHotelToSharedHotel(contextHotel) : null;
+
+    // Carrega número de hotéis do usuário
+  useEffect(() => {
+    const loadMyHotelsCount = async () => {
+      try {
+        const response = await hotelService.getMyHotels();
+        if (response.success) {
+          setMyHotelsCount(response.count || response.data.length);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar hotéis:', err);
+      }
+    };
+
+    loadMyHotelsCount();
+  }, []);
 
   // Carrega/re-carrega dashboard quando o hotel ativo mudar
   useEffect(() => {
@@ -239,7 +256,7 @@ const HotelManagerDashboard: React.FC = () => {
   // Dashboard completo com hotel selecionado
   return (
     <div className="space-y-8 p-4 md:p-6">
-      {/* Header com nome do hotel */}
+            {/* Header com nome do hotel */}
       <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-600">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="flex items-start gap-4">
@@ -256,6 +273,11 @@ const HotelManagerDashboard: React.FC = () => {
                   {activeHotel.locality}, {activeHotel.province}
                 </span>
               </p>
+              <div className="mt-2 flex items-center gap-4 text-sm">
+                <span className="text-green-600 font-medium">
+                  {myHotelsCount} {myHotelsCount === 1 ? 'hotel disponível' : 'hotéis disponíveis'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -285,17 +307,22 @@ const HotelManagerDashboard: React.FC = () => {
           <p className="text-xs text-muted-foreground mt-2">próximos 30 dias</p>
         </Card>
 
-        <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-0 shadow-sm hover:shadow-md transition-all">
+                <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-0 shadow-sm hover:shadow-md transition-all">
           <p className="text-sm text-muted-foreground mb-1">Receita Total</p>
           <p className="text-3xl font-bold text-purple-700">
-            {parseInt(dashboard?.total_revenue || '0').toLocaleString('pt-MZ')} MZN
+            {dashboard?.total_revenue 
+              ? `${parseFloat(dashboard.total_revenue).toLocaleString('pt-MZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MZN`
+              : '0 MZN'
+            }
           </p>
           <p className="text-xs text-muted-foreground mt-2">acumulado</p>
         </Card>
 
         <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 border-0 shadow-sm hover:shadow-md transition-all">
           <p className="text-sm text-muted-foreground mb-1">Taxa Ocupação</p>
-          <p className="text-3xl font-bold text-orange-700">78%</p>
+          <p className="text-3xl font-bold text-orange-700">
+            {dashboard?.occupancy_rate ? `${Math.round(dashboard.occupancy_rate)}%` : '0%'}
+          </p>
           <p className="text-xs text-muted-foreground mt-2">média geral</p>
         </Card>
       </div>

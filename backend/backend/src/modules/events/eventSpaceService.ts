@@ -1,10 +1,11 @@
-// src/modules/events/eventSpaceService.ts - VERSÃO FINAL COM DISPONIBILIDADE ETERNA/IMPLÍCITA
+// src/modules/events/eventSpaceService.ts - VERSÃO FINAL CORRIGIDA
 
 import { db } from "../../../db";
 import {
   eventSpaces,
   eventAvailability,
   hotels,
+  eventBookings
 } from "../../../shared/schema";
 import {
   eq,
@@ -16,6 +17,7 @@ import {
   desc,
   inArray,
   ne,
+  or
 } from "drizzle-orm";
 
 // ==================== TIPOS ====================
@@ -25,30 +27,45 @@ export type EventSpaceUpdate = Partial<EventSpaceInsert>;
 
 export type EventAvailability = typeof eventAvailability.$inferSelect;
 
-export interface TimeSlot {
-  startTime: string;
-  endTime: string;
-  bookingId?: string;
-  status?: string;
-}
-
 // ==================== FUNÇÕES HELPER ====================
-const toDecimalString = (num: number | string | null | undefined): string | null => {
-  if (num === null || num === undefined) return null;
-  if (typeof num === 'string') return num;
-  return num.toString();
-};
-
-const toNumber = (str: string | number | null | undefined): number => {
-  if (str === null || str === undefined) return 0;
-  if (typeof str === 'number') return str;
-  const num = Number(str);
+const toNumber = (value: string | number | null | undefined): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  const num = Number(value);
   return isNaN(num) ? 0 : num;
 };
 
-const toSlotsJson = (slots: TimeSlot[] | null | undefined): any => {
-  if (!slots || slots.length === 0) return [];
-  return slots;
+// Função para converter Date para string YYYY-MM-DD
+const dateToYMD = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Converter string para Date no início do dia
+const ymdToDateStart = (dateStr: string): Date => {
+  return new Date(dateStr + 'T00:00:00');
+};
+
+// Converter string para Date no final do dia
+const ymdToDateEnd = (dateStr: string): Date => {
+  return new Date(dateStr + 'T23:59:59');
+};
+
+// Gerar range de datas entre start e end
+const generateDateRange = (startDate: string, endDate: string): string[] => {
+  const start = ymdToDateStart(startDate);
+  const end = ymdToDateEnd(endDate);
+  const dates: string[] = [];
+  
+  const current = new Date(start);
+  while (current <= end) {
+    dates.push(dateToYMD(current));
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return dates;
 };
 
 // ==================== CRUD DE ESPAÇOS ====================
@@ -75,16 +92,59 @@ export const getEventSpaceById = async (id: string): Promise<EventSpace | null> 
 };
 
 export const createEventSpace = async (data: EventSpaceInsert): Promise<EventSpace> => {
+  // ✅ CORREÇÃO: Verificar se equipment já é string JSON
+  let equipmentValue: string;
+  
+  if (typeof data.equipment === 'string') {
+    // Se já for string, verificar se é JSON válido
+    try {
+      const parsed = JSON.parse(data.equipment);
+      // Se parseou, converter de volta para string limpa
+      equipmentValue = JSON.stringify(parsed);
+      console.log('✅ Equipment já era string JSON, parseado e re-stringified');
+    } catch {
+      // Se não for JSON válido, usar como objeto vazio
+      equipmentValue = '{}';
+      console.log('⚠️ Equipment era string inválida, usando objeto vazio');
+    }
+  } else {
+    // Se for objeto, converter para string JSON
+    equipmentValue = JSON.stringify(data.equipment || {});
+    console.log('✅ Equipment era objeto, convertido para string JSON');
+  }
+  
+  // ✅ LOG para debug DETALHADO
+  console.log('🔍 [eventSpaceService] equipment FINAL:', {
+    original: data.equipment,
+    type: typeof data.equipment,
+    stringified: equipmentValue,
+    hasEscapes: equipmentValue.includes('\\"'),
+    length: equipmentValue.length,
+    first50: equipmentValue.substring(0, 50),
+    startsWithQuote: equipmentValue.startsWith('"'),
+    endsWithQuote: equipmentValue.endsWith('"')
+  });
+  
   const processedData = {
     ...data,
-    basePriceHourly: data.basePriceHourly ? toDecimalString(data.basePriceHourly as number | string) : null,
-    pricePerHour: data.pricePerHour ? toDecimalString(data.pricePerHour as number | string) : null,
-    basePriceHalfDay: data.basePriceHalfDay ? toDecimalString(data.basePriceHalfDay as number | string) : null,
-    basePriceFullDay: data.basePriceFullDay ? toDecimalString(data.basePriceFullDay as number | string) : null,
+    basePricePerDay: data.basePricePerDay ? data.basePricePerDay.toString() : "0",
+    // ✅ Enviar como string JSON pura (SEM sql helper)
+    equipment: equipmentValue,
   };
   
-  const [space] = await db.insert(eventSpaces).values(processedData).returning();
-  return space;
+  try {
+    const [space] = await db.insert(eventSpaces).values(processedData).returning();
+    return space;
+  } catch (error: any) {
+    console.error('❌ ERRO ao inserir espaço:', {
+      message: error.message,
+      detail: error.detail,
+      constraint: error.constraint_name,
+      query: error.query,
+      parameters: error.parameters?.map((p: any, i: number) => `${i}: ${p}`)
+    });
+    throw error;
+  }
 };
 
 export const updateEventSpace = async (
@@ -93,17 +153,35 @@ export const updateEventSpace = async (
 ): Promise<EventSpace | null> => {
   const processedData: any = { ...data };
   
-  if (data.basePriceHourly !== undefined) {
-    processedData.basePriceHourly = toDecimalString(data.basePriceHourly as number | string);
+  if (data.basePricePerDay !== undefined) {
+    processedData.basePricePerDay = data.basePricePerDay.toString();
   }
-  if (data.pricePerHour !== undefined) {
-    processedData.pricePerHour = data.pricePerHour ? toDecimalString(data.pricePerHour as number | string) : null;
-  }
-  if (data.basePriceHalfDay !== undefined) {
-    processedData.basePriceHalfDay = data.basePriceHalfDay ? toDecimalString(data.basePriceHalfDay as number | string) : null;
-  }
-  if (data.basePriceFullDay !== undefined) {
-    processedData.basePriceFullDay = data.basePriceFullDay ? toDecimalString(data.basePriceFullDay as number | string) : null;
+  
+  if (data.equipment !== undefined) {
+    // ✅ CORREÇÃO: Mesma lógica da create
+    let equipmentValue: string;
+    
+    if (typeof data.equipment === 'string') {
+      try {
+        const parsed = JSON.parse(data.equipment);
+        equipmentValue = JSON.stringify(parsed);
+      } catch {
+        equipmentValue = '{}';
+      }
+    } else {
+      equipmentValue = JSON.stringify(data.equipment || {});
+    }
+    
+    processedData.equipment = equipmentValue;
+    
+    console.log('🔍 [eventSpaceService] update equipment:', {
+      original: data.equipment,
+      type: typeof data.equipment,
+      stringified: equipmentValue,
+      hasEscapes: equipmentValue.includes('\\"'),
+      length: equipmentValue.length,
+      first50: equipmentValue.substring(0, 50)
+    });
   }
   
   const [space] = await db
@@ -126,7 +204,20 @@ export const getEventSpaceCalendar = async (
   endDate: string
 ): Promise<EventAvailability[]> => {
   return await db
-    .select()
+    .select({
+      id: eventAvailability.id,
+      eventSpaceId: eventAvailability.eventSpaceId,
+      date: eventAvailability.date,
+      priceOverride: eventAvailability.priceOverride,
+      isAvailable: eventAvailability.isAvailable,
+      stopSell: eventAvailability.stopSell,
+      availableUnits: eventAvailability.availableUnits,
+      maxUnits: eventAvailability.maxUnits,
+      price: eventAvailability.price,
+      minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
+      createdAt: eventAvailability.createdAt,
+      updatedAt: eventAvailability.updatedAt,
+    })
     .from(eventAvailability)
     .where(
       and(
@@ -140,74 +231,49 @@ export const getEventSpaceCalendar = async (
 
 export const isEventSpaceAvailable = async (
   eventSpaceId: string,
-  date: string,
-  startTime?: string,
-  endTime?: string
-): Promise<{ available: boolean; message?: string; availability?: EventAvailability }> => {
-  const dateObj = new Date(date);
-  
-  const [availability] = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
+  startDate: string,
+  endDate: string
+): Promise<{ available: boolean; message?: string }> => {
+  const dateRange = generateDateRange(startDate, endDate);
+
+  for (const date of dateRange) {
+    const [avail] = await db.select().from(eventAvailability)
+      .where(and(
         eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, dateObj)
-      )
-    )
-    .limit(1);
+        sql`${eventAvailability.date}::date = ${date}::date`
+      ))
+      .limit(1);
 
-  // NOVA LÓGICA: DISPONIBILIDADE ETERNA / IMPLÍCITA
-  if (!availability) {
-    return {
-      available: true,
-      message: 'Data disponível por padrão (sem restrições ou reservas registadas)'
-    };
-  }
+    if (avail?.stopSell || !avail?.isAvailable) {
+      return { 
+        available: false, 
+        message: avail?.stopSell 
+          ? `Venda bloqueada em ${date}` 
+          : `Indisponível em ${date}`
+      };
+    }
 
-  if (!availability.isAvailable || availability.stopSell) {
-    return {
-      available: false,
-      availability,
-      message: availability.stopSell ? 'Venda bloqueada para esta data' : 'Espaço não disponível'
-    };
-  }
-
-  if (startTime && endTime && availability.slots) {
-    try {
-      const slots = availability.slots as TimeSlot[];
-      const hasConflict = slots.some(slot => {
-        const slotStart = slot.startTime;
-        const slotEnd = slot.endTime;
-        
-        return (
-          (startTime >= slotStart && startTime < slotEnd) ||
-          (endTime > slotStart && endTime <= slotEnd) ||
-          (startTime <= slotStart && endTime >= slotEnd)
-        );
-      });
-
-      if (hasConflict) {
-        return {
-          available: false,
-          availability,
-          message: 'Conflito de horário com reserva existente'
-        };
-      }
-    } catch (error) {
-      console.error('Erro ao analisar slots:', error);
-      return {
-        available: false,
-        availability,
-        message: 'Erro ao verificar disponibilidade de horários'
+    const conflictingBooking = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(eventBookings)
+      .where(
+        and(
+          eq(eventBookings.eventSpaceId, eventSpaceId),
+          eq(eventBookings.status, "confirmed"),
+          sql`${eventBookings.startDate}::date <= ${date}::date`,
+          sql`${eventBookings.endDate}::date > ${date}::date`
+        )
+      );
+    
+    if (conflictingBooking[0]?.count > 0) {
+      return { 
+        available: false, 
+        message: `Já reservado para ${date}` 
       };
     }
   }
 
-  return {
-    available: true,
-    availability
-  };
+  return { available: true };
 };
 
 export const bulkUpdateEventAvailability = async (
@@ -217,28 +283,36 @@ export const bulkUpdateEventAvailability = async (
     isAvailable?: boolean;
     stopSell?: boolean;
     priceOverride?: number | null;
-    minBookingHours?: number;
-    slots?: TimeSlot[];
+    availableUnits?: number;
+    maxUnits?: number;
+    price?: number | null;
+    minBookingHoursDefault?: number;
   }[]
 ): Promise<void> => {
   if (updates.length === 0) return;
 
   await db.transaction(async (tx) => {
     for (const update of updates) {
-      const dateObj = new Date(update.date);
+      const dateStr = update.date; // Manter como string
       
       const values: any = {
         eventSpaceId,
-        date: dateObj,
+        date: dateStr, // Usar string diretamente
         isAvailable: update.isAvailable ?? true,
         stopSell: update.stopSell ?? false,
-        priceOverride: update.priceOverride !== null && update.priceOverride !== undefined 
-          ? update.priceOverride.toString()
-          : null,
-        minBookingHours: update.minBookingHours ?? 4,
-        slots: update.slots ? toSlotsJson(update.slots) : [],
+        availableUnits: update.availableUnits ?? 1,
+        maxUnits: update.maxUnits ?? 1,
+        minBookingHoursDefault: update.minBookingHoursDefault ?? 4,
         updatedAt: new Date()
       };
+
+      // Adicionar campos opcionais se fornecidos
+      if (update.priceOverride !== null && update.priceOverride !== undefined) {
+        values.priceOverride = update.priceOverride.toString();
+      }
+      if (update.price !== null && update.price !== undefined) {
+        values.price = update.price.toString();
+      }
 
       await tx
         .insert(eventAvailability)
@@ -256,6 +330,12 @@ export const getHotelEventSpacesSummary = async (hotelId: string) => {
     .select({
       space: eventSpaces,
       totalDaysAvailable: sql<number>`COUNT(DISTINCT ea.date)`.as("days_available"),
+      upcomingBookings: sql<number>`(
+        SELECT COUNT(*) FROM "eventBookings" eb 
+        WHERE eb."eventSpaceId" = "eventSpaces"."id" 
+        AND eb."status" IN ('confirmed', 'pending')
+        AND eb."startDate"::date >= CURRENT_DATE
+      )`.as("upcoming_bookings"),
     })
     .from(eventSpaces)
     .leftJoin(eventAvailability, and(
@@ -276,24 +356,32 @@ export const upsertEventAvailability = async (
     isAvailable?: boolean;
     stopSell?: boolean;
     priceOverride?: number | null;
-    minBookingHours?: number;
-    slots?: TimeSlot[];
+    availableUnits?: number;
+    maxUnits?: number;
+    price?: number | null;
+    minBookingHoursDefault?: number;
   }
 ): Promise<EventAvailability> => {
-  const dateObj = new Date(date);
+  const dateStr = date; // Manter como string
   
-  const values = {
+  const values: any = {
     eventSpaceId,
-    date: dateObj,
+    date: dateStr, // Usar string diretamente
     isAvailable: data.isAvailable ?? true,
     stopSell: data.stopSell ?? false,
-    priceOverride: data.priceOverride !== null && data.priceOverride !== undefined 
-      ? data.priceOverride.toString()
-      : null,
-    minBookingHours: data.minBookingHours ?? 4,
-    slots: data.slots ? toSlotsJson(data.slots) : [],
+    availableUnits: data.availableUnits ?? 1,
+    maxUnits: data.maxUnits ?? 1,
+    minBookingHoursDefault: data.minBookingHoursDefault ?? 4,
     updatedAt: new Date()
   };
+
+  // Adicionar campos opcionais se fornecidos
+  if (data.priceOverride !== null && data.priceOverride !== undefined) {
+    values.priceOverride = data.priceOverride.toString();
+  }
+  if (data.price !== null && data.price !== undefined) {
+    values.price = data.price.toString();
+  }
 
   const [availability] = await db
     .insert(eventAvailability)
@@ -313,15 +401,26 @@ export const getMultiSpaceAvailabilityForDate = async (
 ): Promise<Record<string, EventAvailability | null>> => {
   if (eventSpaceIds.length === 0) return {};
 
-  const dateObj = new Date(date);
-  
   const availability = await db
-    .select()
+    .select({
+      id: eventAvailability.id,
+      eventSpaceId: eventAvailability.eventSpaceId,
+      date: eventAvailability.date,
+      priceOverride: eventAvailability.priceOverride,
+      isAvailable: eventAvailability.isAvailable,
+      stopSell: eventAvailability.stopSell,
+      availableUnits: eventAvailability.availableUnits,
+      maxUnits: eventAvailability.maxUnits,
+      price: eventAvailability.price,
+      minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
+      createdAt: eventAvailability.createdAt,
+      updatedAt: eventAvailability.updatedAt,
+    })
     .from(eventAvailability)
     .where(
       and(
         inArray(eventAvailability.eventSpaceId, eventSpaceIds),
-        eq(eventAvailability.date, dateObj)
+        sql`${eventAvailability.date}::date = ${date}::date`
       )
     );
 
@@ -337,106 +436,6 @@ export const getMultiSpaceAvailabilityForDate = async (
   return result;
 };
 
-export const updateEventSlots = async (
-  eventSpaceId: string,
-  date: string,
-  slots: TimeSlot[]
-): Promise<EventAvailability> => {
-  const dateObj = new Date(date);
-  
-  const [availability] = await db
-    .update(eventAvailability)
-    .set({
-      slots: toSlotsJson(slots),
-      updatedAt: new Date()
-    })
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, dateObj)
-      )
-    )
-    .returning();
-
-  if (!availability) {
-    return await upsertEventAvailability(eventSpaceId, date, { slots });
-  }
-
-  return availability;
-};
-
-export const addTimeSlot = async (
-  eventSpaceId: string,
-  date: string,
-  slot: TimeSlot
-): Promise<EventAvailability> => {
-  const dateObj = new Date(date);
-  
-  const [currentAvailability] = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, dateObj)
-      )
-    )
-    .limit(1);
-
-  let slots: TimeSlot[] = [];
-  
-  if (currentAvailability?.slots) {
-    slots = currentAvailability.slots as TimeSlot[];
-    
-    const exists = slots.some(s => 
-      s.startTime === slot.startTime && s.endTime === slot.endTime
-    );
-    
-    if (exists) {
-      throw new Error('Este horário já está reservado');
-    }
-  }
-  
-  slots.push(slot);
-  
-  return await updateEventSlots(eventSpaceId, date, slots);
-};
-
-export const removeTimeSlot = async (
-  eventSpaceId: string,
-  date: string,
-  startTime: string,
-  endTime: string
-): Promise<EventAvailability> => {
-  const dateObj = new Date(date);
-  
-  const [currentAvailability] = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, dateObj)
-      )
-    )
-    .limit(1);
-
-  if (!currentAvailability?.slots) {
-    throw new Error('Nenhum slot encontrado para remover');
-  }
-
-  const slots = currentAvailability.slots as TimeSlot[];
-  const filteredSlots = slots.filter(s => 
-    !(s.startTime === startTime && s.endTime === endTime)
-  );
-
-  if (filteredSlots.length === slots.length) {
-    throw new Error('Slot não encontrado para remoção');
-  }
-
-  return await updateEventSlots(eventSpaceId, date, filteredSlots);
-};
-
 export const getEventSpaceAvailabilityStats = async (
   eventSpaceId: string,
   startDate: string,
@@ -446,8 +445,8 @@ export const getEventSpaceAvailabilityStats = async (
     .select({
       totalDays: sql<number>`COUNT(DISTINCT date)`,
       availableDays: sql<number>`COUNT(DISTINCT date) FILTER (WHERE "isAvailable" = true AND "stopSell" = false)`,
-      bookedDays: sql<number>`COUNT(DISTINCT date) FILTER (WHERE "stopSell" = true OR (slots IS NOT NULL AND jsonb_array_length(slots) > 0))`,
-      averagePrice: sql<number>`COALESCE(AVG("priceOverride"), 0)`,
+      blockedDays: sql<number>`COUNT(DISTINCT date) FILTER (WHERE "stopSell" = true)`,
+      averagePrice: sql<number>`COALESCE(AVG("price"), 0)`,
     })
     .from(eventAvailability)
     .where(
@@ -458,28 +457,39 @@ export const getEventSpaceAvailabilityStats = async (
       )
     );
 
-  return stats[0] || {
-    totalDays: 0,
-    availableDays: 0,
-    bookedDays: 0,
-    averagePrice: 0
+  const bookedDays = await db
+    .select({ count: sql<number>`COUNT(DISTINCT "startDate")` })
+    .from(eventBookings)
+    .where(
+      and(
+        eq(eventBookings.eventSpaceId, eventSpaceId),
+        eq(eventBookings.status, "confirmed"),
+        sql`${eventBookings.startDate}::date >= ${startDate}::date`,
+        sql`${eventBookings.endDate}::date <= ${endDate}::date`
+      )
+    );
+
+  return {
+    totalDays: stats[0]?.totalDays || 0,
+    availableDays: stats[0]?.availableDays || 0,
+    blockedDays: stats[0]?.blockedDays || 0,
+    bookedDays: bookedDays[0]?.count || 0,
+    averagePrice: stats[0]?.averagePrice || 0
   };
 };
 
 export const hasActiveEventBookingsForSpace = async (eventSpaceId: string): Promise<boolean> => {
-  const availabilityWithSlots = await db
-    .select()
-    .from(eventAvailability)
+  const activeBookings = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(eventBookings)
     .where(
       and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        sql`slots IS NOT NULL`,
-        sql`jsonb_array_length(slots) > 0`
+        eq(eventBookings.eventSpaceId, eventSpaceId),
+        inArray(eventBookings.status, ["pending", "confirmed", "checked_in"])
       )
-    )
-    .limit(1);
+    );
 
-  return availabilityWithSlots.length > 0;
+  return (activeBookings[0]?.count || 0) > 0;
 };
 
 export const syncAvailabilityWithSpaceConfig = async (
@@ -492,8 +502,8 @@ export const syncAvailabilityWithSpaceConfig = async (
     throw new Error('Espaço de evento não encontrado');
   }
 
-  const startDateObj = new Date(startDate);
-  const endDateObj = new Date(endDate);
+  const startDateObj = ymdToDateStart(startDate);
+  const endDateObj = ymdToDateEnd(endDate);
   
   const daysDiff = Math.ceil(
     (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)
@@ -503,16 +513,29 @@ export const syncAvailabilityWithSpaceConfig = async (
 
   for (let i = 0; i <= daysDiff; i++) {
     const currentDate = new Date(startDateObj);
-    currentDate.setDate(currentDate.getDate() + i);
-    const dateStr = currentDate.toISOString().split('T')[0];
+    currentDate.setDate(startDateObj.getDate() + i);
+    const dateStr = dateToYMD(currentDate);
 
     const existing = await db
-      .select()
+      .select({
+        id: eventAvailability.id,
+        eventSpaceId: eventAvailability.eventSpaceId,
+        date: eventAvailability.date,
+        priceOverride: eventAvailability.priceOverride,
+        isAvailable: eventAvailability.isAvailable,
+        stopSell: eventAvailability.stopSell,
+        availableUnits: eventAvailability.availableUnits,
+        maxUnits: eventAvailability.maxUnits,
+        price: eventAvailability.price,
+        minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
+        createdAt: eventAvailability.createdAt,
+        updatedAt: eventAvailability.updatedAt,
+      })
       .from(eventAvailability)
       .where(
         and(
           eq(eventAvailability.eventSpaceId, eventSpaceId),
-          eq(eventAvailability.date, currentDate)
+          sql`${eventAvailability.date}::date = ${dateStr}::date`
         )
       )
       .limit(1);
@@ -521,8 +544,10 @@ export const syncAvailabilityWithSpaceConfig = async (
       await upsertEventAvailability(eventSpaceId, dateStr, {
         isAvailable: true,
         stopSell: false,
-        minBookingHours: 4,
-        slots: []
+        availableUnits: 1,
+        maxUnits: 1,
+        price: toNumber(space.basePricePerDay || "0"),
+        minBookingHoursDefault: 4
       });
       updatedCount++;
     }
@@ -539,31 +564,61 @@ export const exportAvailabilityCalendar = async (
   date: string;
   status: string;
   price: string;
-  slots: number;
-  minHours: number;
+  availableUnits: number;
+  maxUnits: number;
+  hasBooking: boolean;
 }>> => {
   const availability = await getEventSpaceCalendar(eventSpaceId, startDate, endDate);
   
+  const bookings = await db
+    .select()
+    .from(eventBookings)
+    .where(
+      and(
+        eq(eventBookings.eventSpaceId, eventSpaceId),
+        eq(eventBookings.status, "confirmed"),
+        sql`${eventBookings.startDate}::date >= ${startDate}::date`,
+        sql`${eventBookings.endDate}::date <= ${endDate}::date`
+      )
+    );
+
+  const bookingDates = new Set<string>();
+  bookings.forEach(booking => {
+    const start = new Date(booking.startDate);
+    const end = new Date(booking.endDate);
+    const current = new Date(start);
+    while (current <= end) {
+      bookingDates.add(dateToYMD(current));
+      current.setDate(current.getDate() + 1);
+    }
+  });
+
   return availability.map(entry => {
-    const slots = entry.slots as TimeSlot[] || [];
-    const basePrice = toNumber(entry.priceOverride);
-    const dateStr = entry.date.toISOString().split('T')[0];
+    const dateStr = typeof entry.date === 'string' ? entry.date : dateToYMD(new Date(entry.date));
+    const hasBooking = bookingDates.has(dateStr);
     
     let status = 'Disponível';
-    if (entry.stopSell) {
+    if (hasBooking) {
+      status = 'Reservado';
+    } else if (entry.stopSell) {
       status = 'Venda Bloqueada';
     } else if (!entry.isAvailable) {
-      status = 'Não Disponível';
-    } else if (slots.length > 0) {
-      status = `Parcial (${slots.length} slots)`;
+      status = 'Indisponível';
     }
 
+    const priceValue = toNumber(entry.price || 0);
+    const overridePriceValue = toNumber(entry.priceOverride || 0);
+    const finalPrice = overridePriceValue > 0 ? overridePriceValue : priceValue;
+    
     return {
       date: dateStr,
       status,
-      price: basePrice > 0 ? `MZN ${basePrice.toFixed(2)}` : 'Preço padrão',
-      slots: slots.length,
-      minHours: entry.minBookingHours || 4
+      price: finalPrice > 0 
+        ? `MZN ${finalPrice.toFixed(2)}` 
+        : 'Preço padrão',
+      availableUnits: entry.availableUnits || 1,
+      maxUnits: entry.maxUnits || 1,
+      hasBooking
     };
   });
 };
@@ -575,9 +630,12 @@ export const getEventSpacesByEventType = async (
   hotelId?: string
 ): Promise<EventSpace[]> => {
   const conditions: any[] = [
-    eq(eventSpaces.isActive, true),
-    sql`${eventType} = ANY(${eventSpaces.eventTypes})`
+    eq(eventSpaces.isActive, true)
   ];
+
+  if (eventType) {
+    conditions.push(sql`${eventType} = ANY(${eventSpaces.allowedEventTypes})`);
+  }
 
   if (hotelId) {
     conditions.push(eq(eventSpaces.hotelId, hotelId));
@@ -593,29 +651,21 @@ export const getEventSpacesByEventType = async (
 export const updateEventSpacePricing = async (
   eventSpaceId: string,
   pricing: {
-    basePriceHourly?: number;
-    pricePerHour?: number;
-    basePriceHalfDay?: number;
-    basePriceFullDay?: number;
+    basePricePerDay?: number;
     weekendSurchargePercent?: number;
+    securityDeposit?: number;
   }
 ): Promise<EventSpace | null> => {
   const updateData: any = {};
   
-  if (pricing.basePriceHourly !== undefined) {
-    updateData.basePriceHourly = toDecimalString(pricing.basePriceHourly);
-  }
-  if (pricing.pricePerHour !== undefined) {
-    updateData.pricePerHour = pricing.pricePerHour ? toDecimalString(pricing.pricePerHour) : null;
-  }
-  if (pricing.basePriceHalfDay !== undefined) {
-    updateData.basePriceHalfDay = pricing.basePriceHalfDay ? toDecimalString(pricing.basePriceHalfDay) : null;
-  }
-  if (pricing.basePriceFullDay !== undefined) {
-    updateData.basePriceFullDay = pricing.basePriceFullDay ? toDecimalString(pricing.basePriceFullDay) : null;
+  if (pricing.basePricePerDay !== undefined) {
+    updateData.basePricePerDay = pricing.basePricePerDay.toString();
   }
   if (pricing.weekendSurchargePercent !== undefined) {
     updateData.weekendSurchargePercent = pricing.weekendSurchargePercent;
+  }
+  if (pricing.securityDeposit !== undefined) {
+    updateData.securityDeposit = pricing.securityDeposit.toString();
   }
 
   return await updateEventSpace(eventSpaceId, updateData);
@@ -676,10 +726,10 @@ export const searchEventSpacesWithFilters = async (
     spaceType?: string;
     hasStage?: boolean;
     naturalLight?: boolean;
-    includesCatering?: boolean;
-    includesFurniture?: boolean;
-    minPrice?: number;
-    maxPrice?: number;
+    offersCatering?: boolean;
+    minPricePerDay?: number;
+    maxPricePerDay?: number;
+    eventType?: string;
   }
 ): Promise<EventSpace[]> => {
   const conditions: any[] = [];
@@ -712,23 +762,23 @@ export const searchEventSpacesWithFilters = async (
     conditions.push(eq(eventSpaces.naturalLight, filters.naturalLight));
   }
   
-  if (filters.includesCatering !== undefined) {
-    conditions.push(eq(eventSpaces.includesCatering, filters.includesCatering));
+  if (filters.offersCatering !== undefined) {
+    conditions.push(eq(eventSpaces.offersCatering, filters.offersCatering));
   }
   
-  if (filters.includesFurniture !== undefined) {
-    conditions.push(eq(eventSpaces.includesFurniture, filters.includesFurniture));
+  if (filters.eventType) {
+    conditions.push(sql`${filters.eventType} = ANY(${eventSpaces.allowedEventTypes})`);
   }
   
-  if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
+  if (filters.minPricePerDay !== undefined || filters.maxPricePerDay !== undefined) {
     const priceConditions: any[] = [];
     
-    if (filters.minPrice !== undefined) {
-      priceConditions.push(gte(eventSpaces.basePriceHourly, filters.minPrice.toString()));
+    if (filters.minPricePerDay !== undefined) {
+      priceConditions.push(gte(eventSpaces.basePricePerDay, filters.minPricePerDay.toString()));
     }
     
-    if (filters.maxPrice !== undefined) {
-      priceConditions.push(lte(eventSpaces.basePriceHourly, filters.maxPrice.toString()));
+    if (filters.maxPricePerDay !== undefined) {
+      priceConditions.push(lte(eventSpaces.basePricePerDay, filters.maxPricePerDay.toString()));
     }
     
     conditions.push(and(...priceConditions));
@@ -743,45 +793,75 @@ export const searchEventSpacesWithFilters = async (
 
 export const calculateEventPrice = async (
   eventSpaceId: string,
-  date: string,
-  durationHours: number
+  startDate: string,
+  endDate: string,
+  cateringRequired: boolean = false
 ): Promise<number> => {
   const space = await getEventSpaceById(eventSpaceId);
   if (!space) {
     throw new Error('Espaço não encontrado');
   }
   
-  const dateObj = new Date(date);
-  const [availability] = await db
-    .select()
-    .from(eventAvailability)
-    .where(
-      and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        eq(eventAvailability.date, dateObj)
+  const start = ymdToDateStart(startDate);
+  const end = ymdToDateEnd(endDate);
+  const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  
+  let totalPrice = 0;
+  
+  for (let i = 0; i < daysDifference; i++) {
+    const currentDate = new Date(start);
+    currentDate.setDate(start.getDate() + i);
+    const currentDateStr = dateToYMD(currentDate);
+    
+    const [availability] = await db
+      .select({
+        id: eventAvailability.id,
+        eventSpaceId: eventAvailability.eventSpaceId,
+        date: eventAvailability.date,
+        priceOverride: eventAvailability.priceOverride,
+        isAvailable: eventAvailability.isAvailable,
+        stopSell: eventAvailability.stopSell,
+        availableUnits: eventAvailability.availableUnits,
+        maxUnits: eventAvailability.maxUnits,
+        price: eventAvailability.price,
+        minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
+        createdAt: eventAvailability.createdAt,
+        updatedAt: eventAvailability.updatedAt,
+      })
+      .from(eventAvailability)
+      .where(
+        and(
+          eq(eventAvailability.eventSpaceId, eventSpaceId),
+          sql`${eventAvailability.date}::date = ${currentDateStr}::date`
+        )
       )
-    )
-    .limit(1);
-  
-  let basePrice: number;
-  
-  if (availability?.priceOverride) {
-    basePrice = toNumber(availability.priceOverride);
-  } else if (space.pricePerHour) {
-    basePrice = toNumber(space.pricePerHour) * durationHours;
-  } else if (space.basePriceHourly) {
-    basePrice = toNumber(space.basePriceHourly) * durationHours;
-  } else {
-    basePrice = 0;
+      .limit(1);
+    
+    let dailyPrice = toNumber(space.basePricePerDay || "0");
+    
+    // Usar price do availability se existir, senão usar priceOverride se existir
+    if (availability?.price) {
+      dailyPrice = toNumber(availability.price);
+    } else if (availability?.priceOverride) {
+      dailyPrice = toNumber(availability.priceOverride);
+    }
+    
+    const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
+    if (isWeekend && space.weekendSurchargePercent) {
+      const surchargePercent = toNumber(space.weekendSurchargePercent);
+      dailyPrice += dailyPrice * (surchargePercent / 100);
+    }
+    
+    totalPrice += dailyPrice;
   }
   
-  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-  if (isWeekend && space.weekendSurchargePercent) {
-    const surchargePercent = toNumber(space.weekendSurchargePercent);
-    basePrice += basePrice * (surchargePercent / 100);
+  if (cateringRequired && space.offersCatering && space.cateringDiscountPercent) {
+    const cateringDiscountPercent = toNumber(space.cateringDiscountPercent);
+    const discountAmount = totalPrice * (cateringDiscountPercent / 100);
+    totalPrice -= discountAmount;
   }
   
-  return Math.round(basePrice);
+  return Math.round(totalPrice * 100) / 100;
 };
 
 export const getEventSpacesWithStats = async (
@@ -838,4 +918,114 @@ export const generateEventSpaceSlug = async (
   }
   
   return slug;
+};
+
+// ==================== FUNÇÕES DE INICIALIZAÇÃO ====================
+
+export const initializeEventAvailability = async (
+  eventSpaceId: string,
+  startDate: string,
+  endDate: string
+): Promise<number> => {
+  try {
+    try {
+      const result = await db.execute(sql`
+        SELECT generate_event_availability(
+          ${eventSpaceId}::uuid,
+          ${startDate}::date,
+          ${endDate}::date
+        ) as created_count
+      `);
+      
+      if (Array.isArray(result)) {
+        const firstRow = result[0] as any;
+        return firstRow?.created_count || 0;
+      }
+      
+      const anyResult = result as any;
+      if (anyResult && typeof anyResult === 'object') {
+        if (anyResult.rows && Array.isArray(anyResult.rows)) {
+          return anyResult.rows[0]?.created_count || 0;
+        }
+        if (anyResult[0]) {
+          return (anyResult[0] as any).created_count || 0;
+        }
+      }
+      
+      return 0;
+    } catch (sqlError) {
+      return await syncAvailabilityWithSpaceConfig(eventSpaceId, startDate, endDate);
+    }
+  } catch (error) {
+    console.error('Erro ao inicializar disponibilidade:', error);
+    return await syncAvailabilityWithSpaceConfig(eventSpaceId, startDate, endDate);
+  }
+};
+
+export const getAvailabilityCalendar = async (
+  eventSpaceId: string,
+  startDate: string,
+  endDate: string
+): Promise<Array<{
+  date: string;
+  status: 'available' | 'blocked' | 'booked' | 'unavailable';
+  price: number;
+  availableUnits: number;
+  maxUnits: number;
+  hasOverride: boolean;
+}>> => {
+  const availability = await getEventSpaceCalendar(eventSpaceId, startDate, endDate);
+  
+  const bookings = await db
+    .select()
+    .from(eventBookings)
+    .where(
+      and(
+        eq(eventBookings.eventSpaceId, eventSpaceId),
+        eq(eventBookings.status, "confirmed"),
+        sql`${eventBookings.startDate}::date >= ${startDate}::date`,
+        sql`${eventBookings.endDate}::date <= ${endDate}::date`
+      )
+    );
+
+  const bookedDates = new Set<string>();
+  bookings.forEach(booking => {
+    const start = new Date(booking.startDate);
+    const end = new Date(booking.endDate);
+    const current = new Date(start);
+    
+    while (current < end) {
+      bookedDates.add(dateToYMD(current));
+      current.setDate(current.getDate() + 1);
+    }
+  });
+
+  return availability.map(entry => {
+    const dateStr = typeof entry.date === 'string' ? entry.date : dateToYMD(new Date(entry.date));
+    const hasBooking = bookedDates.has(dateStr);
+    const hasOverride = !!entry.priceOverride;
+    
+    let status: 'available' | 'blocked' | 'booked' | 'unavailable' = 'available';
+    
+    if (hasBooking) {
+      status = 'booked';
+    } else if (entry.stopSell) {
+      status = 'blocked';
+    } else if (!entry.isAvailable) {
+      status = 'unavailable';
+    }
+
+    const priceValue = toNumber(entry.price || 0);
+    const overridePriceValue = toNumber(entry.priceOverride || 0);
+    const finalPrice = overridePriceValue > 0 ? overridePriceValue : priceValue;
+
+    return {
+      date: dateStr,
+      status,
+      price: finalPrice,
+      availableUnits: entry.availableUnits || 1,
+      maxUnits: entry.maxUnits || 1,
+      hasOverride
+    };
+  });
 };

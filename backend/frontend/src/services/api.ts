@@ -1,8 +1,11 @@
-// src/services/apiService.ts - VERSÃO FINAL CORRIGIDA E ORGANIZADA
+// src/services/apiService.ts - VERSÃO CORRIGIDA 26/01/2026 - SUPORTE COMPLETO A DIÁRIAS (EVENTS)
+// Mantém rides e hotels intactos | Corrige e completa tudo de events / eventSpaces
+// ALINHADO COM shared/types/event-spaces.ts (usando camelCase)
+
 import { auth } from '@/shared/lib/firebaseConfig';
 import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday, formatDateTime } from '../utils/dateFormatter';
 
-// ====================== IMPORTAÇÕES DOS TIPOS UNIFICADOS ======================
+// ====================== IMPORTAÇÕES DOS TIPOS ======================
 import {
   Hotel,
   RoomType,
@@ -43,10 +46,26 @@ import {
   MatchStats as LocalMatchStats,
   RideSearchResponse as LocalRideSearchResponse,
   RideBookingRequest as LocalRideBookingRequest,
-  Booking
+  Booking,
 } from '../types/index';
 
-// ====================== EXPORTAÇÃO DE TIPOS PARA USO EXTERNO ======================
+// ====================== TIPOS ESPECÍFICOS PARA EVENTS (IMPORTADOS DO SHARED/TYPES) ======================
+import {
+  EventSpace,
+  EventSpaceSearchParams,
+  EventSpaceSearchResponse,
+  EventAvailabilityCheck,
+  EventAvailabilityResponse,
+  EventBookingRequest,
+  EventBookingResponse,
+  EventBooking,
+  EventDashboardSummary,
+  EventSpaceDetails,
+  CreateEventSpaceRequest,
+  UpdateEventSpaceRequest
+} from '@/shared/types/event-spaces';
+
+// ====================== EXPORTAÇÕES ======================
 export type { Booking };
 export type { LocalRide as Ride };
 export type { LocalRideSearchParams as RideSearchParams };
@@ -54,7 +73,8 @@ export type { LocalMatchStats as MatchStats };
 export type { LocalRideSearchResponse as RideSearchResponse };
 export type { LocalRideBookingRequest as RideBookingRequest };
 
-// ====================== FUNÇÕES UTILITÁRIAS RIDES ======================
+// ====================== FUNÇÕES UTILITÁRIAS RIDES (INTACTAS) ======================
+
 export function normalizeRide(apiRide: any): any {
   const normalized = {
     ride_id: apiRide.ride_id || apiRide.id || '',
@@ -161,15 +181,145 @@ export function createDefaultMatchStats(): any {
   };
 }
 
+// ====================== NORMALIZADORES EVENTS (OTIMIZADOS) ======================
+
+export function normalizeEventSpace(apiSpace: any): EventSpace {
+  const space = apiSpace.space || apiSpace;
+  
+  // Campos camelCase (frontend-friendly) conforme shared/types/event-spaces.ts
+  const normalized: EventSpace = {
+    id: space.id || '',
+    hotelId: space.hotelId || space.hotel_id || '',
+    hotel_id: space.hotel_id || space.hotelId || '',
+    name: space.name || 'Espaço sem nome',
+    description: space.description || null,
+    capacityMin: Number(space.capacityMin || space.capacity_min || 10),
+    capacityMax: Number(space.capacityMax || space.capacity_max || 50),
+    areaSqm: space.areaSqm || space.area_sqm || null,
+    basePricePerDay: String(space.basePricePerDay || space.base_price_per_day || '0'),
+    weekendSurchargePercent: Number(space.weekendSurchargePercent || space.weekend_surcharge_percent || 0),
+    offersCatering: !!space.offersCatering || !!space.offers_catering,
+    cateringDiscountPercent: Number(space.cateringDiscountPercent || space.catering_discount_percent || 0),
+    cateringMenuUrls: space.cateringMenuUrls || space.catering_menu_urls || [],
+    spaceType: space.spaceType || space.space_type || null,
+    naturalLight: !!space.naturalLight || !!space.natural_light,
+    hasStage: !!space.hasStage || !!space.has_stage,
+    loadingAccess: !!space.loadingAccess || !!space.loading_access,
+    dressingRooms: space.dressingRooms || space.dressing_rooms || null,
+    insuranceRequired: !!space.insuranceRequired || !!space.insurance_required,
+    alcoholAllowed: !!space.alcoholAllowed || !!space.alcohol_allowed,
+    approvalRequired: !!space.approvalRequired || !!space.approval_required,
+    noiseRestriction: space.noiseRestriction || space.noise_restriction || null,
+    allowedEventTypes: space.allowedEventTypes || space.allowed_event_types || [],
+    prohibitedEventTypes: space.prohibitedEventTypes || space.prohibited_event_types || [],
+    equipment: space.equipment || {},
+    setupOptions: space.setupOptions || space.setup_options || [],
+    images: space.images || [],
+    floorPlanImage: space.floorPlanImage || space.floor_plan_image || null,
+    virtualTourUrl: space.virtualTourUrl || space.virtual_tour_url || null,
+    isActive: space.isActive ?? space.is_active ?? true,
+    isFeatured: space.isFeatured ?? space.is_featured ?? false,
+    slug: space.slug || '',
+    createdAt: space.createdAt || space.created_at || new Date().toISOString(),
+    updatedAt: space.updatedAt || space.updated_at || new Date().toISOString(),
+    
+    // Campos opcionais/com calculados
+    rating: space.rating || undefined,
+    totalReviews: space.totalReviews || undefined,
+    thumbnail: (space.images?.[0] || ''),
+    location: apiSpace.hotel?.locality 
+      ? `${apiSpace.hotel?.locality}, ${apiSpace.hotel?.province}`
+      : undefined,
+    hotel: apiSpace.hotel ? {
+      name: apiSpace.hotel.name,
+      locality: apiSpace.hotel.locality,
+      province: apiSpace.hotel.province,
+    } : null,
+  };
+  
+  // Campos específicos de capacidade por setup (opcionais)
+  if (space.capacityTheater !== undefined || space.capacity_theater !== undefined) {
+    normalized.capacityTheater = Number(space.capacityTheater || space.capacity_theater);
+  }
+  if (space.capacityClassroom !== undefined || space.capacity_classroom !== undefined) {
+    normalized.capacityClassroom = Number(space.capacityClassroom || space.capacity_classroom);
+  }
+  if (space.capacityBanquet !== undefined || space.capacity_banquet !== undefined) {
+    normalized.capacityBanquet = Number(space.capacityBanquet || space.capacity_banquet);
+  }
+  if (space.capacityStanding !== undefined || space.capacity_standing !== undefined) {
+    normalized.capacityStanding = Number(space.capacityStanding || space.capacity_standing);
+  }
+  if (space.capacityCocktail !== undefined || space.capacity_cocktail !== undefined) {
+    normalized.capacityCocktail = Number(space.capacityCocktail || space.capacity_cocktail);
+  }
+  
+  return normalized;
+}
+
+export function normalizeEventSpaces(apiSpaces: any[]): EventSpace[] {
+  return (apiSpaces || []).map(normalizeEventSpace);
+}
+
+export function normalizeEventBooking(apiBooking: any): EventBooking {
+  const booking = apiBooking.booking || apiBooking;
+  
+  const normalized: EventBooking = {
+    id: (booking.id || '') as string,
+    eventSpaceId: (booking.eventSpaceId || booking.event_space_id || '') as string,
+    hotelId: (booking.hotelId || booking.hotel_id || '') as string,
+    organizerName: (booking.organizerName || booking.organizer_name || '') as string,
+    organizerEmail: (booking.organizerEmail || booking.organizer_email || '') as string,
+    organizerPhone: booking.organizerPhone || booking.organizer_phone || null,
+    eventTitle: (booking.eventTitle || booking.event_title || '') as string,
+    eventDescription: booking.eventDescription || booking.event_description || null,
+    eventType: (booking.eventType || booking.event_type || '') as string,
+    startDate: (booking.startDate || booking.start_date || '') as string,
+    endDate: (booking.endDate || booking.end_date || '') as string,
+    durationDays: Number(booking.durationDays || booking.duration_days || 1),
+    expectedAttendees: Number(booking.expectedAttendees || booking.expected_attendees || 0),
+    cateringRequired: !!booking.cateringRequired || !!booking.catering_required,
+    specialRequests: booking.specialRequests || booking.special_requests || null,
+    additionalServices: booking.additionalServices || booking.additional_services || {},
+    basePrice: String(booking.basePrice || booking.base_price || '0'),
+    totalPrice: String(booking.totalPrice || booking.total_price || '0'),
+    securityDeposit: String(booking.securityDeposit || booking.security_deposit || '0'),
+    status: booking.status || 'pending_approval',
+    paymentStatus: booking.paymentStatus || booking.payment_status || 'pending',
+    createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
+    updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
+  };
+  
+  // Campos display (opcionais)
+  normalized.dateRange = `${normalized.startDate} - ${normalized.endDate}`;
+  normalized.statusDisplay = getEventStatusDisplay(normalized.status);
+  
+  return normalized;
+}
+
+export function normalizeEventBookings(apiBookings: any[]): EventBooking[] {
+  return (apiBookings || []).map(normalizeEventBooking);
+}
+
+function getEventStatusDisplay(status: string): string {
+  const map: Record<string, string> = {
+    pending_approval: 'Aguardando aprovação',
+    confirmed: 'Confirmado',
+    cancelled: 'Cancelado',
+    rejected: 'Rejeitado',
+    completed: 'Concluído',
+  };
+  return map[status] || status.replace('_', ' ');
+}
+
 // ====================== API SERVICE PRINCIPAL ======================
 
 class ApiService {
   private baseURL: string;
 
   constructor() {
-    // ✅ CORREÇÃO: Usar variável de ambiente ou fallback
     this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    console.log('🚀 ApiService inicializado com baseURL:', this.baseURL);
+    console.log('🚀 ApiService →', this.baseURL);
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
@@ -181,57 +331,39 @@ class ApiService {
     try {
       let token: string | null = null;
       
-      // ✅ CORREÇÃO: Buscar tokens de forma segura com type assertion
       const firebaseToken = localStorage.getItem('firebaseToken') as string | null;
       const storedToken = localStorage.getItem('token') as string | null;
       
       const possibleTokens = [firebaseToken, storedToken];
       
-      // Encontrar o primeiro token válido (não null e não vazio)
       for (const possibleToken of possibleTokens) {
-        // ✅ CORREÇÃO: Verificar explicitamente que não é null e é string
         if (possibleToken !== null && typeof possibleToken === 'string' && possibleToken.trim().length > 0) {
           token = possibleToken;
-          console.log('✅ Token obtido do localStorage (comprimento:', token.length, ')');
           break;
         }
       }
       
-      if (!token) {
-        console.warn('⚠️ Token NÃO encontrado no localStorage');
-        
-        // ✅ CORREÇÃO: Tentar obter do Firebase Auth
-        if (auth.currentUser) {
-          try {
-            const freshToken = await auth.currentUser.getIdToken();
-            // ✅ CORREÇÃO: Verificar que freshToken é string
-            if (freshToken && typeof freshToken === 'string' && freshToken.trim().length > 0) {
-              token = freshToken;
-              console.log('✅ Token obtido do Firebase Auth (comprimento:', token.length, ')');
-              // Salvar para futuras requisições
-              localStorage.setItem('token', token);
-              localStorage.setItem('firebaseToken', token);
-            }
-          } catch (firebaseError) {
-            console.warn('⚠️ Erro ao obter token fresco do Firebase:', (firebaseError as Error).message);
+      if (!token && auth.currentUser) {
+        try {
+          const freshToken = await auth.currentUser.getIdToken();
+          if (freshToken && typeof freshToken === 'string' && freshToken.trim().length > 0) {
+            token = freshToken;
+            localStorage.setItem('token', token);
+            localStorage.setItem('firebaseToken', token);
           }
+        } catch (firebaseError) {
+          console.warn('⚠️ Erro ao obter token fresco:', (firebaseError as Error).message);
         }
       }
       
-      // ✅ CORREÇÃO: Só adicionar ao header se token existir e não for vazio
       if (token && typeof token === 'string' && token.trim().length > 0) {
         headers['Authorization'] = `Bearer ${token}`;
-        console.log('✅ Authorization header ADICIONADO');
-      } else {
-        console.warn('⚠️ Authorization header NÃO adicionado (sem token)');
       }
       
     } catch (error) {
       console.error('❌ Erro ao construir headers:', error);
     }
     
-    console.log('📤 Headers sendo enviados:', Object.keys(headers));
-    console.log('📤 Authorization presente?', headers['Authorization'] ? 'SIM' : 'NÃO');
     return headers;
   }
 
@@ -241,100 +373,64 @@ class ApiService {
     data?: unknown,
     customHeaders?: Record<string, string>
   ): Promise<T> {
-    // ✅ CORREÇÃO: Obter headers base
     const baseHeaders = await this.getAuthHeaders();
     const headers = { ...baseHeaders, ...customHeaders };
     const url = `${this.baseURL}${endpoint}`;
     
-    // ✅ CORREÇÃO CRÍTICA: Configuração CORS correta
     const config: RequestInit = { 
       method, 
       headers,
-      mode: 'cors', // ✅ Especificar modo CORS
-      credentials: 'include', // ✅ Incluir cookies se necessário
+      mode: 'cors',
+      credentials: 'include',
     };
     
     if (data && method !== 'GET') {
       config.body = JSON.stringify(data);
     }
     
-    console.log(`🔐 API Request: ${method} ${url}`, { 
-      headers: { 
-        ...headers, 
-        Authorization: headers.Authorization ? 'Bearer ***' : undefined 
-      },
-      hasData: !!data 
-    });
+    console.log(`🔐 ${method} ${url}`, data ? `Data: ${JSON.stringify(data).substring(0, 200)}...` : '');
     
     try {
       const response = await fetch(url, config);
       
-      // ✅ CORREÇÃO: Tratar erros de CORS/network
       if (!response.ok) {
         let errorText = 'Erro desconhecido';
         try {
           errorText = await response.text();
-        } catch (e) {
-          console.debug('Não foi possível ler texto da resposta');
-        }
+        } catch (e) {}
         
-        console.error(`❌ API Error ${response.status}:`, errorText);
-        
-        // Tratamento específico para erros CORS
         if (response.status === 0) {
-          throw new Error('Erro de CORS/Network: Não foi possível conectar ao servidor. Verifique: \n1. Servidor está rodando\n2. Configurações CORS no backend\n3. Headers permitidos');
+          throw new Error('Erro de CORS/Network');
         }
         
-        // Tratamento para 403 (Forbidden)
         if (response.status === 403) {
-          throw new Error(`403 Forbidden: Você não tem permissão para acessar este recurso. Token: ${headers.Authorization ? 'Presente' : 'Ausente'}`);
+          throw new Error('403 Forbidden: Sem permissão');
         }
         
-        // Tratamento para 401 (Unauthorized)
         if (response.status === 401) {
-          throw new Error('401 Unauthorized: Sua sessão expirou. Faça login novamente.');
+          throw new Error('401 Unauthorized: Sessão expirada');
         }
         
-        throw new Error(`${response.status}: ${errorText || 'Erro na requisição'}`);
+        throw new Error(`${response.status}: ${errorText}`);
       }
       
       const responseText = await response.text();
       
-      // ✅ CORREÇÃO: Tentar parsear JSON
       try {
         const result = JSON.parse(responseText) as T;
-        console.log(`✅ API Response ${method} ${endpoint}:`, 
-          result && typeof result === 'object' && 'success' in result 
-            ? { success: (result as any).success } 
-            : 'OK'
-        );
+        console.log(`✅ ${method} ${endpoint}:`, (result as any)?.success ? 'Sucesso' : 'Erro');
         return result;
       } catch (jsonError) {
-        // Se não for JSON válido, retornar como texto
-        console.log(`✅ API Response (text): ${responseText.substring(0, 100)}...`);
         return { success: true, data: responseText } as T;
       }
       
     } catch (error) {
-      console.error('❌ API Request failed:', error);
-      
-      // ✅ CORREÇÃO: Verificar se é erro de CORS específico
-      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        console.error('🔴 ERRO CORS DETECTADO!');
-        console.error('Soluções possíveis:');
-        console.error('1. Verificar se o backend está rodando em', this.baseURL);
-        console.error('2. Verificar configurações CORS no backend');
-        console.error('3. Remover headers customizados (X-Firebase-Token, etc.)');
-        console.error('4. Usar proxy no Vite/Webpack');
-        
-        throw new Error(`Erro de CORS: Não foi possível conectar a ${this.baseURL}. Verifique as configurações do servidor.`);
-      }
-      
+      console.error('❌ Request failed:', error);
       throw error;
     }
   }
 
-  // Métodos HTTP básicos (mantêm os mesmos)
+  // Métodos HTTP básicos
   async get<T>(url: string, params?: any, customHeaders?: Record<string, string>): Promise<T> {
     if (params) {
       const queryParams = new URLSearchParams(params).toString();
@@ -355,18 +451,10 @@ class ApiService {
     return this.request<T>('DELETE', url, undefined, customHeaders);
   }
 
-  // ====================== NOVO MÉTODO getRaw() ADICIONADO ======================
-  
-  /**
-   * Método getRaw para obter resposta bruta (blob, text, etc.)
-   * ✅ ADICIONADO: Para suportar download de arquivos CSV
-   */
   async getRaw(url: string, options?: { responseType?: 'blob' | 'json' | 'text' }): Promise<any> {
     try {
       const headers = await this.getAuthHeaders();
       const fullUrl = `${this.baseURL}${url}`;
-      
-      console.log('📥 getRaw request:', fullUrl, options);
       
       const response = await fetch(fullUrl, {
         method: 'GET',
@@ -393,27 +481,20 @@ class ApiService {
     }
   }
 
-  // ====================== MÉTODO DE TESTE CORS ======================
-  
   async testCorsConnection(): Promise<{ success: boolean; message: string; corsWorking: boolean }> {
     try {
-      // Teste simples sem headers de auth
       const testUrl = `${this.baseURL}/api/health`;
-      console.log('🧪 Testando conexão CORS para:', testUrl);
       
       const response = await fetch(testUrl, {
         method: 'GET',
         mode: 'cors',
-        headers: {
-          'Accept': 'application/json'
-        }
+        headers: { 'Accept': 'application/json' }
       });
       
       if (response.ok) {
-        const data = await response.json();
         return {
           success: true,
-          message: `✅ Conexão CORS funcionando! Servidor: ${this.baseURL}`,
+          message: `✅ Conexão CORS funcionando!`,
           corsWorking: true
         };
       } else {
@@ -460,7 +541,541 @@ class ApiService {
     return await response.json() as T;
   }
 
-  // ====================== RIDES API ======================
+  // ====================== EVENTS / EVENT SPACES ======================
+
+  async searchEventSpaces(params: EventSpaceSearchParams): Promise<EventSpaceSearchResponse> {
+    try {
+      // Converter camelCase para snake_case para o backend
+      const backendParams = {
+        query: params.query,
+        locality: params.locality,
+        province: params.province,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        capacity: params.capacity,
+        event_type: params.eventType,
+        max_price_per_day: params.maxPricePerDay,
+        amenities: params.amenities?.join(','),
+        hotel_id: params.hotelId,
+      };
+
+      const res = await this.get<any>('/api/events/spaces', backendParams);
+
+      const spaces = Array.isArray(res.data)
+        ? normalizeEventSpaces(res.data)
+        : [];
+
+      return {
+        success: !!res.success,
+        data: spaces,
+        count: res.count || spaces.length,
+      } as EventSpaceSearchResponse;
+    } catch (err) {
+      console.error('[searchEventSpaces]', err);
+      return { success: false, data: [], count: 0 };
+    }
+  }
+
+  async getEventSpaceDetails(spaceId: string): Promise<ApiResponse<EventSpaceDetails>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}`);
+
+      if (!res.success || !res.data) {
+        throw new Error(res.message || 'Espaço não encontrado');
+      }
+
+      const normalizedSpace = normalizeEventSpace(res.data.space || res.data);
+      
+      return {
+        success: true,
+        data: {
+          space: normalizedSpace,
+          hotel: res.data.hotel || null,
+          base_price_per_day: String(res.data.base_price_per_day || normalizedSpace.basePricePerDay || '0'),
+          weekend_surcharge_percent: Number(res.data.weekend_surcharge_percent || normalizedSpace.weekendSurchargePercent || 0),
+          available_for_immediate_booking: !!res.data.available_for_immediate_booking,
+          alcohol_allowed: !!res.data.alcohol_allowed || normalizedSpace.alcoholAllowed,
+          max_capacity: Number(res.data.max_capacity || normalizedSpace.capacityMax || 0),
+          offers_catering: !!res.data.offers_catering || normalizedSpace.offersCatering,
+          catering_discount_percent: Number(res.data.catering_discount_percent || normalizedSpace.cateringDiscountPercent || 0),
+          catering_menu_urls: res.data.catering_menu_urls || normalizedSpace.cateringMenuUrls || [],
+          security_deposit: String(res.data.security_deposit || normalizedSpace.securityDeposit || '0'),
+        },
+      };
+    } catch (err) {
+      console.error('[getEventSpaceDetails]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async checkEventSpaceAvailability(
+    spaceId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<EventAvailabilityResponse> {
+    try {
+      const res = await this.post<any>(`/api/events/spaces/${spaceId}/availability/check`, {
+        start_date: startDate,
+        end_date: endDate,
+      });
+
+      return {
+        success: res.success ?? true,
+        isAvailable: res.is_available ?? res.data?.is_available ?? res.isAvailable ?? false,
+        message: res.data?.message || res.message || 'Verificação concluída',
+      } as EventAvailabilityResponse;
+    } catch (err) {
+      console.error('[checkEventSpaceAvailability]', err);
+      return { success: false, isAvailable: false, message: (err as Error).message };
+    }
+  }
+
+  async createEventBooking(frontendReq: EventBookingRequest): Promise<EventBookingResponse> {
+    try {
+      // Converter camelCase para snake_case para o backend
+      const backendPayload = {
+        event_space_id: frontendReq.eventSpaceId,
+        organizer_name: frontendReq.organizerName,
+        organizer_email: frontendReq.organizerEmail,
+        organizer_phone: frontendReq.organizerPhone,
+        event_title: frontendReq.eventTitle,
+        event_description: frontendReq.eventDescription,
+        event_type: frontendReq.eventType,
+        start_date: frontendReq.startDate,
+        end_date: frontendReq.endDate,
+        expected_attendees: frontendReq.expectedAttendees,
+        special_requests: frontendReq.specialRequests,
+        additional_services: frontendReq.additionalServices,
+        catering_required: frontendReq.cateringRequired ?? false,
+        user_id: frontendReq.userId ?? auth.currentUser?.uid,
+      };
+
+      // ✅ Endpoint correto conforme backend - /api/events/spaces/:id/bookings
+      const res = await this.post<any>(`/api/events/spaces/${backendPayload.event_space_id}/bookings`, backendPayload);
+
+      return {
+        success: res.success ?? true,
+        data: res.data ? normalizeEventBooking(res.data) : undefined,
+        message: res.message || 'Reserva criada (aguardando aprovação)',
+      } as EventBookingResponse;
+    } catch (err) {
+      console.error('[createEventBooking]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async getMyEventBookings(email?: string): Promise<ApiResponse<EventBooking[]>> {
+    try {
+      const res = await this.get<any>('/api/events/my-bookings', email ? { email } : {});
+
+      return {
+        success: res.success ?? true,
+        data: Array.isArray(res.data) ? normalizeEventBookings(res.data) : [],
+      };
+    } catch (err) {
+      console.error('[getMyEventBookings]', err);
+      return { success: false, data: [], error: (err as Error).message };
+    }
+  }
+
+  async cancelEventBooking(bookingId: string, reason?: string): Promise<ApiResponse<{ message: string }>> {
+    try {
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/cancel`, { reason });
+      return {
+        success: res.success ?? true,
+        data: { message: res.message || 'Cancelada com sucesso' },
+      };
+    } catch (err) {
+      console.error('[cancelEventBooking]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async getEventBookingDetails(bookingId: string): Promise<ApiResponse<EventBooking>> {
+    try {
+      const res = await this.get<any>(`/api/events/bookings/${bookingId}`);
+      
+      if (!res.success || !res.data) {
+        throw new Error(res.message || 'Reserva não encontrada');
+      }
+
+      return {
+        success: true,
+        data: normalizeEventBooking(res.data),
+      };
+    } catch (err) {
+      console.error('[getEventBookingDetails]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async confirmEventBooking(bookingId: string): Promise<ApiResponse<EventBooking>> {
+    try {
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/confirm`);
+      
+      return {
+        success: res.success ?? true,
+        data: res.data ? normalizeEventBooking(res.data) : undefined,
+      };
+    } catch (err) {
+      console.error('[confirmEventBooking]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async getFeaturedEventSpaces(limit: number = 10): Promise<EventSpaceSearchResponse> {
+    try {
+      const res = await this.get<any>('/api/events/spaces/featured', { limit });
+
+      const spaces = Array.isArray(res.data)
+        ? normalizeEventSpaces(res.data)
+        : [];
+
+      return {
+        success: !!res.success,
+        data: spaces,
+        count: res.count || spaces.length,
+      } as EventSpaceSearchResponse;
+    } catch (err) {
+      console.error('[getFeaturedEventSpaces]', err);
+      return { success: false, data: [], count: 0 };
+    }
+  }
+
+  async getEventSpacesByHotel(hotelId: string, includeInactive: boolean = false): Promise<EventSpaceSearchResponse> {
+    try {
+      const res = await this.get<any>(`/api/events/hotel/${hotelId}/spaces`, { includeInactive });
+
+      const spaces = Array.isArray(res.data)
+        ? normalizeEventSpaces(res.data)
+        : [];
+
+      return {
+        success: !!res.success,
+        data: spaces,
+        count: res.count || spaces.length,
+      } as EventSpaceSearchResponse;
+    } catch (err) {
+      console.error('[getEventSpacesByHotel]', err);
+      return { success: false, data: [], count: 0 };
+    }
+  }
+
+  async getEventDashboardSummary(hotelId: string): Promise<ApiResponse<EventDashboardSummary>> {
+    try {
+      const res = await this.get<any>(`/api/events/hotel/${hotelId}/dashboard`);
+      
+      if (!res.success) {
+        throw new Error(res.message || 'Erro ao buscar dashboard');
+      }
+
+      const raw = res.data?.summary || res.data;
+
+      return {
+        success: true,
+        data: {
+          totalSpaces: raw.total_spaces || raw.totalSpaces || 0,
+          upcomingEvents: raw.upcoming_events || raw.upcomingEvents || 0,
+          todayEvents: raw.today_events || raw.todayEvents || 0,
+          totalRevenueThisMonth: raw.total_revenue_this_month || raw.totalRevenueThisMonth || 0,
+          occupancyRate: raw.occupancy_rate || raw.occupancyRate || 0,
+          pendingApprovals: raw.pending_approvals || raw.pendingApprovals || 0,
+        },
+      };
+    } catch (err) {
+      console.error('[getEventDashboardSummary]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async calculateEventPrice(
+    eventSpaceId: string,
+    startDate: string,
+    endDate: string,
+    cateringRequired: boolean = false
+  ): Promise<ApiResponse<{ price: number; breakdown: any }>> {
+    try {
+      const res = await this.post<any>(`/api/events/spaces/${eventSpaceId}/calculate-price`, {
+        start_date: startDate,
+        end_date: endDate,
+        catering_required: cateringRequired,
+      });
+
+      return {
+        success: res.success ?? true,
+        data: res.data || { price: 0, breakdown: {} },
+      };
+    } catch (err) {
+      console.error('[calculateEventPrice]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  /**
+   * 📝 Busca avaliações de um espaço de eventos (CORRIGIDO)
+   * ✅ CORREÇÃO: Assinatura corrigida para aceitar parâmetros opcionais
+   * Endpoint: GET /api/events/spaces/:id/reviews
+   */
+  async getEventSpaceReviews(
+    spaceId: string,
+    params?: {
+      limit?: number;
+      offset?: number;
+      minRating?: number;
+      sortBy?: "recent" | "highest_rating" | "most_helpful";
+    }
+  ): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}/reviews`, params);
+      
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        count: res.count,
+        message: res.message,
+        error: res.error,
+      };
+    } catch (err) {
+      console.error('[getEventSpaceReviews]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  // ====================== 🆕 NOVOS MÉTODOS PARA ENDPOINTS FALTANTES ======================
+
+  /**
+   * 🔄 Busca o calendário de disponibilidade de um espaço (NOVO ENDPOINT)
+   * Endpoint: GET /api/events/spaces/:id/calendar
+   * Para: EventSpaceAvailabilityCalendar.tsx
+   */
+  async getEventSpaceCalendar(
+    spaceId: string, 
+    startDate: string, 
+    endDate: string
+  ): Promise<ApiResponse<any[]>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}/calendar`, { 
+        startDate, 
+        endDate 
+      });
+
+      return {
+        success: res.success ?? true,
+        data: res.data || [],
+        count: res.count,
+        message: res.message,
+      };
+    } catch (err) {
+      console.error('[getEventSpaceCalendar]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message,
+        data: [] 
+      };
+    }
+  }
+
+  /**
+   * 🔄 Atualiza disponibilidade de UM dia específico (NOVO ENDPOINT)
+   * Endpoint: POST /api/events/spaces/:id/availability/day
+   * Para: Atualizar um dia específico no calendário
+   */
+  async updateEventSpaceDayAvailability(
+    spaceId: string, 
+    data: { 
+      date: string; 
+      isAvailable?: boolean; 
+      stopSell?: boolean; 
+      priceOverride?: number 
+    }
+  ): Promise<ApiResponse<any>> {
+    try {
+      // Converter camelCase para snake_case
+      const backendData = {
+        date: data.date,
+        is_available: data.isAvailable,
+        stop_sell: data.stopSell,
+        price_override: data.priceOverride,
+      };
+
+      const res = await this.post<any>(`/api/events/spaces/${spaceId}/availability/day`, backendData);
+
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        message: res.message || 'Dia atualizado com sucesso',
+      };
+    } catch (err) {
+      console.error('[updateEventSpaceDayAvailability]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  /**
+   * 🔄 Atualiza disponibilidade em massa (vários dias)
+   * Endpoint: POST /api/events/spaces/:id/availability/bulk
+   * Para: Bulk actions no calendário
+   */
+  async bulkUpdateEventSpaceAvailability(
+    spaceId: string, 
+    updates: Array<{ 
+      date: string; 
+      isAvailable?: boolean; 
+      stopSell?: boolean; 
+      priceOverride?: number 
+    }>
+  ): Promise<ApiResponse<{ updated: number }>> {
+    try {
+      // Converter camelCase para snake_case
+      const backendUpdates = updates.map(update => ({
+        date: update.date,
+        is_available: update.isAvailable,
+        stop_sell: update.stopSell,
+        price_override: update.priceOverride,
+      }));
+
+      const res = await this.post<any>(`/api/events/spaces/${spaceId}/availability/bulk`, backendUpdates);
+
+      return {
+        success: res.success ?? true,
+        data: { 
+          updated: res.data?.updated_days || updates.length 
+        },
+        message: res.message || `${updates.length} dias atualizados`,
+      };
+    } catch (err) {
+      console.error('[bulkUpdateEventSpaceAvailability]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message,
+        data: { updated: 0 }
+      };
+    }
+  }
+
+  /**
+   * 🔄 Busca reservas com filtros (NOVO ENDPOINT)
+   * ✅ CORREÇÃO: Removida propriedade 'pagination' que não existe no tipo
+   * Endpoint: GET /api/events/spaces/:id/bookings/filtered
+   * Para: Listar reservas com filtros avançados
+   */
+  async getEventSpaceBookings(
+    spaceId: string,
+    params?: { 
+      status?: string; 
+      startDate?: string; 
+      endDate?: string; 
+      limit?: number; 
+      offset?: number 
+    }
+  ): Promise<ApiResponse<any[]>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}/bookings/filtered`, params);
+
+      return {
+        success: res.success ?? true,
+        data: res.data || [],
+        count: res.count || 0,
+        message: res.message,
+      };
+    } catch (err) {
+      console.error('[getEventSpaceBookings]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message,
+        data: [] 
+      };
+    }
+  }
+
+  // ====================== MÉTODOS EXISTENTES DE DISPONIBILIDADE (COMPATIBILIDADE) ======================
+
+  /**
+   * 📅 Busca disponibilidade (método existente - mantido para compatibilidade)
+   * Endpoint: GET /api/events/spaces/:id/availability
+   */
+  async getEventSpaceAvailability(
+    spaceId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<ApiResponse<any[]>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}/availability`, {
+        startDate,
+        endDate,
+      });
+
+      return {
+        success: res.success ?? true,
+        data: res.data || [],
+      };
+    } catch (err) {
+      console.error('[getEventSpaceAvailability]', err);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  /**
+   * 📊 Lista reservas de um espaço (método existente - mantido para compatibilidade)
+   * Endpoint: GET /api/events/spaces/:id/bookings
+   */
+  async getEventSpaceBookingsLegacy(
+    spaceId: string,
+    params?: {
+      status?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+    }
+  ): Promise<ApiResponse<EventBooking[]>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}/bookings`, {
+        status: params?.status,
+        startDate: params?.startDate,
+        endDate: params?.endDate,
+        limit: params?.limit,
+      });
+
+      return {
+        success: res.success ?? true,
+        data: Array.isArray(res.data) ? normalizeEventBookings(res.data) : [],
+      };
+    } catch (err) {
+      console.error('[getEventSpaceBookingsLegacy]', err);
+      return { success: false, data: [], error: (err as Error).message };
+    }
+  }
+
+  /**
+   * 📅 Busca eventos futuros de um espaço (método existente)
+   * Endpoint: GET /api/events/spaces/:id/bookings/upcoming
+   */
+  async getFutureEventsBySpace(
+    spaceId: string,
+    limit: number = 10
+  ): Promise<ApiResponse<EventBooking[]>> {
+    try {
+      const res = await this.get<any>(`/api/events/spaces/${spaceId}/bookings/upcoming`, {
+        limit,
+      });
+
+      return {
+        success: res.success ?? true,
+        data: Array.isArray(res.data) ? normalizeEventBookings(res.data) : [],
+      };
+    } catch (err) {
+      console.error('[getFutureEventsBySpace]', err);
+      return { success: false, data: [], error: (err as Error).message };
+    }
+  }
+
+  // ====================== RIDES API (INTACTA) ======================
   
   async searchRides(params: any): Promise<any> {
     try {
@@ -584,7 +1199,19 @@ class ApiService {
     return response;
   }
 
-  // ====================== HOTELS API ======================
+  getRideById(rideId: string): Promise<{ success: boolean; data: { ride: any } }> {
+    return this.getRideDetails(rideId);
+  }
+
+  async createRideBooking(data: any) {
+    return this.post('/api/rides/book', data);
+  }
+
+  async getDriverRides(params?: any) {
+    return this.get('/api/rides/driver', params);
+  }
+
+  // ====================== HOTELS API (INTACTA) ======================
   
   async searchHotels(params: SearchParams): Promise<HotelSearchResponse> {
     try {
@@ -599,22 +1226,17 @@ class ApiService {
     }
   }
 
-  // ====================== HOTELS API ======================
-  
   async getAllHotels(params?: { 
     limit?: number; 
     offset?: number;
     active?: boolean;
   }): Promise<HotelListResponse> {
     try {
-      // ✅ CORREÇÃO: Testar CORS primeiro
       const corsTest = await this.testCorsConnection();
       if (!corsTest.corsWorking) {
-        console.error('❌ CORS não está funcionando:', corsTest.message);
         throw new Error(`Problema de CORS: ${corsTest.message}`);
       }
       
-      console.log('📡 Buscando todos os hotéis...');
       return await this.get<HotelListResponse>('/api/v2/hotels', params);
     } catch (error) {
       console.error('❌ Erro ao buscar hotéis:', error);
@@ -667,8 +1289,6 @@ class ApiService {
       };
     }
   }
-
-  // ====================== GESTÃO DE HOTÉIS ======================
 
   async createHotel(data: HotelCreateRequest): Promise<HotelOperationResponse> {
     try {
@@ -774,8 +1394,6 @@ class ApiService {
     }
   }
 
-  // ====================== GESTÃO DE ROOM TYPES ======================
-
   async createRoomType(hotelId: string, data: RoomTypeCreateRequest): Promise<HotelOperationResponse> {
     try {
       return await this.post<HotelOperationResponse>(`/api/v2/hotels/${hotelId}/room-types`, data);
@@ -809,66 +1427,44 @@ class ApiService {
     }
   }
 
-  // ====================== FUNÇÃO deleteRoomType CORRIGIDA ======================
-
   async deleteRoomType(roomTypeId: string): Promise<ApiResponse<{ message: string }>> {
-    console.log('🔍 API: deleteRoomType chamado com ID:', roomTypeId);
-    
-    // ✅ VALIDAÇÃO ROBUSTA DO ID
     if (!roomTypeId || roomTypeId === 'undefined' || roomTypeId === 'null' || roomTypeId.trim() === '') {
-      console.error('❌ API deleteRoomType: ID inválido recebido:', roomTypeId);
       return {
         success: false,
-        error: 'ID do tipo de quarto inválido. Não pode ser undefined, null ou vazio.'
+        error: 'ID do tipo de quarto inválido.'
       };
     }
 
-    // ✅ VALIDAÇÃO DE FORMATO UUID
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(roomTypeId)) {
-      console.error('❌ API deleteRoomType: Formato UUID inválido:', roomTypeId);
       return {
         success: false,
-        error: 'Formato do ID do tipo de quarto inválido. Deve ser um UUID válido.'
+        error: 'Formato do ID do tipo de quarto inválido.'
       };
     }
 
     try {
-      console.log(`🗑️ API: Deletando room type com ID válido: ${roomTypeId}`);
-      
-      // ✅ CORREÇÃO: Usar apenas headers padrão CORS
       const headers = await this.getAuthHeaders();
-      
-      console.log('🔐 Headers sendo enviados para delete:', Object.keys(headers));
-      
       return await this.delete<ApiResponse<{ message: string }>>(
         `/api/v2/hotels/room-types/${roomTypeId}`,
         headers
       );
     } catch (error) {
-      console.error('❌ API deleteRoomType error:', error);
-      
-      // ✅ TRATAMENTO MELHORADO DE ERROS ESPECÍFICOS
       if (error instanceof Error) {
         if (error.message.includes('403')) {
           return {
             success: false,
-            error: 'Você não tem permissão para deletar este tipo de quarto. Verifique se você é o proprietário do hotel.'
+            error: 'Você não tem permissão para deletar este tipo de quarto.'
           };
         } else if (error.message.includes('401')) {
           return {
             success: false,
-            error: 'Autenticação expirada. Faça login novamente.'
+            error: 'Autenticação expirada.'
           };
         } else if (error.message.includes('404')) {
           return {
             success: false,
-            error: 'Tipo de quarto não encontrado. Pode já ter sido deletado.'
-          };
-        } else if (error.message.includes('CORS')) {
-          return {
-            success: false,
-            error: 'Erro de CORS. Verifique as configurações do servidor.'
+            error: 'Tipo de quarto não encontrado.'
           };
         }
         return {
@@ -879,7 +1475,7 @@ class ApiService {
       
       return {
         success: false,
-        error: 'Erro ao desativar tipo de quarto. Verifique sua conexão.'
+        error: 'Erro ao desativar tipo de quarto.'
       };
     }
   }
@@ -899,14 +1495,11 @@ class ApiService {
     }
   }
 
-  // ✅ CORREÇÃO ADICIONAL: Esta função estava faltando
   async getRoomTypeDetails(hotelId: string, roomTypeId: string): Promise<ApiResponse<RoomType>> {
     try {
-      // Primeiro tentar buscar pelo endpoint específico
       return await this.get<ApiResponse<RoomType>>(`/api/v2/hotels/${hotelId}/room-types/${roomTypeId}`);
     } catch (error) {
       try {
-        // Fallback: buscar todos e filtrar
         const response = await this.getRoomTypesByHotel(hotelId);
         if (response.success && Array.isArray(response.data)) {
           const roomType = response.data.find((rt: any) => rt.id === roomTypeId || rt.roomTypeId === roomTypeId);
@@ -953,20 +1546,8 @@ class ApiService {
     }
   }
 
-  // ====================== OUTROS MÉTODOS ======================
+  // ====================== OUTROS MÉTODOS (INTACTOS) ======================
   
-  getRideById(rideId: string): Promise<{ success: boolean; data: { ride: any } }> {
-    return this.getRideDetails(rideId);
-  }
-
-  async createRideBooking(data: any) {
-    return this.post('/api/rides/book', data);
-  }
-
-  async getDriverRides(params?: any) {
-    return this.get('/api/rides/driver', params);
-  }
-
   async login(data: { email: string; password: string }) {
     return this.post('/api/auth/login', data);
   }
@@ -1130,7 +1711,7 @@ class ApiService {
   }
 
   async createBooking(
-    type: 'ride' | 'hotel',
+    type: 'ride' | 'hotel' | 'event',
     bookingData: any
   ): Promise<{ success: boolean; data?: { booking: Booking }; error?: string }> {
     try {
@@ -1180,12 +1761,73 @@ class ApiService {
           success: result.success, 
           data: result.booking ? { 
             booking: {
-              ...result.booking,
-              passengerId: result.booking.guestEmail,
-              type: 'hotel'
+              id: result.booking.bookingId || result.booking.booking_id || '',
+              type: 'hotel',
+              bookingDate: result.booking.createdAt || result.booking.created_at || new Date().toISOString().split('T')[0],
+              status: result.booking.status || 'pending',
+              guestName: result.booking.guestName || result.booking.guest_name,
+              guestEmail: result.booking.guestEmail || result.booking.guest_email,
+              guestPhone: result.booking.guestPhone || result.booking.guest_phone,
+              totalPrice: result.booking.totalPrice || result.booking.total_price || 0,
+              hotelId: result.booking.hotelId || result.booking.hotel_id,
+              startDate: result.booking.checkIn || result.booking.check_in,
+              endDate: result.booking.checkOut || result.booking.check_out,
+              adults: result.booking.adults || 0,
+              children: result.booking.children || 0,
+              units: result.booking.units || 0,
+              createdAt: result.booking.createdAt || result.booking.created_at,
             } as Booking
           } : undefined,
           error: result.error
+        };
+        
+      } else if (type === 'event') {
+        const result = await this.createEventBooking({
+          eventSpaceId: bookingData.eventSpaceId,
+          organizerName: bookingData.organizerName || bookingData.guestName,
+          organizerEmail: bookingData.organizerEmail || bookingData.guestEmail,
+          organizerPhone: bookingData.organizerPhone || bookingData.guestPhone,
+          eventTitle: bookingData.eventTitle,
+          eventDescription: bookingData.eventDescription,
+          eventType: bookingData.eventType,
+          startDate: bookingData.startDate,
+          endDate: bookingData.endDate,
+          expectedAttendees: bookingData.expectedAttendees || bookingData.attendees || 1,
+          specialRequests: bookingData.specialRequests,
+          additionalServices: bookingData.additionalServices,
+          cateringRequired: bookingData.cateringRequired || false,
+          userId: user.uid
+        });
+
+        if (!result.success || !result.data) {
+          return { 
+            success: false, 
+            error: result.error || 'Erro ao criar reserva de evento' 
+          };
+        }
+
+        return {
+          success: true,
+          data: {
+            booking: {
+              id: result.data.id,
+              type: 'event',
+              bookingDate: result.data.createdAt || new Date().toISOString().split('T')[0],
+              status: result.data.status,
+              passengerId: result.data.organizerEmail,
+              guestName: result.data.organizerName,
+              guestEmail: result.data.organizerEmail,
+              guestPhone: result.data.organizerPhone,
+              totalPrice: result.data.totalPrice,
+              rideId: result.data.eventSpaceId || '',
+              seatsBooked: result.data.expectedAttendees,
+              eventTitle: result.data.eventTitle,
+              startDate: result.data.startDate,
+              endDate: result.data.endDate,
+              durationDays: result.data.durationDays,
+              createdAt: result.data.createdAt,
+            } as Booking
+          }
         };
         
       } else {

@@ -1,10 +1,12 @@
 /**
- * src/apps/hotels-app/components/event-spaces/CreateEventSpaceFormModern.tsx
- * VERSÃO FINAL CORRIGIDA - 26/01/2026
- * Replicando o comportamento dos RoomTypes: sem upload real, apenas preview + URLs manuais
+ * src/apps/hotels-app/components/event-spaces/EditEventSpaceFormModern.tsx
+ * Formulário de edição de espaços de eventos - VERSÃO FINAL PERFEITA 27/01/2026
+ * Com tratamento completo de erros Zod, refresh automático e otimizações
+ * ✅ CORRIGIDO: Adicionada validação completa de campos obrigatórios em validateAllSteps
+ * ✅ CORREÇÃO: Campos possivelmente undefined agora usam valores padrão
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Input } from '@/shared/components/ui/input';
@@ -15,11 +17,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertCircle, Loader2, X, Upload, Image as ImageIcon, Users, DollarSign, Link as LinkIcon, Calendar, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/shared/hooks/use-toast';
 import { eventSpaceService } from '@/services/eventSpaceService';
-import type { CreateEventSpaceRequest } from '@/shared/types/event-spaces';
+import type { EventSpace, UpdateEventSpaceRequest } from '@/shared/types/event-spaces';
 
-interface CreateEventSpaceFormModernProps {
+interface EditEventSpaceFormModernProps {
   hotelId: string;
-  onSuccess?: (spaceId: string) => void;
+  spaceId: string;
+  initialData?: EventSpace;
+  onSuccess?: () => void;
   onCancel?: () => void;
 }
 
@@ -65,24 +69,40 @@ const NOISE_RESTRICTIONS = [
   'Sem restrição',
 ];
 
-const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
+// ✅ FUNÇÃO AUXILIAR: Formatar moeda
+const formatCurrency = (value: number | string): string => {
+  const numValue = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(numValue)) return '0,00 MZN';
+  return new Intl.NumberFormat('pt-MZ', {
+    style: 'currency',
+    currency: 'MZN',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numValue);
+};
+
+export const EditEventSpaceFormModern: React.FC<EditEventSpaceFormModernProps> = ({
   hotelId,
+  spaceId,
+  initialData,
   onSuccess,
   onCancel,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(!initialData);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [previewImages, setPreviewImages] = useState<string[]>([]);
-  const [manualImageUrls, setManualImageUrls] = useState<string>(''); // NOVO: campo para URLs manuais
+  const [manualImageUrls, setManualImageUrls] = useState<string>('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [initialFormData, setInitialFormData] = useState<Partial<UpdateEventSpaceRequest>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // FormData corrigido - campos JSON como objetos/arrays vazios
-  const [formData, setFormData] = useState<Partial<CreateEventSpaceRequest>>({
-    hotelId,
+  // FormData inicial com dados do espaço
+  const [formData, setFormData] = useState<Partial<UpdateEventSpaceRequest>>({
     name: '',
     description: '',
     capacityMin: 10,
@@ -102,20 +122,109 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     securityDeposit: null,
     offersCatering: false,
     cateringDiscountPercent: 0,
-    cateringMenuUrls: [], // ✅ array vazio, não string
-    allowedEventTypes: [], // ✅ array vazio
-    prohibitedEventTypes: [], // ✅ array vazio
-    equipment: {}, // ✅ objeto vazio (amenities será adicionado dentro)
-    setupOptions: [], // ✅ array vazio
-    images: [], // ✅ array vazio (será preenchido com URLs)
+    cateringMenuUrls: [],
+    allowedEventTypes: [],
+    prohibitedEventTypes: [],
+    equipment: {},
+    setupOptions: [],
+    images: [],
     floorPlanImage: null,
     virtualTourUrl: null,
     isActive: true,
     isFeatured: false,
   });
 
-  // Estado separado para amenities (input do usuário)
+  // Estado separado para amenities
   const [amenitiesInput, setAmenitiesInput] = useState<string>('');
+
+  // ✅ CALCULAR se houve mudanças
+  const hasChanges = useMemo(() => {
+    return JSON.stringify(formData) !== JSON.stringify(initialFormData);
+  }, [formData, initialFormData]);
+
+  // Carregar dados do espaço se não for fornecido
+  useEffect(() => {
+    if (!initialData && spaceId) {
+      loadSpaceData();
+    } else if (initialData) {
+      initializeForm(initialData);
+    }
+  }, [initialData, spaceId]);
+
+  const loadSpaceData = async () => {
+    setLoadingData(true);
+    try {
+      const res = await eventSpaceService.getEventSpaceById(spaceId);
+      if (res.success && res.data) {
+        initializeForm(res.data);
+      } else {
+        setError(res.error || 'Falha ao carregar dados do espaço');
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar os dados do espaço',
+          variant: 'destructive',
+        });
+      }
+    } catch (err: any) {
+      setError('Erro de conexão ao carregar dados');
+      console.error('Erro ao carregar espaço:', err);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  const initializeForm = (space: EventSpace) => {
+    // Extrair amenities do equipment
+    const amenities = space.equipment?.amenities || [];
+    const amenitiesText = Array.isArray(amenities) ? amenities.join(', ') : '';
+    
+    // Converter arrays para formato correto
+    const allowedEventTypes = Array.isArray(space.allowedEventTypes) ? space.allowedEventTypes : [];
+    const prohibitedEventTypes = Array.isArray(space.prohibitedEventTypes) ? space.prohibitedEventTypes : [];
+    const setupOptions = Array.isArray(space.setupOptions) ? space.setupOptions : [];
+    const cateringMenuUrls = Array.isArray(space.cateringMenuUrls) ? space.cateringMenuUrls : [];
+    const images = Array.isArray(space.images) ? space.images : [];
+
+    const newFormData = {
+      name: space.name || '',
+      description: space.description || '',
+      capacityMin: space.capacityMin || 10,
+      capacityMax: space.capacityMax || 100,
+      areaSqm: space.areaSqm || null,
+      basePricePerDay: space.basePricePerDay || '',
+      weekendSurchargePercent: space.weekendSurchargePercent || 20,
+      spaceType: space.spaceType || '',
+      naturalLight: space.naturalLight ?? true,
+      hasStage: space.hasStage ?? false,
+      loadingAccess: space.loadingAccess ?? false,
+      dressingRooms: space.dressingRooms || null,
+      insuranceRequired: space.insuranceRequired ?? false,
+      alcoholAllowed: space.alcoholAllowed ?? false,
+      approvalRequired: space.approvalRequired ?? true,
+      noiseRestriction: space.noiseRestriction || '',
+      securityDeposit: space.securityDeposit || null,
+      offersCatering: space.offersCatering ?? false,
+      cateringDiscountPercent: space.cateringDiscountPercent || 0,
+      cateringMenuUrls,
+      allowedEventTypes,
+      prohibitedEventTypes,
+      equipment: space.equipment || {},
+      setupOptions,
+      images,
+      floorPlanImage: space.floorPlanImage || null,
+      virtualTourUrl: space.virtualTourUrl || null,
+      isActive: space.isActive ?? true,
+      isFeatured: space.isFeatured ?? false,
+    };
+
+    setFormData(newFormData);
+    // ✅ SALVAR DADOS INICIAIS PARA COMPARAÇÃO
+    setInitialFormData(newFormData);
+
+    setAmenitiesInput(amenitiesText);
+    setManualImageUrls(images.filter(url => url.startsWith('http')).join('\n'));
+    setPreviewImages(images.filter(url => url.startsWith('data:'))); // URLs base64 locais
+  };
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -129,8 +238,16 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
       if (isNaN(processedValue)) processedValue = 0;
     }
     
+    // ✅ CORREÇÃO: Garantir que preços sejam sempre strings válidas
     if (name === 'basePricePerDay' || name === 'securityDeposit') {
-      processedValue = value;
+      processedValue = value.trim() || '0'; // mantém como string
+    }
+    
+    // ✅ LIMPAR ERRO DO CAMPO QUANDO ELE É EDITADO
+    if (fieldErrors[name]) {
+      const newFieldErrors = { ...fieldErrors };
+      delete newFieldErrors[name];
+      setFieldErrors(newFieldErrors);
     }
     
     setFormData((prev) => ({
@@ -139,26 +256,45 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     }));
   };
 
-  // Função separada para processar amenities
   const handleAmenitiesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setAmenitiesInput(value);
     
-    // Converter para array e atualizar equipment
     const amenities = value.split(',').map(a => a.trim()).filter(a => a);
     setFormData(prev => ({ 
       ...prev, 
-      equipment: { amenities } // ✅ objeto com array de amenities
+      equipment: { ...prev.equipment, amenities }
     }));
+    
+    // Limpar erro do campo amenities
+    if (fieldErrors['equipment.amenities']) {
+      const newFieldErrors = { ...fieldErrors };
+      delete newFieldErrors['equipment.amenities'];
+      setFieldErrors(newFieldErrors);
+    }
   };
 
-  const handleToggleChange = (name: keyof CreateEventSpaceRequest) => (checked: boolean) => {
+  const handleToggleChange = (name: keyof UpdateEventSpaceRequest) => (checked: boolean) => {
     setFormData((prev) => ({ ...prev, [name]: checked }));
+    
+    // Limpar erro do campo quando alterado
+    if (fieldErrors[name]) {
+      const newFieldErrors = { ...fieldErrors };
+      delete newFieldErrors[name];
+      setFieldErrors(newFieldErrors);
+    }
   };
 
   const handleMultiSelect = (name: 'allowedEventTypes' | 'prohibitedEventTypes' | 'setupOptions') => 
     (values: string[]) => {
       setFormData((prev) => ({ ...prev, [name]: values }));
+      
+      // Limpar erro do campo quando alterado
+      if (fieldErrors[name]) {
+        const newFieldErrors = { ...fieldErrors };
+        delete newFieldErrors[name];
+        setFieldErrors(newFieldErrors);
+      }
     };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,92 +339,156 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     setPreviewImages((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // ✅ FUNÇÃO DE VALIDAÇÃO COMPLETA (APLICADA NA ETAPA 3)
+  const validateAllSteps = (): boolean => {
+    const errors: Record<string, string> = {};
+    
+    // Passo 1: Informações básicas
+    if (!formData.name?.trim()) {
+      errors.name = 'Nome é obrigatório';
+    } else if (formData.name.trim().length < 3) {
+      errors.name = 'O nome deve ter pelo menos 3 caracteres';
+    }
+    
+    if (!formData.spaceType) {
+      errors.spaceType = 'Tipo de espaço é obrigatório';
+    }
+    
+    if (!formData.capacityMin || formData.capacityMin < 1) {
+      errors.capacityMin = 'Capacidade mínima inválida (mínimo 1)';
+    }
+    
+    if (!formData.capacityMax || formData.capacityMax < (formData.capacityMin || 1)) {
+      errors.capacityMax = 'Capacidade máxima deve ser maior que a mínima';
+    }
+    
+    // Passo 2: Preços
+    if (!formData.basePricePerDay || Number(formData.basePricePerDay) <= 0) {
+      errors.basePricePerDay = 'Preço base por dia é obrigatório (maior que 0)';
+    }
+    
+    // Passo 3: Imagens (pelo menos 1)
+    const totalImages = ((formData.images || []).length + previewImages.length);
+    if (totalImages === 0) {
+      errors.images = 'Pelo menos uma imagem é obrigatória';
+    }
+    
+    // Validações adicionais
+    if (formData.areaSqm !== null && formData.areaSqm !== undefined && formData.areaSqm <= 0) {
+      errors.areaSqm = 'Área deve ser maior que 0 se informada';
+    }
+    
+    if (formData.weekendSurchargePercent !== null && formData.weekendSurchargePercent !== undefined) {
+      if (isNaN(formData.weekendSurchargePercent) || formData.weekendSurchargePercent < 0 || formData.weekendSurchargePercent > 100) {
+        errors.weekendSurchargePercent = 'Sobretaxa deve estar entre 0% e 100%';
+      }
+    }
+    
+    if (formData.offersCatering && formData.cateringDiscountPercent) {
+      if (isNaN(formData.cateringDiscountPercent) || formData.cateringDiscountPercent < 0 || formData.cateringDiscountPercent > 100) {
+        errors.cateringDiscountPercent = 'Desconto de catering deve estar entre 0% e 100%';
+      }
+    }
+    
+    // Validar URLs das imagens manuais
+    if (manualImageUrls.trim()) {
+      const urls = manualImageUrls.split('\n').map(url => url.trim()).filter(url => url);
+      const invalidUrls = urls.filter(url => !url.startsWith('http'));
+      if (invalidUrls.length > 0) {
+        errors.images = `URLs inválidas encontradas (${invalidUrls.length}). Todas devem começar com "http"`;
+      }
+    }
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const validateStep = (): boolean => {
     setError(null);
+    const newFieldErrors: Record<string, string> = {};
 
     if (currentStep === 1) {
-      // Nome
       if (!formData.name?.trim()) {
-        setError('O nome do espaço é obrigatório');
-        return false;
-      }
-      if (formData.name.trim().length < 3) {
-        setError('O nome deve ter pelo menos 3 caracteres');
-        return false;
-      }
-      if (formData.name.trim().length > 100) {
-        setError('O nome deve ter no máximo 100 caracteres');
-        return false;
+        newFieldErrors.name = 'O nome do espaço é obrigatório';
+      } else if (formData.name.trim().length < 3) {
+        newFieldErrors.name = 'O nome deve ter pelo menos 3 caracteres';
+      } else if (formData.name.trim().length > 100) {
+        newFieldErrors.name = 'O nome deve ter no máximo 100 caracteres';
       }
       
-      // Tipo
       if (!formData.spaceType) {
-        setError('Selecione o tipo de espaço');
-        return false;
+        newFieldErrors.spaceType = 'Selecione o tipo de espaço';
       }
       
-      // Capacidade
       if (formData.capacityMin! >= formData.capacityMax!) {
-        setError('Capacidade mínima deve ser menor que a máxima');
-        return false;
+        newFieldErrors.capacityMin = 'Capacidade mínima deve ser menor que a máxima';
+        newFieldErrors.capacityMax = 'Capacidade máxima deve ser maior que a mínima';
       }
-      if (formData.capacityMin! < 1 || formData.capacityMax! < 1) {
-        setError('As capacidades devem ser pelo menos 1');
-        return false;
+      if (formData.capacityMin! < 1) {
+        newFieldErrors.capacityMin = 'A capacidade mínima deve ser pelo menos 1';
+      }
+      if (formData.capacityMax! < 1) {
+        newFieldErrors.capacityMax = 'A capacidade máxima deve ser pelo menos 1';
       }
       
-      // Área
       if (formData.areaSqm !== null && formData.areaSqm !== undefined && formData.areaSqm <= 0) {
-        setError('A área deve ser maior que 0');
-        return false;
+        newFieldErrors.areaSqm = 'A área deve ser maior que 0';
       }
       
-      // Descrição
       if (formData.description && formData.description.length > 1000) {
-        setError('A descrição deve ter no máximo 1000 caracteres');
-        return false;
+        newFieldErrors.description = 'A descrição deve ter no máximo 1000 caracteres';
       }
     }
 
     if (currentStep === 2) {
-      // Preço base
       if (!formData.basePricePerDay) {
-        setError('O preço base por dia é obrigatório');
-        return false;
+        newFieldErrors.basePricePerDay = 'O preço base por dia é obrigatório';
+      } else {
+        const priceValue = Number(formData.basePricePerDay);
+        if (isNaN(priceValue) || priceValue <= 0) {
+          newFieldErrors.basePricePerDay = 'O preço base deve ser um número válido maior que 0';
+        }
       }
       
-      const priceValue = Number(formData.basePricePerDay);
-      if (isNaN(priceValue) || priceValue <= 0) {
-        setError('O preço base deve ser um número válido maior que 0');
-        return false;
-      }
-      
-      // Não requer imagens no momento da criação (igual aos RoomTypes)
-      // Apenas valida se houver URLs manuais inválidas
       if (manualImageUrls) {
         const urls = manualImageUrls.split('\n').map(url => url.trim()).filter(url => url);
         const invalidUrls = urls.filter(url => !url.startsWith('http'));
         if (invalidUrls.length > 0) {
-          setError(`URLs inválidas encontradas. Todas devem começar com "http"`);
-          return false;
+          newFieldErrors.images = `URLs inválidas encontradas. Todas devem começar com "http"`;
         }
       }
       
-      // Sobretaxa
       if (formData.weekendSurchargePercent !== null && formData.weekendSurchargePercent !== undefined) {
         if (isNaN(formData.weekendSurchargePercent) || formData.weekendSurchargePercent < 0 || formData.weekendSurchargePercent > 100) {
-          setError('A sobretaxa deve estar entre 0% e 100%');
-          return false;
+          newFieldErrors.weekendSurchargePercent = 'A sobretaxa deve estar entre 0% e 100%';
         }
       }
       
-      // Desconto catering
       if (formData.offersCatering && formData.cateringDiscountPercent) {
         if (isNaN(formData.cateringDiscountPercent) || formData.cateringDiscountPercent < 0 || formData.cateringDiscountPercent > 100) {
-          setError('O desconto de catering deve estar entre 0% e 100%');
-          return false;
+          newFieldErrors.cateringDiscountPercent = 'O desconto de catering deve estar entre 0% e 100%';
         }
       }
+    }
+
+    // ✅ Aplicar validação completa na etapa de confirmação
+    if (currentStep === 3) {
+      if (!validateAllSteps()) {
+        // Se houver erros na validação completa, mostrar o primeiro erro
+        const firstErrorKey = Object.keys(fieldErrors)[0];
+        if (firstErrorKey) {
+          setError(fieldErrors[firstErrorKey]);
+        }
+        return false;
+      }
+    }
+
+    setFieldErrors(newFieldErrors);
+    
+    if (Object.keys(newFieldErrors).length > 0) {
+      const firstError = Object.values(newFieldErrors)[0];
+      setError(firstError);
+      return false;
     }
 
     return true;
@@ -305,7 +505,15 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!validateStep()) return;
+    // ✅ Validar todas as etapas antes de mostrar confirmação
+    if (!validateAllSteps()) {
+      toast({
+        title: 'Campos obrigatórios faltando',
+        description: 'Por favor, corrija todos os erros antes de continuar',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     if (!showConfirmation) {
       setShowConfirmation(true);
@@ -314,22 +522,26 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     
     setLoading(true);
     setError(null);
+    setFieldErrors({});
 
     try {
-      // NÃO faz upload real (igual aos RoomTypes)
-      // Usa apenas URLs manuais que o utilizador colou
+      // ✅ CORREÇÃO: Filtrar apenas URLs http/https (ignorar base64)
       const manualUrls = manualImageUrls
         .split('\n')
         .map(url => url.trim())
-        .filter(url => url.startsWith('http') && url.length > 10);
-
-      // Payload corrigido - campos JSON como objetos/arrays válidos
-      const payload: CreateEventSpaceRequest = {
-        hotelId,
-        name: formData.name!.trim(),
+        .filter(url => url && url.startsWith('http'));
+      
+      // ✅ CORREÇÃO: Usar apenas URLs reais, não base64
+      const allImages = [...manualUrls];
+      
+      // ✅ CORREÇÃO: Payload DEVE incluir o id
+      // ✅ CORREÇÃO: Usar optional chaining e valores padrão para campos possivelmente undefined
+      const payload: UpdateEventSpaceRequest = {
+        id: spaceId,  // ← CORREÇÃO PRINCIPAL: Adicionar ID obrigatório
+        name: formData.name?.trim() || '', // ✅ Usar optional chaining
         description: formData.description?.trim() || null,
-        capacityMin: formData.capacityMin!,
-        capacityMax: formData.capacityMax!,
+        capacityMin: formData.capacityMin || 10, // ✅ Valor padrão
+        capacityMax: formData.capacityMax || 100, // ✅ Valor padrão
         areaSqm: formData.areaSqm || null,
         basePricePerDay: formData.basePricePerDay || '0',
         weekendSurchargePercent: formData.weekendSurchargePercent || 0,
@@ -345,46 +557,120 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
         securityDeposit: formData.securityDeposit || null,
         offersCatering: formData.offersCatering ?? false,
         cateringDiscountPercent: formData.cateringDiscountPercent || 0,
-        cateringMenuUrls: formData.cateringMenuUrls || [], // ✅ array vazio
-        allowedEventTypes: formData.allowedEventTypes || [], // ✅ array vazio
-        prohibitedEventTypes: formData.prohibitedEventTypes || [], // ✅ array vazio
-        equipment: formData.equipment, // ✅ USAR DIRETAMENTE (não processar aqui)
-        setupOptions: formData.setupOptions || [], // ✅ array vazio
-        images: manualUrls, // ✅ array de URLs
+        cateringMenuUrls: formData.cateringMenuUrls || [],
+        allowedEventTypes: formData.allowedEventTypes || [],
+        prohibitedEventTypes: formData.prohibitedEventTypes || [],
+        equipment: formData.equipment || {},
+        setupOptions: formData.setupOptions || [],
+        images: allImages,
         floorPlanImage: formData.floorPlanImage?.trim() || null,
         virtualTourUrl: formData.virtualTourUrl?.trim() || null,
         isActive: formData.isActive ?? true,
         isFeatured: formData.isFeatured ?? false,
       };
 
-      // ✅ IMPORTANTE: Log para debug
-      console.log('🔍 equipment antes de enviar (formulário):', {
-        type: typeof payload.equipment,
-        value: payload.equipment,
-        isObject: typeof payload.equipment === 'object' && payload.equipment !== null,
-        isString: typeof payload.equipment === 'string',
-      });
+      // ✅ CORREÇÃO: Timeout para evitar travamentos
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const res = await eventSpaceService.createEventSpace(payload);
+      try {
+        const res = await eventSpaceService.updateEventSpace(spaceId, payload);
+        clearTimeout(timeoutId);
 
-      if (!res.success || !res.data?.id) {
-        throw new Error(res.error || 'Falha ao criar espaço');
+        if (!res.success) {
+          // ✅ 1. TRATAMENTO DE ERROS ZOD DO BACKEND
+          if (res.details && Array.isArray(res.details)) {
+            const newFieldErrors: Record<string, string> = {};
+            
+            res.details.forEach((error: any) => {
+              const path = error.path?.join('.') || 'general';
+              newFieldErrors[path] = error.message;
+            });
+            
+            setFieldErrors(newFieldErrors);
+            
+            // Mostra o primeiro erro
+            const firstError = Object.values(newFieldErrors)[0];
+            if (firstError) {
+              setError('Por favor corrija os campos indicados: ' + firstError);
+            } else {
+              setError('Dados inválidos enviados ao servidor');
+            }
+            
+            toast({
+              title: 'Erro na validação',
+              description: 'Por favor corrija os campos indicados',
+              variant: 'destructive',
+            });
+            
+            // Voltar para o primeiro passo se houver erros
+            setCurrentStep(1);
+            throw new Error('Erro de validação do servidor');
+          }
+          
+          throw new Error(res.error || 'Falha ao atualizar espaço');
+        }
+
+        // ✅ 2. REFRESH AUTOMÁTICO APÓS SUCESSO
+        toast({
+          title: '✅ Espaço atualizado com sucesso!',
+          description: `"${formData.name}" foi atualizado.`,
+          variant: 'success',
+          duration: 5000,
+        });
+
+        // Recarregar dados do espaço para refletir mudanças imediatamente
+        await loadSpaceData();
+        
+        onSuccess?.();
+        onCancel?.();
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        
+        if (err.name === 'AbortError') {
+          setError('Tempo de atualização excedido');
+          toast({ 
+            title: "Tempo esgotado", 
+            description: "A atualização demorou muito. Tente novamente.",
+            variant: "destructive" 
+          });
+        } else {
+          // ✅ 1. TRATAMENTO DE ERROS ZOD DO BACKEND (catch geral)
+          let errorMsg = err.message || 'Erro ao atualizar espaço de evento';
+          const newFieldErrors: Record<string, string> = {};
+
+          // Se o backend retornar erros Zod no formato { errors: [...] }
+          if (err.response?.data?.errors) {
+            err.response.data.errors.forEach((error: any) => {
+              const path = error.path?.join('.') || 'general';
+              newFieldErrors[path] = error.message;
+            });
+            
+            setFieldErrors(newFieldErrors);
+            
+            errorMsg = 'Por favor corrija os campos indicados';
+            
+            // Mostra o primeiro erro específico
+            const firstFieldError = Object.values(newFieldErrors)[0];
+            if (firstFieldError) {
+              setError(`${firstFieldError}`);
+            }
+          }
+
+          setError(errorMsg);
+          toast({
+            title: '❌ Erro ao atualizar espaço',
+            description: errorMsg,
+            variant: 'destructive',
+            duration: 5000,
+          });
+        }
       }
-
-      toast({
-        title: '✅ Espaço criado com sucesso!',
-        description: `"${formData.name}" está agora disponível para reservas.`,
-        variant: 'success',
-        duration: 5000,
-      });
-
-      onSuccess?.(res.data.id);
-      onCancel?.();
     } catch (err: any) {
-      const msg = err.message || 'Erro ao criar espaço de evento';
+      const msg = err.message || 'Erro ao processar formulário';
       setError(msg);
       toast({
-        title: '❌ Erro ao criar espaço',
+        title: '❌ Erro',
         description: msg,
         variant: 'destructive',
         duration: 5000,
@@ -401,12 +687,14 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     onChange,
     label,
     maxSelections,
+    error,
   }: {
     options: string[];
     selected: string[];
     onChange: (values: string[]) => void;
     label: string;
     maxSelections?: number;
+    error?: string;
   }) => (
     <div>
       <Label className="text-base font-medium mb-2 block">
@@ -455,14 +743,23 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
           {maxSelections && ` / ${maxSelections}`}
         </p>
       )}
+      {error && (
+        <p className="text-sm text-red-600 mt-1">{error}</p>
+      )}
     </div>
   );
 
-  // Contadores de caracteres
-  const nameCharCount = formData.name?.length || 0;
-  const descriptionCharCount = formData.description?.length || 0;
-  const maxNameChars = 100;
-  const maxDescriptionChars = 1000;
+  if (loadingData) {
+    return (
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-md">
+        <Card className="w-full max-w-2xl p-12 text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-violet-600 mx-auto mb-6" />
+          <h3 className="text-xl font-bold text-gray-900 mb-3">Carregando espaço...</h3>
+          <p className="text-gray-600">A carregar dados do espaço para edição.</p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-md">
@@ -470,8 +767,14 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-violet-600 to-purple-700 text-white p-6 flex justify-between items-center z-10 rounded-t-2xl">
           <div>
-            <h2 className="text-2xl font-bold">Criar Novo Espaço de Eventos</h2>
-            <p className="text-violet-100 text-sm mt-1">Passo {currentStep} de 3</p>
+            <h2 className="text-2xl font-bold">Editar Espaço de Eventos</h2>
+            <p className="text-violet-100 text-sm mt-1">Passo {currentStep} de 3 • {formData.name}</p>
+            {/* ✅ INDICADOR DE MUDANÇAS */}
+            {hasChanges && (
+              <div className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full inline-block mt-1">
+                • Alterações pendentes
+              </div>
+            )}
           </div>
           <button
             onClick={onCancel}
@@ -517,31 +820,59 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
             </div>
           )}
 
+          {/* ✅ INDICADOR DE ERROS DE VALIDAÇÃO COMPLETA NA ETAPA 3 */}
+          {currentStep === 3 && Object.keys(fieldErrors).length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-start gap-3 mb-2">
+                <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="font-medium text-red-800 mb-1">Campos requerem correção:</h4>
+                  <ul className="text-red-700 text-sm space-y-1">
+                    {Object.entries(fieldErrors).map(([field, message]) => (
+                      <li key={field} className="flex items-start">
+                        <span className="mr-2">•</span>
+                        <span><strong className="capitalize">{field.replace(/([A-Z])/g, ' $1')}:</strong> {message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 border-red-300 text-red-700 hover:bg-red-50"
+                onClick={() => {
+                  // Ir para o passo com erros
+                  if (fieldErrors.name || fieldErrors.spaceType || fieldErrors.capacityMin || fieldErrors.capacityMax) {
+                    setCurrentStep(1);
+                  } else if (fieldErrors.basePricePerDay || fieldErrors.images || fieldErrors.weekendSurchargePercent) {
+                    setCurrentStep(2);
+                  }
+                }}
+              >
+                Corrigir Campos
+              </Button>
+            </div>
+          )}
+
           {currentStep === 1 && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <Label className="text-base font-medium">
-                      Nome do Espaço *
-                    </Label>
-                    <span className={`text-xs ${nameCharCount > maxNameChars ? 'text-red-600' : 'text-gray-500'}`}>
-                      {nameCharCount}/{maxNameChars}
-                    </span>
-                  </div>
+                  <Label className="text-base font-medium mb-2">
+                    Nome do Espaço *
+                  </Label>
                   <Input
                     name="name"
                     value={formData.name}
                     onChange={handleInputChange}
                     placeholder="Ex: Auditório Principal"
-                    className="h-12"
+                    className={`h-12 ${fieldErrors.name ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                     required
-                    maxLength={maxNameChars}
+                    maxLength={100}
                   />
-                  {nameCharCount > maxNameChars * 0.8 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Atingindo limite de caracteres
-                    </p>
+                  {fieldErrors.name && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.name}</p>
                   )}
                 </div>
 
@@ -551,11 +882,16 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                   </Label>
                   <Select
                     value={formData.spaceType || ''}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({ ...prev, spaceType: value }))
-                    }
+                    onValueChange={(value) => {
+                      setFormData((prev) => ({ ...prev, spaceType: value }));
+                      if (fieldErrors.spaceType) {
+                        const newErrors = { ...fieldErrors };
+                        delete newErrors.spaceType;
+                        setFieldErrors(newErrors);
+                      }
+                    }}
                   >
-                    <SelectTrigger className="h-12">
+                    <SelectTrigger className={`h-12 ${fieldErrors.spaceType ? 'border-red-500 focus-visible:ring-red-500' : ''}`}>
                       <SelectValue placeholder="Selecione o tipo" />
                     </SelectTrigger>
                     <SelectContent>
@@ -566,25 +902,26 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                       ))}
                     </SelectContent>
                   </Select>
+                  {fieldErrors.spaceType && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.spaceType}</p>
+                  )}
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <Label className="text-base font-medium">Descrição</Label>
-                  <span className={`text-xs ${descriptionCharCount > maxDescriptionChars ? 'text-red-600' : 'text-gray-500'}`}>
-                    {descriptionCharCount}/{maxDescriptionChars}
-                  </span>
-                </div>
+                <Label className="text-base font-medium mb-2">Descrição</Label>
                 <Textarea
                   name="description"
                   value={formData.description || ''}
                   onChange={handleInputChange}
                   placeholder="Descreva o espaço: dimensões, estilo, o que o torna especial..."
                   rows={4}
-                  className="resize-none"
-                  maxLength={maxDescriptionChars}
+                  className={`resize-none ${fieldErrors.description ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                  maxLength={1000}
                 />
+                {fieldErrors.description && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.description}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-6">
@@ -600,9 +937,12 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                       value={formData.capacityMin || ''}
                       onChange={handleInputChange}
                       min={1}
-                      className="pl-10 h-12"
+                      className={`pl-10 h-12 ${fieldErrors.capacityMin ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                     />
                   </div>
+                  {fieldErrors.capacityMin && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.capacityMin}</p>
+                  )}
                 </div>
 
                 <div>
@@ -617,9 +957,12 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                       value={formData.capacityMax || ''}
                       onChange={handleInputChange}
                       min={formData.capacityMin || 1}
-                      className="pl-10 h-12"
+                      className={`pl-10 h-12 ${fieldErrors.capacityMax ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                     />
                   </div>
+                  {fieldErrors.capacityMax && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.capacityMax}</p>
+                  )}
                 </div>
 
                 <div>
@@ -633,12 +976,10 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                     onChange={handleInputChange}
                     min="0"
                     step="0.1"
-                    className="h-12"
+                    className={`h-12 ${fieldErrors.areaSqm ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                   />
-                  {formData.areaSqm !== null && formData.areaSqm !== undefined && formData.areaSqm <= 0 && (
-                    <p className="text-xs text-red-600 mt-1">
-                      A área deve ser maior que 0
-                    </p>
+                  {fieldErrors.areaSqm && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.areaSqm}</p>
                   )}
                 </div>
 
@@ -664,6 +1005,7 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                   onChange={(values) => handleMultiSelect('allowedEventTypes')(values)}
                   label="Tipos de Evento Permitidos"
                   maxSelections={8}
+                  error={fieldErrors.allowedEventTypes}
                 />
 
                 <MultiSelectChip
@@ -671,10 +1013,10 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                   selected={formData.setupOptions || []}
                   onChange={(values) => handleMultiSelect('setupOptions')(values)}
                   label="Configurações Disponíveis"
+                  error={fieldErrors.setupOptions}
                 />
               </div>
 
-              {/* Campo de Amenities separado */}
               <div>
                 <Label className="text-base font-medium mb-2 block">
                   Amenities/Equipamentos
@@ -684,8 +1026,11 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                   value={amenitiesInput}
                   onChange={handleAmenitiesChange}
                   placeholder="Ex: Wi-Fi, Projetor, Som, Ar Condicionado, Mesas..."
-                  className="h-12"
+                  className={`h-12 ${fieldErrors['equipment.amenities'] ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                 />
+                {fieldErrors['equipment.amenities'] && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors['equipment.amenities']}</p>
+                )}
                 <p className="text-xs text-gray-500 mt-1">
                   Separe com vírgulas. Será salvo em equipment.amenities
                 </p>
@@ -731,11 +1076,16 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                 </Label>
                 <Select
                   value={formData.noiseRestriction || ''}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, noiseRestriction: value }))
-                  }
+                  onValueChange={(value) => {
+                    setFormData((prev) => ({ ...prev, noiseRestriction: value }));
+                    if (fieldErrors.noiseRestriction) {
+                      const newErrors = { ...fieldErrors };
+                      delete newErrors.noiseRestriction;
+                      setFieldErrors(newErrors);
+                    }
+                  }}
                 >
-                  <SelectTrigger className="h-12">
+                  <SelectTrigger className={`h-12 ${fieldErrors.noiseRestriction ? 'border-red-500 focus-visible:ring-red-500' : ''}`}>
                     <SelectValue placeholder="Selecione a restrição" />
                   </SelectTrigger>
                   <SelectContent>
@@ -746,6 +1096,9 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                     ))}
                   </SelectContent>
                 </Select>
+                {fieldErrors.noiseRestriction && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.noiseRestriction}</p>
+                )}
               </div>
             </div>
           )}
@@ -765,19 +1118,14 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                       name="basePricePerDay"
                       value={formData.basePricePerDay}
                       onChange={handleInputChange}
-                      placeholder="2500.00"
-                      className="pl-10 h-12"
+                      placeholder={`Valor atual: ${formData.basePricePerDay ? formatCurrency(Number(formData.basePricePerDay)) : '0,00 MZN'}`}
+                      className={`pl-10 h-12 ${fieldErrors.basePricePerDay ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                       required
                     />
                   </div>
-                  {formData.basePricePerDay && isNaN(Number(formData.basePricePerDay)) && (
-                    <p className="text-xs text-red-600 mt-1">
-                      Digite um valor numérico válido
-                    </p>
+                  {fieldErrors.basePricePerDay && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.basePricePerDay}</p>
                   )}
-                  <p className="text-xs text-gray-500 mt-1">
-                    Preço padrão por dia completo
-                  </p>
                 </div>
 
                 <div>
@@ -791,13 +1139,10 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                     onChange={handleInputChange}
                     min="0"
                     max="100"
-                    className="h-12"
+                    className={`h-12 ${fieldErrors.weekendSurchargePercent ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                   />
-                  {formData.weekendSurchargePercent !== undefined && 
-                   (formData.weekendSurchargePercent < 0 || formData.weekendSurchargePercent > 100) && (
-                    <p className="text-xs text-red-600 mt-1">
-                      Valor deve estar entre 0 e 100
-                    </p>
+                  {fieldErrors.weekendSurchargePercent && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.weekendSurchargePercent}</p>
                   )}
                 </div>
 
@@ -841,13 +1186,10 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                       onChange={handleInputChange}
                       min="0"
                       max="100"
-                      className="h-12"
+                      className={`h-12 ${fieldErrors.cateringDiscountPercent ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                     />
-                    {formData.cateringDiscountPercent !== undefined && 
-                     (formData.cateringDiscountPercent < 0 || formData.cateringDiscountPercent > 100) && (
-                      <p className="text-xs text-red-600 mt-1">
-                        Desconto deve estar entre 0% e 100%
-                      </p>
+                    {fieldErrors.cateringDiscountPercent && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.cateringDiscountPercent}</p>
                     )}
                   </div>
                   <div>
@@ -907,10 +1249,10 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
 
               <div>
                 <Label className="text-base font-medium mb-3 block">
-                  Fotos do Espaço (máx. 10)
+                  Fotos do Espaço (máx. 10) *
                 </Label>
 
-                {/* Preview local (só visual, não envia) */}
+                {/* Preview local */}
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center mb-4">
                   <input
                     type="file"
@@ -928,37 +1270,53 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                     disabled={uploadedFiles.length >= 10}
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    Selecionar Fotos (apenas preview)
+                    Adicionar Fotos (apenas preview)
                   </Button>
                   <p className="text-sm text-gray-500">
                     As fotos não serão enviadas agora. Use URLs externas ou adicione depois.
                   </p>
+                  <p className="text-sm text-red-600 mt-2">
+                    * Pelo menos uma imagem é obrigatória
+                  </p>
                 </div>
 
-                {previewImages.length > 0 && (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-6">
-                    {previewImages.map((src, idx) => (
-                      <div key={idx} className="relative group">
-                        <img
-                          src={src}
-                          alt={`Preview ${idx + 1}`}
-                          className="w-full h-32 object-cover rounded-lg border"
-                        />
-                        <button
-                          onClick={() => removeImage(idx)}
-                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                {(previewImages.length > 0 || (formData.images || []).length > 0) && (
+                  <div className="mb-6">
+                    <p className="text-sm font-medium text-gray-700 mb-3">Fotos atuais:</p>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {previewImages.map((src, idx) => (
+                        <div key={`preview-${idx}`} className="relative group">
+                          <img
+                            src={src}
+                            alt={`Preview ${idx + 1}`}
+                            className="w-full h-32 object-cover rounded-lg border"
+                          />
+                          <button
+                            onClick={() => removeImage(idx)}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      {(formData.images || [])
+                        .filter(url => url.startsWith('http'))
+                        .map((url, idx) => (
+                          <div key={`url-${idx}`} className="relative">
+                            <img
+                              src={url}
+                              alt={`Imagem ${idx + 1}`}
+                              className="w-full h-32 object-cover rounded-lg border"
+                            />
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 )}
 
-                {/* Campo manual de URLs (igual ao cateringMenuUrls) */}
                 <div>
                   <Label className="text-base font-medium mb-2 block">
-                    URLs das Fotos (uma por linha)
+                    URLs das Fotos (uma por linha) *
                   </Label>
                   <Textarea
                     value={manualImageUrls}
@@ -966,10 +1324,13 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                     placeholder="https://exemplo.com/foto1.jpg
 https://exemplo.com/foto2.jpg"
                     rows={4}
-                    className="resize-none font-mono text-sm"
+                    className={`resize-none font-mono text-sm ${fieldErrors.images ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                   />
+                  {fieldErrors.images && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.images}</p>
+                  )}
                   <p className="text-xs text-gray-500 mt-1">
-                    Cole as URLs das imagens (ex: Cloudinary, ImgBB, Google Drive público). Elas serão salvas diretamente.
+                    Cole as URLs das imagens (ex: Cloudinary, ImgBB). Elas serão salvas diretamente.
                   </p>
                 </div>
               </div>
@@ -978,17 +1339,15 @@ https://exemplo.com/foto2.jpg"
 
           {currentStep === 3 && (
             <div className="space-y-6">
-              {/* Confirmação simplificada */}
               {showConfirmation ? (
                 <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
                   <div className="p-6 text-center">
                     <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
                     <h3 className="text-xl font-bold text-amber-900 mb-2">
-                      Confirmar Criação do Espaço
+                      Confirmar Atualização do Espaço
                     </h3>
                     <p className="text-amber-700 mb-6">
-                      Tem certeza que deseja criar o espaço <strong>"{formData.name}"</strong>?
-                      Esta ação não pode ser desfeita.
+                      Tem certeza que deseja atualizar o espaço <strong>"{formData.name}"</strong>?
                     </p>
                     <div className="flex gap-4 justify-center">
                       <Button
@@ -1009,10 +1368,10 @@ https://exemplo.com/foto2.jpg"
                         {loading ? (
                           <>
                             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                            Criando...
+                            Atualizando...
                           </>
                         ) : (
-                          '✅ Sim, Criar Espaço'
+                          '✅ Sim, Atualizar Espaço'
                         )}
                       </Button>
                     </div>
@@ -1020,15 +1379,13 @@ https://exemplo.com/foto2.jpg"
                 </Card>
               ) : (
                 <>
-                  {/* Resumo organizado */}
                   <Card className="bg-gradient-to-br from-violet-50 to-purple-50 border-violet-200">
                     <div className="p-6">
                       <h3 className="text-lg font-semibold text-violet-900 mb-4 flex items-center">
                         <Calendar className="w-5 h-5 mr-2" />
-                        Resumo do Espaço
+                        Resumo das Alterações
                       </h3>
                       
-                      {/* Informações Básicas */}
                       <div className="mb-6">
                         <h4 className="font-medium text-gray-700 mb-3 text-lg">Informações Básicas</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1046,12 +1403,6 @@ https://exemplo.com/foto2.jpg"
                                 <dt className="text-gray-600 w-36">Capacidade:</dt>
                                 <dd className="font-medium">
                                   {formData.capacityMin} - {formData.capacityMax} pessoas
-                                </dd>
-                              </div>
-                              <div className="flex">
-                                <dt className="text-gray-600 w-36">Amenities:</dt>
-                                <dd className="font-medium">
-                                  {((formData.equipment as any)?.amenities || []).length || 0} item(s)
                                 </dd>
                               </div>
                             </dl>
@@ -1075,7 +1426,6 @@ https://exemplo.com/foto2.jpg"
                         </div>
                       </div>
 
-                      {/* Preços e Configurações */}
                       <div className="mb-6">
                         <h4 className="font-medium text-gray-700 mb-3 text-lg">Preços e Configurações</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1084,19 +1434,13 @@ https://exemplo.com/foto2.jpg"
                               <div className="flex">
                                 <dt className="text-gray-600 w-40">Preço Base/Dia:</dt>
                                 <dd className="font-medium">
-                                  {formData.basePricePerDay ? `${formData.basePricePerDay} MZN` : '-'}
+                                  {formData.basePricePerDay ? `${formatCurrency(formData.basePricePerDay)}` : '-'}
                                 </dd>
                               </div>
                               <div className="flex">
                                 <dt className="text-gray-600 w-40">Sobretaxa Fim Semana:</dt>
                                 <dd className="font-medium">
                                   {formData.weekendSurchargePercent || 0}%
-                                </dd>
-                              </div>
-                              <div className="flex">
-                                <dt className="text-gray-600 w-40">Depósito Segurança:</dt>
-                                <dd className="font-medium">
-                                  {formData.securityDeposit ? `${formData.securityDeposit} MZN` : '-'}
                                 </dd>
                               </div>
                             </dl>
@@ -1118,84 +1462,42 @@ https://exemplo.com/foto2.jpg"
                                   {(formData.setupOptions || []).length} tipo(s)
                                 </dd>
                               </div>
-                              <div className="flex">
-                                <dt className="text-gray-600 w-40">Eventos Permitidos:</dt>
-                                <dd className="font-medium">
-                                  {(formData.allowedEventTypes || []).length} tipo(s)
-                                </dd>
-                              </div>
                             </dl>
                           </div>
                         </div>
                       </div>
 
-                      {/* Restrições e Extras */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Restrições</h4>
+                          <h4 className="font-medium text-gray-700 mb-3">Status</h4>
                           <div className="space-y-2">
                             <div className="flex items-center">
                               <span className={`w-2 h-2 rounded-full mr-2 ${
-                                formData.naturalLight ? 'bg-green-500' : 'bg-gray-300'
+                                formData.isActive ? 'bg-green-500' : 'bg-gray-300'
                               }`} />
-                              <span className="text-sm">Luz Natural</span>
+                              <span className="text-sm">{formData.isActive ? 'Ativo' : 'Inativo'}</span>
                             </div>
                             <div className="flex items-center">
                               <span className={`w-2 h-2 rounded-full mr-2 ${
-                                formData.hasStage ? 'bg-green-500' : 'bg-gray-300'
+                                formData.isFeatured ? 'bg-green-500' : 'bg-gray-300'
                               }`} />
-                              <span className="text-sm">Palco</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`w-2 h-2 rounded-full mr-2 ${
-                                formData.alcoholAllowed ? 'bg-green-500' : 'bg-gray-300'
-                              }`} />
-                              <span className="text-sm">Álcool Permitido</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`w-2 h-2 rounded-full mr-2 ${
-                                formData.insuranceRequired ? 'bg-green-500' : 'bg-gray-300'
-                              }`} />
-                              <span className="text-sm">Seguro Obrigatório</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className={`w-2 h-2 rounded-full mr-2 ${
-                                formData.approvalRequired ? 'bg-green-500' : 'bg-gray-300'
-                              }`} />
-                              <span className="text-sm">Aprovação Necessária</span>
+                              <span className="text-sm">{formData.isFeatured ? 'Em Destaque' : 'Normal'}</span>
                             </div>
                           </div>
                         </div>
 
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Extras</h4>
-                          <div className="space-y-2 text-sm">
-                            <div>
-                              <span className="text-gray-600">Restrição de Ruído:</span>
-                              <span className="font-medium ml-2">{formData.noiseRestriction || '-'}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Tour Virtual:</span>
-                              <span className="font-medium ml-2">
-                                {formData.virtualTourUrl ? 'Sim' : 'Não'}
+                          <h4 className="font-medium text-gray-700 mb-3">Imagens</h4>
+                          <div className="text-sm">
+                            <div className="mb-1">
+                              <span className="text-gray-600">Total de imagens:</span>
+                              <span className={`font-medium ml-2 ${((formData.images || []).length + previewImages.length) === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {((formData.images || []).length + previewImages.length)} ({(formData.images || []).length} URLs + {previewImages.length} locais)
                               </span>
                             </div>
-                            <div>
-                              <span className="text-gray-600">Planta Baixa:</span>
-                              <span className="font-medium ml-2">
-                                {formData.floorPlanImage ? 'Sim' : 'Não'}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Imagens:</span>
-                              <span className="font-medium ml-2">
-                                {manualImageUrls ? manualImageUrls.split('\n').filter(url => url.trim()).length : 0} URL(s) fornecida(s)
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Status Inicial:</span>
-                              <span className="font-medium ml-2">Ativo</span>
-                            </div>
+                            {((formData.images || []).length + previewImages.length) === 0 && (
+                              <p className="text-xs text-red-600 mt-1">⚠️ Pelo menos uma imagem é obrigatória</p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1206,12 +1508,11 @@ https://exemplo.com/foto2.jpg"
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 mt-0.5 flex-shrink-0" />
                       <div>
-                        <p className="font-medium">Pronto para criar!</p>
+                        <p className="font-medium">Pronto para atualizar!</p>
                         <ul className="mt-2 space-y-1">
-                          <li>• Verifique todos os dados acima antes de continuar</li>
-                          <li>• Após criação, poderá editar qualquer informação</li>
-                          <li>• As imagens podem ser adicionadas depois usando URLs</li>
-                          <li>• Todas as reservas necessitarão de aprovação manual</li>
+                          <li>• Verifique todas as alterações acima</li>
+                          <li>• As alterações serão aplicadas imediatamente</li>
+                          <li>• Reservas existentes não serão afetadas</li>
                         </ul>
                       </div>
                     </div>
@@ -1252,17 +1553,31 @@ https://exemplo.com/foto2.jpg"
             {currentStep === 3 && (
               <Button
                 type="button"
-                onClick={() => setShowConfirmation(true)}
-                disabled={loading}
+                onClick={() => {
+                  // ✅ Validar antes de mostrar confirmação
+                  if (validateAllSteps()) {
+                    setShowConfirmation(true);
+                  } else {
+                    toast({
+                      title: 'Erros de validação',
+                      description: 'Por favor, corrija todos os campos obrigatórios',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
+                // ✅ 4. DESABILITAR BOTÃO SE NADA MUDOU
+                disabled={loading || !hasChanges}
                 className="px-10 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-lg disabled:opacity-50"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Criando...
+                    Atualizando espaço...
                   </>
+                ) : !hasChanges ? (
+                  'Nenhuma alteração'
                 ) : (
-                  '📝 Criar Espaço de Eventos'
+                  '💾 Salvar Alterações'
                 )}
               </Button>
             )}
@@ -1273,4 +1588,4 @@ https://exemplo.com/foto2.jpg"
   );
 };
 
-export default CreateEventSpaceFormModern;
+export default EditEventSpaceFormModern;
