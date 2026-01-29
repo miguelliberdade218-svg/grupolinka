@@ -153,7 +153,7 @@ export interface EventBooking {
   totalPrice: string;
   securityDeposit: string;
   status: 'pending_approval' | 'confirmed' | 'cancelled' | 'rejected' | 'completed';
-  paymentStatus: 'pending' | 'paid' | 'partial' | 'refunded';
+  paymentStatus: PaymentStatusType; // ✅ ALTERADO: usa o tipo completo
   createdAt: string;
   updatedAt: string;
 
@@ -265,4 +265,56 @@ export interface EventSpaceDetails {
   catering_discount_percent: number;
   catering_menu_urls: string[];
   security_deposit: string;
+}
+
+// ==================== 🆕 NOVOS TIPOS PARA GESTÃO DE RESERVAS E PAGAMENTOS ====================
+
+export type BookingStatusType = 
+  | 'pending_approval' 
+  | 'confirmed' 
+  | 'cancelled' 
+  | 'rejected' 
+  | 'completed';
+
+export type PaymentStatusType = 
+  | 'pending' 
+  | 'confirmed'     // ✅ ADICIONADO: usado no eventPaymentService.confirmEventPayment
+  | 'paid'          // ✅ ADICIONADO: usado no updateEventBookingPaymentStatus e lógica de total
+  | 'partial'       // usado em cálculos de saldo
+  | 'refunded'      // comum em sistemas financeiros
+  | 'failed'        // comum quando pagamento é rejeitado pelo gateway
+  | 'cancelled';    // quando a reserva é cancelada
+
+export interface ManualPaymentPayload {
+  amount: number;
+  paymentMethod: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+  referenceNumber: string;
+  notes?: string;
+}
+
+export interface BookingPayment {
+  id: string;
+  bookingId: string;
+  amount: string;
+  paymentMethod: string;
+  referenceNumber: string;
+  status: PaymentStatusType; // ✅ ALTERADO: usa o tipo completo
+  paidAt: string | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  notes?: string;
+}
+
+export interface BookingLog {
+  id: string;
+  action: string;
+  details: any;
+  createdAt: string;
+  performedBy?: string;
+}
+
+export interface FullBookingDetails {
+  booking: EventBooking;
+  payments: BookingPayment[];
+  logs: BookingLog[];
 }

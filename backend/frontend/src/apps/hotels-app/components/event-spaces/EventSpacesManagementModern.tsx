@@ -4,9 +4,11 @@
  * Alinhado com eventSpaceService e shared/types/event-spaces.ts
  * CORRIGIDO: Implementa delete real, edição real, debounce, fallback imagem, acessibilidade
  * ✅ CORREÇÃO FINAL: Modal de disponibilidade SEM Dialog wrapper
+ * ✅ NOVA CORREÇÃO: Navegação para página de reservas/pagamentos
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'wouter'; // ✅ ADICIONADO: Para navegação
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -36,13 +38,13 @@ import EditEventSpaceFormModern from './EditEventSpaceFormModern';
 import EventSpaceAvailabilityCalendar from './EventSpaceAvailabilityCalendar';
 import EventSpaceBookingsList from './EventSpaceBookingsList';
 import EventSpaceReviewsList from './EventSpaceReviewsList';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
 
 interface EventSpacesManagementProps {
   hotelId: string;
 }
 
 export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> = ({ hotelId }) => {
+  const [location, navigate] = useLocation(); // ✅ ADICIONADO: Para navegação
   const [activeTab, setActiveTab] = useState('list');
   const [spaces, setSpaces] = useState<EventSpace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,7 +158,8 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   const handleBookingsClick = (space: EventSpace) => {
     setSelectedSpaceForBookings(space);
     setActiveTab('bookings');
-    setShowBookingsModal(true);
+    // ✅ CORREÇÃO: Navegar para página de gestão de pagamentos
+    navigate(`/hotels/events/spaces/${space.id}/bookings`);
   };
 
   const handleReviewsClick = (space: EventSpace) => {
@@ -652,7 +655,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           size="sm"
                         >
                           <Eye className="h-4 w-4 mr-2" />
-                          Ver Reservas
+                          Ver Reservas & Pagamentos
                         </Button>
                         <Button
                           onClick={() => handleAvailabilityClick(space)}
@@ -771,9 +774,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         </TabsContent>
       </Tabs>
 
-      {/* ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ */}
-      {/* MODAL DE DISPONIBILIDADE - CORRIGIDO (SEM DIALOG WRAPPER) */}
-      {/* ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ ✅ */}
+      {/* ✅ MODAL DE DISPONIBILIDADE */}
       {showAvailabilityModal && selectedSpaceForAvailability && (
         <EventSpaceAvailabilityCalendar 
           hotelId={hotelId}
@@ -783,7 +784,8 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         />
       )}
 
-      {/* ✅ MODAL DE RESERVAS - também corrigir */}
+      {/* ✅ MODAL DE RESERVAS - REMOVIDO/COMENTADO (agora usa navegação) */}
+      {/* 
       {showBookingsModal && selectedSpaceForBookings && (
         <EventSpaceBookingsList 
           spaceId={selectedSpaceForBookings.id}
@@ -791,8 +793,9 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
           onClose={() => setShowBookingsModal(false)}
         />
       )}
+      */}
 
-      {/* ✅ MODAL DE AVALIAÇÕES - também corrigir */}
+      {/* ✅ MODAL DE AVALIAÇÕES */}
       {showReviewsModal && selectedSpaceForReviews && (
         <EventSpaceReviewsList 
           spaceId={selectedSpaceForReviews.id}

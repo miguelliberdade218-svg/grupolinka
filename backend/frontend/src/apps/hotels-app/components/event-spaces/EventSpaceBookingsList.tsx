@@ -1,12 +1,17 @@
 // src/apps/hotels-app/components/event-spaces/EventSpaceBookingsList.tsx
-// Componente para listar reservas de um espaço de eventos - VERSÃO COMPLETA
+// Componente para listar reservas de um espaço de eventos - VERSÃO COMPLETA COM SERVIÇO REAL
 
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { Input } from '@/shared/components/ui/input';
+import { Textarea } from '@/shared/components/ui/textarea';
+import { Label } from '@/shared/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog';
 import {
   Loader2,
   Calendar,
@@ -21,11 +26,33 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  CreditCard,
+  AlertTriangle,
+  Ban,
+  TrendingUp,
+  Wallet,
+  BarChart,
+  FileSpreadsheet,
+  Receipt,
 } from 'lucide-react';
 import { useToast } from '@/shared/hooks/use-toast';
 import { apiService } from '@/services/api';
+import { eventSpaceService } from '@/services/eventSpaceService';
 import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
+import type { 
+  ManualPaymentPayload, 
+  BookingPayment, 
+  BookingLog, 
+  FullBookingDetails 
+} from '@/shared/types/event-spaces';
+
+// Importar componentes modulares
+import BookingFilters, { type BookingFiltersState } from './BookingFilters';
+import BookingStats from './BookingStats';
+import BookingActions from './BookingActions';
+import { PaymentRegisterModal } from './PaymentRegisterModal';
 
 interface EventSpaceBookingsListProps {
   spaceId: string;
@@ -44,6 +71,22 @@ interface Booking {
   status: string;
   total_price: string;
   created_at: string;
+  payment_status?: string;
+  balance_due?: string;
+  event_type?: string;
+  organizer_phone?: string;
+  eventSpaceId?: string;
+}
+
+interface BookingStatsData {
+  total: number;
+  pending: number;
+  confirmed: number;
+  completed: number;
+  cancelled: number;
+  revenue: number;
+  pendingRevenue: number;
+  averageBookingValue: number;
 }
 
 export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
@@ -55,12 +98,61 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const { toast } = useToast();
+
+  // ESTADOS ADICIONAIS
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [paymentDetails, setPaymentDetails] = useState<FullBookingDetails | null>(null);
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [paymentData, setPaymentData] = useState<ManualPaymentPayload>({
+    amount: 0,
+    paymentMethod: 'mpesa',
+    referenceNumber: '',
+    notes: '',
+  });
+  const [stats, setStats] = useState<BookingStatsData>({
+    total: 0,
+    pending: 0,
+    confirmed: 0,
+    completed: 0,
+    cancelled: 0,
+    revenue: 0,
+    pendingRevenue: 0,
+    averageBookingValue: 0,
+  });
+  const [advancedFilters, setAdvancedFilters] = useState<BookingFiltersState>({
+    status: 'all',
+    dateRange: 'all',
+    search: '',
+    paymentStatus: 'all',
+    eventType: 'all',
+    minAmount: undefined,
+    maxAmount: undefined,
+    startDate: undefined,
+    endDate: undefined,
+  });
+  const [paymentOptions, setPaymentOptions] = useState<Array<{
+    value: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+    label: string;
+  }>>([
+    { value: 'mpesa', label: 'M-Pesa' },
+    { value: 'bank_transfer', label: 'Transferência Bancária' },
+    { value: 'card', label: 'Cartão' },
+    { value: 'cash', label: 'Dinheiro' },
+    { value: 'mobile_money', label: 'Mobile Money' },
+  ]);
+
+  // Estados para loading de ações específicas
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
+
+  // Novos estados para o modal de pagamentos direto
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedBookingForPayment, setSelectedBookingForPayment] = useState<Booking | null>(null);
 
   useEffect(() => {
     loadBookings();
@@ -68,7 +160,8 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
 
   useEffect(() => {
     filterBookings();
-  }, [bookings, statusFilter, dateFilter, searchTerm]);
+    calculateStats(filteredBookings);
+  }, [bookings, advancedFilters]);
 
   const loadBookings = async () => {
     setLoading(true);
@@ -80,7 +173,15 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       });
       
       if (res.success && res.data) {
-        setBookings(res.data);
+        const updatedBookings = res.data.map((booking: any) => ({
+          ...booking,
+          payment_status: booking.payment_status || 'pending',
+          balance_due: booking.balance_due || booking.total_price,
+          event_type: booking.event_type || 'outro',
+          organizer_phone: booking.organizer_phone || '',
+        }));
+        setBookings(updatedBookings);
+        calculateStats(updatedBookings);
       } else {
         setError(res.error || 'Falha ao carregar reservas');
       }
@@ -92,38 +193,327 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
   };
 
+  // FUNÇÕES ADICIONAIS
+  const loadPaymentDetails = async (bookingId: string) => {
+    try {
+      const res = await eventSpaceService.getFullBookingDetails(bookingId);
+      if (res.success && res.data) {
+        setPaymentDetails(res.data);
+      } else {
+        toast({
+          title: '⚠️ Atenção',
+          description: res.error || 'Erro ao carregar detalhes de pagamento',
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao carregar pagamentos:', err);
+      toast({
+        title: '❌ Erro',
+        description: 'Falha ao carregar detalhes de pagamento',
+      });
+    }
+  };
+
+  const handleRejectBooking = async (bookingId: string, reason: string) => {
+    try {
+      const res = await eventSpaceService.rejectBooking(bookingId, reason);
+      if (res.success) {
+        toast({
+          title: '✅ Reserva rejeitada',
+          description: res.message || 'A reserva foi rejeitada com sucesso',
+        });
+        loadBookings();
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err: any) {
+      toast({
+        title: '❌ Erro ao rejeitar',
+        description: err.message || 'Falha ao rejeitar reserva',
+      });
+    }
+  };
+
+  const handleCancelBooking = async (bookingId: string, reason: string) => {
+    try {
+      const res = await eventSpaceService.cancelBooking(bookingId, reason);
+      if (res.success) {
+        toast({
+          title: '✅ Reserva cancelada',
+          description: res.data?.message || 'A reserva foi cancelada com sucesso',
+        });
+        loadBookings();
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err: any) {
+      toast({
+        title: '❌ Erro ao cancelar',
+        description: err.message || 'Falha ao cancelar reserva',
+      });
+    }
+  };
+
+  const handleRegisterPayment = async () => {
+    if (!selectedBooking) return;
+    
+    setIsPaying(true);
+    try {
+      const res = await eventSpaceService.registerManualPayment(selectedBooking.id, paymentData);
+      if (res.success) {
+        toast({
+          title: '✅ Pagamento registrado',
+          description: res.message || 'Pagamento registrado com sucesso',
+        });
+        loadBookings();
+        // Recarregar detalhes completos
+        const fullDetails = await eventSpaceService.getFullBookingDetails(selectedBooking.id);
+        if (fullDetails.success && fullDetails.data) {
+          setPaymentDetails(fullDetails.data);
+        }
+        setShowPaymentDialog(false);
+        setPaymentData({
+          amount: 0,
+          paymentMethod: 'mpesa',
+          referenceNumber: '',
+          notes: '',
+        });
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err: any) {
+      toast({
+        title: '❌ Erro no pagamento',
+        description: err.message || 'Falha ao registrar pagamento',
+      });
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  const handleConfirmPayment = async (paymentId: string) => {
+    if (!selectedBooking) return;
+    
+    setIsSubmitting(true);
+    try {
+      const res = await eventSpaceService.updatePaymentStatus(selectedBooking.id, 'paid', paymentId);
+      if (res.success) {
+        toast({
+          title: '✅ Pagamento confirmado',
+          description: res.message || 'Pagamento confirmado com sucesso',
+        });
+        loadPaymentDetails(selectedBooking.id);
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err: any) {
+      toast({
+        title: '❌ Erro ao confirmar',
+        description: err.message || 'Falha ao confirmar pagamento',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDownloadReceipt = async (paymentId: string) => {
+    try {
+      const receiptContent = `
+        RECIBO DE PAGAMENTO
+        ===================
+        ID do Pagamento: ${paymentId}
+        Reserva: ${selectedBooking?.event_title || 'N/A'}
+        Organizador: ${selectedBooking?.organizer_name || 'N/A'}
+        Valor: ${formatCurrency(selectedBooking?.total_price || '0')}
+        Data: ${new Date().toLocaleDateString('pt-MZ')}
+        Método: ${paymentData.paymentMethod}
+        Referência: ${paymentData.referenceNumber}
+        
+        Este é um comprovante de pagamento.
+      `;
+      
+      const blob = new Blob([receiptContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `recibo_${paymentId}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: '✅ Recibo baixado',
+        description: 'Recibo disponível para download',
+      });
+    } catch (err: any) {
+      toast({
+        title: '❌ Erro ao baixar recibo',
+        description: err.message || 'Falha ao baixar recibo',
+      });
+    }
+  };
+
+  const calculateStats = (bookingsList: Booking[]) => {
+    const total = bookingsList.length;
+    const pending = bookingsList.filter(b => b.status === 'pending_approval').length;
+    const confirmed = bookingsList.filter(b => b.status === 'confirmed').length;
+    const completed = bookingsList.filter(b => b.status === 'completed').length;
+    const cancelled = bookingsList.filter(b => 
+      b.status === 'cancelled' || b.status === 'rejected'
+    ).length;
+    
+    const revenue = bookingsList.reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+    const pendingRevenue = bookingsList
+      .filter(b => b.payment_status === 'pending' || b.payment_status === 'partial')
+      .reduce((sum, b) => sum + Number(b.balance_due || 0), 0);
+    const averageBookingValue = total > 0 ? revenue / total : 0;
+    
+    setStats({
+      total,
+      pending,
+      confirmed,
+      completed,
+      cancelled,
+      revenue,
+      pendingRevenue,
+      averageBookingValue,
+    });
+  };
+
+  const handleExportBookings = (format: 'csv' | 'excel' | 'pdf') => {
+    if (format !== 'csv') {
+      toast({
+        title: 'Em breve',
+        description: 'Outros formatos em desenvolvimento',
+      });
+      return;
+    }
+
+    const headers = [
+      'ID', 'Título', 'Organizador', 'Email', 'Início', 'Fim', 'Participantes', 
+      'Valor Total', 'Saldo Pendente', 'Status', 'Pagamento', 'Criado em'
+    ];
+
+    const csvRows = [
+      headers.join(','),
+      ...filteredBookings.map(b => [
+        b.id,
+        `"${b.event_title.replace(/"/g, '""')}"`,
+        `"${b.organizer_name.replace(/"/g, '""')}"`,
+        b.organizer_email,
+        b.start_date,
+        b.end_date,
+        b.expected_attendees,
+        b.total_price,
+        b.balance_due || '0',
+        b.status,
+        b.payment_status || 'pending',
+        b.created_at
+      ].join(','))
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reservas_${spaceName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: '✅ Exportado',
+      description: 'Arquivo CSV baixado',
+    });
+  };
+
+  const openBookingDetails = (booking: Booking) => {
+    setSelectedBooking(booking);
+    loadPaymentDetails(booking.id);
+    setShowDetailsDialog(true);
+  };
+
+  const openPaymentDialog = (booking: Booking) => {
+    setSelectedBooking(booking);
+    setPaymentData({
+      amount: Number(booking.balance_due || '0') || 0,
+      paymentMethod: 'mpesa',
+      referenceNumber: `PAY-${booking.id?.slice(0, 8)?.toUpperCase() || 'UNKNOWN'}-${Date.now().toString().slice(-6)}`,
+      notes: `Pagamento para reserva ${booking.event_title}`,
+    });
+    loadPaymentDetails(booking.id);
+    setShowPaymentDialog(true);
+  };
+
+  // Nova função para abrir o modal de pagamentos
+  const openPaymentModal = (booking: Booking) => {
+    setSelectedBookingForPayment(booking);
+    setShowPaymentModal(true);
+  };
+
   const filterBookings = () => {
     let filtered = [...bookings];
 
-    // Filtrar por status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(booking => booking.status === statusFilter);
+    // Status
+    if (advancedFilters.status !== 'all') {
+      filtered = filtered.filter(b => b.status === advancedFilters.status);
     }
 
-    // Filtrar por data
-    if (dateFilter !== 'all') {
+    // Pagamento
+    if (advancedFilters.paymentStatus !== 'all') {
+      filtered = filtered.filter(b => b.payment_status === advancedFilters.paymentStatus);
+    }
+
+    // Tipo de evento
+    if (advancedFilters.eventType !== 'all') {
+      filtered = filtered.filter(b => b.event_type === advancedFilters.eventType);
+    }
+
+    // Valor mínimo/máximo - CORREÇÃO: Verificação de undefined
+    if (advancedFilters.minAmount !== undefined) {
+      filtered = filtered.filter(b => Number(b.total_price || 0) >= advancedFilters.minAmount!);
+    }
+    if (advancedFilters.maxAmount !== undefined) {
+      filtered = filtered.filter(b => Number(b.total_price || 0) <= advancedFilters.maxAmount!);
+    }
+
+    // Data
+    if (advancedFilters.dateRange !== 'all') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      if (dateFilter === 'upcoming') {
-        filtered = filtered.filter(booking => new Date(booking.start_date) >= today);
-      } else if (dateFilter === 'past') {
-        filtered = filtered.filter(booking => new Date(booking.start_date) < today);
-      } else if (dateFilter === 'today') {
-        filtered = filtered.filter(booking => {
-          const bookingDate = new Date(booking.start_date);
+      if (advancedFilters.dateRange === 'custom' && advancedFilters.startDate && advancedFilters.endDate) {
+        filtered = filtered.filter(b => {
+          const bookingDate = new Date(b.start_date);
+          return bookingDate >= advancedFilters.startDate! && bookingDate <= advancedFilters.endDate!;
+        });
+      } else if (advancedFilters.dateRange === 'upcoming') {
+        filtered = filtered.filter(b => new Date(b.start_date) >= today);
+      } else if (advancedFilters.dateRange === 'past') {
+        filtered = filtered.filter(b => new Date(b.start_date) < today);
+      } else if (advancedFilters.dateRange === 'today') {
+        filtered = filtered.filter(b => {
+          const bookingDate = new Date(b.start_date);
           return bookingDate.toDateString() === today.toDateString();
         });
+      } else if (advancedFilters.dateRange === 'week') {
+        const oneWeekAgo = new Date(today);
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        filtered = filtered.filter(b => new Date(b.start_date) >= oneWeekAgo);
+      } else if (advancedFilters.dateRange === 'month') {
+        const oneMonthAgo = new Date(today);
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        filtered = filtered.filter(b => new Date(b.start_date) >= oneMonthAgo);
       }
     }
 
-    // Filtrar por busca
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(booking =>
-        booking.event_title.toLowerCase().includes(term) ||
-        booking.organizer_name.toLowerCase().includes(term) ||
-        booking.organizer_email.toLowerCase().includes(term)
+    // Busca textual
+    if (advancedFilters.search) {
+      const term = advancedFilters.search.toLowerCase();
+      filtered = filtered.filter(b =>
+        b.event_title?.toLowerCase().includes(term) ||
+        b.organizer_name?.toLowerCase().includes(term) ||
+        b.organizer_email?.toLowerCase().includes(term) ||
+        b.organizer_phone?.toLowerCase().includes(term)
       );
     }
 
@@ -132,14 +522,14 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   };
 
   const getStatusBadge = (status: string) => {
-    const statusMap: Record<string, { variant: string; label: string; icon: React.ReactNode }> = {
+    const statusMap: Record<string, { variant: 'default' | 'destructive' | 'outline' | 'secondary'; label: string; icon: React.ReactNode }> = {
       'pending_approval': {
-        variant: 'warning',
+        variant: 'default',
         label: 'Aguardando aprovação',
         icon: <Clock className="h-3 w-3 mr-1" />
       },
       'confirmed': {
-        variant: 'success',
+        variant: 'default',
         label: 'Confirmado',
         icon: <CheckCircle className="h-3 w-3 mr-1" />
       },
@@ -158,20 +548,48 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         label: 'Concluído',
         icon: <CheckCircle className="h-3 w-3 mr-1" />
       },
+      'in_progress': {
+        variant: 'secondary',
+        label: 'Em andamento',
+        icon: <Clock className="h-3 w-3 mr-1" />
+      },
     };
 
     const statusInfo = statusMap[status] || { variant: 'default', label: status, icon: null };
 
     return (
-      <Badge variant={statusInfo.variant as any} className="text-xs">
+      <Badge variant={statusInfo.variant} className="text-xs">
         {statusInfo.icon}
         {statusInfo.label}
       </Badge>
     );
   };
 
-  const formatCurrency = (amount: string) => {
-    const num = parseFloat(amount);
+  const getPaymentStatusBadge = (status?: string) => {
+    const statusMap: Record<string, { variant: 'default' | 'destructive' | 'outline' | 'secondary'; label: string }> = {
+      'paid': { variant: 'default', label: 'Pago' },
+      'confirmed': { variant: 'default', label: 'Confirmado' },
+      'pending': { variant: 'default', label: 'Pendente' },
+      'partial': { variant: 'secondary', label: 'Parcial' },
+      'overdue': { variant: 'destructive', label: 'Atrasado' },
+      'refunded': { variant: 'outline', label: 'Reembolsado' },
+      'failed': { variant: 'destructive', label: 'Falhou' },
+      'cancelled': { variant: 'destructive', label: 'Cancelado' },
+    };
+
+    const effectiveStatus = status || 'pending';
+    const statusInfo = statusMap[effectiveStatus] || { variant: 'default', label: effectiveStatus };
+
+    return (
+      <Badge variant={statusInfo.variant} className="text-xs">
+        {statusInfo.label}
+      </Badge>
+    );
+  };
+
+  const formatCurrency = (amount: number | string) => {
+    if (!amount && amount !== 0) return '—';
+    const num = typeof amount === 'string' ? Number(amount) : amount;
     return isNaN(num) ? '—' : num.toLocaleString('pt-MZ', {
       style: 'currency',
       currency: 'MZN',
@@ -181,28 +599,31 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
 
   const formatDate = (dateString: string) => {
     try {
+      return format(new Date(dateString), 'dd/MM/yyyy HH:mm', { locale: pt });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const formatDateShort = (dateString: string) => {
+    try {
       return format(new Date(dateString), 'dd/MM/yyyy', { locale: pt });
     } catch {
       return dateString;
     }
   };
 
-  // Paginação
-  const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentBookings = filteredBookings.slice(startIndex, endIndex);
-
+  // HANDLER PARA CONFIRMAR RESERVA
   const handleConfirmBooking = async (bookingId: string) => {
     try {
-      const res = await apiService.confirmEventBooking(bookingId);
+      const res = await eventSpaceService.confirmBooking(bookingId);
       if (res.success) {
         toast({
           title: '✅ Reserva confirmada',
-          description: 'A reserva foi confirmada com sucesso',
-          variant: 'success',
+          description: res.message || 'A reserva foi confirmada com sucesso',
         });
         loadBookings();
+        setShowDetailsDialog(false);
       } else {
         throw new Error(res.error);
       }
@@ -210,10 +631,429 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       toast({
         title: '❌ Erro ao confirmar',
         description: err.message || 'Falha ao confirmar reserva',
-        variant: 'destructive',
       });
     }
   };
+
+  // Handler para ações do BookingActions
+  const handleBookingAction = async (action: string, data?: { reason?: string; notes?: string }) => {
+    if (!selectedBooking) return;
+
+    switch (action) {
+      case 'confirm':
+        await handleConfirmBooking(selectedBooking.id);
+        break;
+      case 'reject':
+        await handleRejectBooking(selectedBooking.id, data?.reason || '');
+        break;
+      case 'cancel':
+        await handleCancelBooking(selectedBooking.id, data?.reason || 'Cancelado pelo gestor');
+        break;
+      case 'details':
+        openBookingDetails(selectedBooking);
+        break;
+      case 'payments':
+        openPaymentModal(selectedBooking);
+        break;
+      case 'edit':
+        toast({
+          title: '📝 Editar',
+          description: 'Funcionalidade de edição em desenvolvimento',
+        });
+        break;
+      case 'complete':
+        toast({
+          title: '✅ Concluir',
+          description: 'Funcionalidade de conclusão em desenvolvimento',
+        });
+        break;
+      case 'start':
+        toast({
+          title: '▶️ Iniciar',
+          description: 'Funcionalidade de iniciar evento em desenvolvimento',
+        });
+        break;
+      default:
+        console.log('Ação não implementada:', action);
+    }
+  };
+
+  // COMPONENTES DE DIÁLOGO
+  const BookingDetailsDialog = () => (
+    <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Detalhes da Reserva
+          </DialogTitle>
+          <DialogDescription>
+            Informações completas da reserva #{selectedBooking?.id.slice(0, 8).toUpperCase()}
+          </DialogDescription>
+        </DialogHeader>
+        
+        {selectedBooking && (
+          <Tabs defaultValue="info" className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="info">Informações</TabsTrigger>
+              <TabsTrigger value="payments">Pagamentos</TabsTrigger>
+              <TabsTrigger value="services">Serviços</TabsTrigger>
+              <TabsTrigger value="logs">Histórico</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="info" className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Informações do Evento</h4>
+                  <div className="space-y-2">
+                    <p><span className="text-gray-600">Título:</span> {selectedBooking.event_title}</p>
+                    <p><span className="text-gray-600">Tipo:</span> {selectedBooking.event_type || 'Não especificado'}</p>
+                    <p><span className="text-gray-600">Data:</span> {formatDate(selectedBooking.start_date)} - {formatDate(selectedBooking.end_date)}</p>
+                    <p><span className="text-gray-600">Participantes:</span> {selectedBooking.expected_attendees}</p>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Informações do Organizador</h4>
+                  <div className="space-y-2">
+                    <p><span className="text-gray-600">Nome:</span> {selectedBooking.organizer_name}</p>
+                    <p><span className="text-gray-600">Email:</span> {selectedBooking.organizer_email}</p>
+                    <p><span className="text-gray-600">Telefone:</span> {selectedBooking.organizer_phone || 'Não informado'}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Informações Financeiras</h4>
+                  <div className="space-y-2">
+                    <p><span className="text-gray-600">Valor Total:</span> {formatCurrency(selectedBooking.total_price)}</p>
+                    <p><span className="text-gray-600">Saldo Pendente:</span> {formatCurrency(selectedBooking.balance_due || '0')}</p>
+                    <p><span className="text-gray-600">Status Pagamento:</span> {getPaymentStatusBadge(selectedBooking.payment_status)}</p>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Status da Reserva</h4>
+                  <div className="space-y-2">
+                    <p><span className="text-gray-600">Status:</span> {getStatusBadge(selectedBooking.status)}</p>
+                    <p><span className="text-gray-600">Criada em:</span> {formatDate(selectedBooking.created_at)}</p>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="payments" className="space-y-4">
+              {paymentDetails ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <Card className="p-4">
+                      <div className="text-lg font-bold text-blue-600">
+                        {formatCurrency(paymentDetails.booking.totalPrice || paymentDetails.booking.totalPrice || '0')}
+                      </div>
+                      <div className="text-sm text-gray-600">Total</div>
+                    </Card>
+                    <Card className="p-4">
+                      <div className="text-lg font-bold text-green-600">
+                        {formatCurrency(
+                          paymentDetails.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600">Pago</div>
+                    </Card>
+                    <Card className="p-4">
+                      <div className="text-lg font-bold text-amber-600">
+                        {formatCurrency(
+                          selectedBooking?.balance_due || 
+                          (Number(selectedBooking?.total_price || 0) - 
+                           paymentDetails.payments.reduce((s, p) => s + Number(p.amount || 0), 0)) || '0'
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600">Saldo</div>
+                    </Card>
+                    <Card className="p-4">
+                      <div className="text-lg font-bold text-purple-600">
+                        {formatCurrency(paymentDetails.booking.securityDeposit || '0')}
+                      </div>
+                      <div className="text-sm text-gray-600">Depósito</div>
+                    </Card>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-semibold mb-3">Histórico de Pagamentos</h4>
+                    {paymentDetails.payments.length > 0 ? (
+                      <div className="space-y-3">
+                        {paymentDetails.payments.map((payment) => (
+                          <Card key={payment.id} className="p-3">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-medium">{formatCurrency(payment.amount)}</p>
+                                  <Badge 
+                                    variant={
+                                      payment.status === 'paid' ? 'default' :
+                                      payment.status === 'partial' ? 'secondary' :
+                                      payment.status === 'pending' ? 'default' :
+                                      payment.status === 'failed' || payment.status === 'cancelled' ? 'destructive' :
+                                      payment.status === 'refunded' ? 'outline' : 'default'
+                                    }
+                                  >
+                                    {payment.status === 'paid' ? 'Pago' :
+                                     payment.status === 'pending' ? 'Pendente' :
+                                     payment.status === 'failed' ? 'Falhou' :
+                                     payment.status === 'refunded' ? 'Reembolsado' :
+                                     payment.status === 'cancelled' ? 'Cancelado' : payment.status}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-gray-600">
+                                  {payment.paymentMethod === 'mpesa' ? 'M-Pesa' :
+                                   payment.paymentMethod === 'bank_transfer' ? 'Transferência' :
+                                   payment.paymentMethod === 'card' ? 'Cartão' :
+                                   payment.paymentMethod === 'cash' ? 'Dinheiro' : 'Mobile Money'} • {payment.referenceNumber}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {payment.confirmedAt ? formatDate(payment.confirmedAt) : formatDate(payment.createdAt)}
+                                </p>
+                                {payment.notes && (
+                                  <p className="text-xs text-gray-500 mt-1">Nota: {payment.notes}</p>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleDownloadReceipt(payment.id)}
+                                >
+                                  <Receipt className="h-4 w-4 mr-1" />
+                                  Recibo
+                                </Button>
+                                {payment.status === 'pending' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleConfirmPayment(payment.id)}
+                                    disabled={isSubmitting}
+                                  >
+                                    {isSubmitting ? (
+                                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                    ) : null}
+                                    Confirmar
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-center py-4">Nenhum pagamento registrado</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              )}
+            </TabsContent>
+            
+            <TabsContent value="services">
+              {paymentDetails?.booking.additionalServices ? (
+                <div className="space-y-4">
+                  <h4 className="font-semibold">Serviços Adicionais</h4>
+                  <Card className="p-4">
+                    <pre className="whitespace-pre-wrap text-sm">
+                      {JSON.stringify(paymentDetails.booking.additionalServices, null, 2)}
+                    </pre>
+                  </Card>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Nenhum serviço adicional para esta reserva</p>
+                </div>
+              )}
+            </TabsContent>
+            
+            <TabsContent value="logs">
+              {paymentDetails?.logs && paymentDetails.logs.length > 0 ? (
+                <div className="space-y-4">
+                  <h4 className="font-semibold">Histórico de Alterações</h4>
+                  <div className="space-y-3">
+                    {paymentDetails.logs.map((log) => (
+                      <Card key={log.id} className="p-3">
+                        <div className="flex justify-between">
+                          <div>
+                            <p className="font-medium">{log.action}</p>
+                            {log.performedBy && (
+                              <p className="text-sm text-gray-600">Por: {log.performedBy}</p>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1">{formatDate(log.createdAt)}</p>
+                          </div>
+                          {log.details && (
+                            <div className="text-sm text-gray-600">
+                              {JSON.stringify(log.details, null, 2)}
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">Nenhum histórico disponível</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+        
+        <DialogFooter className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowDetailsDialog(false)}>
+            Fechar
+          </Button>
+          {selectedBooking && (
+            <div className="flex gap-2">
+              <BookingActions
+                booking={{
+                  id: selectedBooking.id,
+                  status: selectedBooking.status as any,
+                  payment_status: selectedBooking.payment_status as any,
+                  balance_due: selectedBooking.balance_due,
+                  event_title: selectedBooking.event_title,
+                }}
+                onAction={handleBookingAction}
+                compact={false}
+                showDetails={false}
+              />
+            </div>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const PaymentDialog = () => (
+    <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5" />
+            Gestão de Pagamentos
+          </DialogTitle>
+          <DialogDescription>
+            Registrar e gerenciar pagamentos da reserva
+          </DialogDescription>
+        </DialogHeader>
+        
+        {selectedBooking && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <Card className="p-4">
+                <div className="text-lg font-bold text-green-600">
+                  {formatCurrency(selectedBooking.total_price)}
+                </div>
+                <div className="text-sm text-gray-600">Valor Total</div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-lg font-bold text-amber-600">
+                  {formatCurrency(selectedBooking.balance_due || '0')}
+                </div>
+                <div className="text-sm text-gray-600">Saldo Pendente</div>
+              </Card>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="amount">Valor do Pagamento *</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  value={paymentData.amount}
+                  onChange={(e) => setPaymentData({...paymentData, amount: Number(e.target.value) || 0})}
+                  min="0"
+                  max={Number(selectedBooking.balance_due || '0')}
+                  placeholder="Digite o valor do pagamento"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Máximo: {formatCurrency(selectedBooking.balance_due || '0')}
+                </p>
+              </div>
+              
+              <div>
+                <Label htmlFor="paymentMethod">Método de Pagamento *</Label>
+                <Select
+                  value={paymentData.paymentMethod}
+                  onValueChange={(value: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money') => 
+                    setPaymentData({...paymentData, paymentMethod: value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o método" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="referenceNumber">Número de Referência</Label>
+                <Input
+                  id="referenceNumber"
+                  value={paymentData.referenceNumber}
+                  onChange={(e) => setPaymentData({...paymentData, referenceNumber: e.target.value})}
+                  placeholder={
+                    paymentData.paymentMethod === 'mpesa' ? 'Ex: MP123456789' :
+                    paymentData.paymentMethod === 'bank_transfer' ? 'Ex: TRF-2025-001' :
+                    'Número da transação / comprovativo'
+                  }
+                  readOnly={paymentData.paymentMethod !== 'cash'}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {paymentData.paymentMethod === 'cash' ? 'Preencha com o número do comprovante' : 'Referência gerada automaticamente'}
+                </p>
+              </div>
+              
+              <div>
+                <Label htmlFor="notes">Observações</Label>
+                <Textarea
+                  id="notes"
+                  value={paymentData.notes}
+                  onChange={(e) => setPaymentData({...paymentData, notes: e.target.value})}
+                  placeholder="Notas sobre o pagamento, informações adicionais..."
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+            Cancelar
+          </Button>
+          <Button 
+            onClick={handleRegisterPayment}
+            disabled={isPaying || paymentData.amount <= 0 || paymentData.amount > Number(selectedBooking?.balance_due || '0')}
+          >
+            {isPaying ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Registrando...
+              </>
+            ) : 'Registrar Pagamento'}
+        </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // Paginação
+  const totalPages = Math.ceil(filteredBookings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentBookings = filteredBookings.slice(startIndex, endIndex);
 
   return (
     <div className="space-y-6">
@@ -224,6 +1064,14 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           <p className="text-sm text-gray-600">{spaceName}</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowExportDialog(true)}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exportar
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -244,77 +1092,27 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       </div>
 
       {/* Filtros */}
-      <Card className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Todos os status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="pending_approval">Aguardando aprovação</SelectItem>
-                <SelectItem value="confirmed">Confirmados</SelectItem>
-                <SelectItem value="cancelled">Cancelados</SelectItem>
-                <SelectItem value="completed">Concluídos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Data</label>
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Todas as datas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="upcoming">Próximas</SelectItem>
-                <SelectItem value="past">Passadas</SelectItem>
-                <SelectItem value="today">Hoje</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Buscar</label>
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar por título, organizador..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
-        </div>
-      </Card>
+      <BookingFilters
+        filters={advancedFilters}
+        onFilterChange={setAdvancedFilters}
+        onClearFilters={() => {
+          setAdvancedFilters({
+            status: 'all',
+            dateRange: 'all',
+            search: '',
+            paymentStatus: 'all',
+            eventType: 'all',
+            minAmount: undefined,
+            maxAmount: undefined,
+            startDate: undefined,
+            endDate: undefined,
+          });
+        }}
+        onApplyFilters={filterBookings}
+      />
 
       {/* Estatísticas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4 text-center">
-          <div className="text-2xl font-bold text-blue-600">{bookings.length}</div>
-          <div className="text-sm text-gray-600">Total de reservas</div>
-        </Card>
-        <Card className="p-4 text-center">
-          <div className="text-2xl font-bold text-green-600">
-            {bookings.filter(b => b.status === 'confirmed').length}
-          </div>
-          <div className="text-sm text-gray-600">Confirmadas</div>
-        </Card>
-        <Card className="p-4 text-center">
-          <div className="text-2xl font-bold text-amber-600">
-            {bookings.filter(b => b.status === 'pending_approval').length}
-          </div>
-          <div className="text-sm text-gray-600">Pendentes</div>
-        </Card>
-        <Card className="p-4 text-center">
-          <div className="text-2xl font-bold text-red-600">
-            {bookings.filter(b => b.status === 'cancelled' || b.status === 'rejected').length}
-          </div>
-          <div className="text-sm text-gray-600">Canceladas/Rejeitadas</div>
-        </Card>
-      </div>
+      <BookingStats stats={stats} />
 
       {/* Lista de reservas */}
       {loading ? (
@@ -335,7 +1133,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
             Nenhuma reserva encontrada
           </h4>
           <p className="text-gray-600">
-            {searchTerm || statusFilter !== 'all' || dateFilter !== 'all'
+            {advancedFilters.search || advancedFilters.status !== 'all' || advancedFilters.dateRange !== 'all'
               ? 'Tente ajustar os filtros'
               : 'Este espaço ainda não tem reservas'}
           </p>
@@ -352,15 +1150,19 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                         <h4 className="font-semibold text-gray-900">{booking.event_title}</h4>
                         <p className="text-sm text-gray-600">
                           {booking.organizer_name} • {booking.organizer_email}
+                          {booking.organizer_phone && ` • ${booking.organizer_phone}`}
                         </p>
                       </div>
-                      {getStatusBadge(booking.status)}
+                      <div className="flex flex-col items-end gap-1">
+                        {getStatusBadge(booking.status)}
+                        {getPaymentStatusBadge(booking.payment_status)}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                       <div>
                         <span className="text-gray-600">Data:</span>
                         <span className="font-medium ml-2">
-                          {formatDate(booking.start_date)} - {formatDate(booking.end_date)}
+                          {formatDateShort(booking.start_date)}
                         </span>
                       </div>
                       <div>
@@ -376,31 +1178,59 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600">Criada em:</span>
+                        <span className="text-gray-600">Saldo:</span>
+                        <span className="font-medium ml-2 text-amber-600">
+                          {formatCurrency(booking.balance_due || '0')}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Criada:</span>
                         <span className="font-medium ml-2">
-                          {formatDate(booking.created_at)}
+                          {formatDateShort(booking.created_at)}
                         </span>
                       </div>
                     </div>
                   </div>
+                  {/* Botões de ação usando componente modular */}
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {/* Abrir detalhes */}}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Detalhes
-                    </Button>
-                    {booking.status === 'pending_approval' && (
-                      <Button
-                        size="sm"
-                        onClick={() => handleConfirmBooking(booking.id)}
-                      >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Confirmar
-                      </Button>
-                    )}
+                    <BookingActions
+                      booking={{
+                        id: booking.id,
+                        status: booking.status as any,
+                        payment_status: booking.payment_status as any,
+                        balance_due: booking.balance_due,
+                        event_title: booking.event_title,
+                      }}
+                      onAction={async (action, data) => {
+                        setSelectedBooking(booking);
+                        switch (action) {
+                          case 'confirm':
+                            await handleConfirmBooking(booking.id);
+                            break;
+                          case 'reject':
+                            await handleRejectBooking(booking.id, data?.reason || '');
+                            break;
+                          case 'cancel':
+                            await handleCancelBooking(booking.id, data?.reason || '');
+                            break;
+                          case 'details':
+                            openBookingDetails(booking);
+                            break;
+                          case 'payments':
+                            openPaymentModal(booking);
+                            break;
+                          case 'edit':
+                            toast({
+                              title: '📝 Editar',
+                              description: 'Funcionalidade de edição em desenvolvimento',
+                            });
+                            break;
+                          default:
+                            console.log('Ação não implementada:', action);
+                        }
+                      }}
+                      compact={true}
+                    />
                   </div>
                 </div>
               </Card>
@@ -438,6 +1268,74 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           )}
         </>
       )}
+
+      {/* Modal de Pagamentos */}
+      <PaymentRegisterModal
+        open={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setSelectedBookingForPayment(null);
+        }}
+        bookingId={selectedBookingForPayment?.id || ''}
+        bookingTitle={selectedBookingForPayment?.event_title}
+        balanceDue={Number(selectedBookingForPayment?.balance_due || 0)}
+        onSuccess={loadBookings}
+      />
+
+      {/* Diálogos */}
+      <BookingDetailsDialog />
+      <PaymentDialog />
+      
+      {/* Diálogo de Exportação */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Exportar Reservas
+            </DialogTitle>
+            <DialogDescription>
+              Selecione o formato para exportação
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid grid-cols-3 gap-4 py-4">
+            <Button
+              variant="outline"
+              className="h-24 flex flex-col gap-2"
+              onClick={() => handleExportBookings('csv')}
+            >
+              <FileSpreadsheet className="h-8 w-8" />
+              <span>CSV</span>
+              <span className="text-xs text-gray-500">Dados estruturados</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-24 flex flex-col gap-2"
+              onClick={() => handleExportBookings('excel')}
+            >
+              <FileSpreadsheet className="h-8 w-8" />
+              <span>Excel</span>
+              <span className="text-xs text-gray-500">Planilha editável</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-24 flex flex-col gap-2"
+              onClick={() => handleExportBookings('pdf')}
+            >
+              <FileText className="h-8 w-8" />
+              <span>PDF</span>
+              <span className="text-xs text-gray-500">Relatório formatado</span>
+            </Button>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

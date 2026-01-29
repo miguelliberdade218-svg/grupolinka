@@ -844,6 +844,141 @@ class ApiService {
     }
   }
 
+  // ====================== 🆕 NOVOS MÉTODOS PARA GESTÃO DE RESERVAS E PAGAMENTOS ======================
+
+  /**
+   * ❌ Rejeitar reserva
+   * Endpoint: POST /api/events/bookings/:id/reject
+   * Para: Gestor rejeitar uma reserva
+   */
+  async rejectEventBooking(bookingId: string, reason: string): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/reject`, { reason });
+      return {
+        success: res.success ?? true,
+        data: res.data ? normalizeEventBooking(res.data) : res.data,
+        message: res.message || 'Reserva rejeitada com sucesso',
+      };
+    } catch (err) {
+      console.error('[rejectEventBooking]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  /**
+   * 🔄 Atualizar status geral da reserva
+   * Endpoint: PUT /api/events/bookings/:id/status
+   * Para: Gestor atualizar status manualmente
+   */
+  async updateEventBookingStatus(
+    bookingId: string,
+    status: string,
+    notes?: string
+  ): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.put<any>(`/api/events/bookings/${bookingId}/status`, { status, notes });
+      return {
+        success: res.success ?? true,
+        data: res.data ? normalizeEventBooking(res.data) : res.data,
+        message: res.message || `Status atualizado para ${status}`,
+      };
+    } catch (err) {
+      console.error('[updateEventBookingStatus]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  /**
+   * 💰 Registrar pagamento manual
+   * Endpoint: POST /api/events/bookings/:id/payments
+   * Para: Gestor registrar pagamentos offline/manuais
+   */
+  async registerEventPayment(
+    bookingId: string,
+    paymentData: {
+      amount: number;
+      paymentMethod: string;
+      referenceNumber: string;
+      notes?: string;
+    }
+  ): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/payments`, paymentData);
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        message: res.message || 'Pagamento manual registrado com sucesso',
+      };
+    } catch (err) {
+      console.error('[registerEventPayment]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  /**
+   * 🔄 Atualizar status de pagamento
+   * Endpoint: PUT /api/events/bookings/:id/payment-status
+   * Para: Gestor atualizar status de pagamento manualmente
+   */
+  async updateEventPaymentStatus(
+    bookingId: string,
+    paymentStatus: string,
+    reference?: string
+  ): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.put<any>(`/api/events/bookings/${bookingId}/payment-status`, { 
+        paymentStatus, 
+        reference 
+      });
+      return {
+        success: res.success ?? true,
+        data: res.data ? normalizeEventBooking(res.data) : res.data,
+        message: res.message || `Status de pagamento atualizado para ${paymentStatus}`,
+      };
+    } catch (err) {
+      console.error('[updateEventPaymentStatus]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  /**
+   * 📋 Detalhes completos (booking + payments + logs)
+   * Endpoint: GET /api/events/bookings/:id/full-details
+   * Para: Página de detalhes da reserva com tudo
+   */
+  async getFullEventBookingDetails(bookingId: string): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.get<any>(`/api/events/bookings/${bookingId}/full-details`);
+      return {
+        success: res.success ?? true,
+        data: res.data ? {
+          booking: normalizeEventBooking(res.data.booking),
+          payments: res.data.payments || [],
+          logs: res.data.logs || [],
+        } : null,
+        message: res.message,
+      };
+    } catch (err) {
+      console.error('[getFullEventBookingDetails]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
   // ====================== 🆕 NOVOS MÉTODOS PARA ENDPOINTS FALTANTES ======================
 
   /**

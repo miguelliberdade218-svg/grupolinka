@@ -159,6 +159,43 @@ const extractEventSpace = (data: any): EventSpace | null => {
   return null;
 };
 
+// ✅ FUNÇÃO AUXILIAR: Normalizar EventBooking - CORRIGIDA para usar organizerName em vez de guestName
+const normalizeEventBooking = (data: any): EventBooking => {
+  if (!data) return data;
+  
+  // Usar normalizeEventBooking do apiService se existir
+  if ((apiService as any).normalizeEventBooking) {
+    return (apiService as any).normalizeEventBooking(data);
+  }
+  
+  // Fallback: mapear campos manualmente
+  return {
+    id: data.id || data.booking_id || '',
+    eventSpaceId: data.eventSpaceId || data.event_space_id || data.spaceId || '',
+    hotelId: data.hotelId || data.hotel_id || '',
+    organizerName: data.organizerName || data.organizer_name || data.guestName || data.guest_name || '', // CORREÇÃO: guestName → organizerName
+    organizerEmail: data.organizerEmail || data.organizer_email || data.guestEmail || data.guest_email || '', // CORREÇÃO: guestEmail → organizerEmail
+    organizerPhone: data.organizerPhone || data.organizer_phone || data.guestPhone || data.guest_phone || null, // CORREÇÃO: guestPhone → organizerPhone
+    eventTitle: data.eventTitle || data.event_title || '',
+    eventDescription: data.eventDescription || data.event_description || null,
+    eventType: data.eventType || data.event_type || '',
+    startDate: data.startDate || data.start_date || '',
+    endDate: data.endDate || data.end_date || '',
+    durationDays: Number(data.durationDays || data.duration_days || 1),
+    expectedAttendees: Number(data.expectedAttendees || data.expected_attendees || 0),
+    cateringRequired: !!data.cateringRequired || !!data.catering_required || false,
+    specialRequests: data.specialRequests || data.special_requests || null,
+    additionalServices: data.additionalServices || data.additional_services || {},
+    basePrice: String(data.basePrice || data.base_price || '0'),
+    totalPrice: String(data.totalPrice || data.total_price || '0'),
+    securityDeposit: String(data.securityDeposit || data.security_deposit || '0'),
+    status: data.status || 'pending_approval',
+    paymentStatus: data.paymentStatus || data.payment_status || 'pending',
+    createdAt: data.createdAt || data.created_at || new Date().toISOString(),
+    updatedAt: data.updatedAt || data.updated_at || new Date().toISOString(),
+  };
+};
+
 class EventSpaceService {
   // ==================== ESPAÇOS ====================
 
@@ -559,7 +596,7 @@ class EventSpaceService {
 
   // ==================== DISPONIBILIDADE (CALENDÁRIO) ====================
 
-  // ✅ NOVO: Wrapper para calendário de disponibilidade
+  // ✅ NOVO: Wrapper para calendário de disponibilidade - CORRIGIDO: priceOverride sem null
   async getCalendar(
     spaceId: string,
     startDate: string,
@@ -577,13 +614,21 @@ class EventSpaceService {
     }
   }
 
-  // ✅ NOVO: Wrapper para atualizar disponibilidade de um dia
+  // ✅ NOVO: Wrapper para atualizar disponibilidade de um dia - CORRIGIDO: priceOverride sem null
   async updateDayAvailability(
     spaceId: string,
-    data: { date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number | null }
+    data: { date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number }
   ): Promise<ServiceResponse<any>> {
     try {
-      const res = await apiService.updateEventSpaceDayAvailability(spaceId, data);
+      // Remover null do priceOverride se existir
+      const cleanData = {
+        date: data.date,
+        isAvailable: data.isAvailable,
+        stopSell: data.stopSell,
+        priceOverride: data.priceOverride !== null && data.priceOverride !== undefined ? data.priceOverride : undefined
+      };
+      
+      const res = await apiService.updateEventSpaceDayAvailability(spaceId, cleanData);
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao atualizar dia' };
       }
@@ -594,17 +639,33 @@ class EventSpaceService {
     }
   }
 
-  // ✅ NOVO: Wrapper para atualização em massa de disponibilidade
+  // ✅ NOVO: Wrapper para atualização em massa de disponibilidade - CORRIGIDO: priceOverride sem null
   async bulkUpdateAvailability(
     spaceId: string,
-    updates: Array<{ date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number | null }>
+    updates: Array<{ date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number }>
   ): Promise<ServiceResponse<{ updated: number; message: string }>> {
     try {
-      const res = await apiService.bulkUpdateEventSpaceAvailability(spaceId, updates);
+      // Remover null de priceOverride em todos os updates
+      const cleanUpdates = updates.map(update => ({
+        date: update.date,
+        isAvailable: update.isAvailable,
+        stopSell: update.stopSell,
+        priceOverride: update.priceOverride !== null && update.priceOverride !== undefined ? update.priceOverride : undefined
+      }));
+      
+      const res = await apiService.bulkUpdateEventSpaceAvailability(spaceId, cleanUpdates);
       if (!res.success) {
         return { success: false, error: res.error || 'Erro na atualização em massa' };
       }
-      return { success: true, data: res.data, message: 'Atualização em massa concluída' };
+      // ✅ CORREÇÃO: Adicionar fallback para message
+      return { 
+        success: true, 
+        data: { 
+          updated: res.data?.updated || cleanUpdates.length,
+          message: res.message || `${cleanUpdates.length} dias atualizados` 
+        }, 
+        message: 'Atualização em massa concluída' 
+      };
     } catch (err: any) {
       console.error('[bulkUpdateAvailability]', err);
       return { success: false, error: err.message || 'Falha na atualização em massa' };
@@ -619,7 +680,7 @@ class EventSpaceService {
     offset = 0
   ): Promise<ServiceResponse<EventSpaceReview[]>> {
     try {
-      const res = await apiService.getEventSpaceReviews(spaceId, limit, offset);
+      const res = await apiService.getEventSpaceReviews(spaceId, { limit, offset });
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao buscar reviews' };
       }
@@ -654,6 +715,146 @@ class EventSpaceService {
     } catch (err: any) {
       console.error('[getBookingPayments]', err);
       return { success: false, error: err.message || 'Erro ao buscar pagamentos' };
+    }
+  }
+
+  // ==================== GESTÃO DE RESERVAS (STATUS) ====================
+
+  async rejectBooking(
+    bookingId: string,
+    reason: string
+  ): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const res = await apiService.post<any>(`/api/events/bookings/${bookingId}/reject`, { reason });
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao rejeitar reserva' };
+      }
+      return { 
+        success: true, 
+        data: normalizeEventBooking(res.data), 
+        message: 'Reserva rejeitada com sucesso' 
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha ao rejeitar reserva' };
+    }
+  }
+
+  async updateBookingStatus(
+    bookingId: string,
+    status: 'confirmed' | 'cancelled' | 'completed' | 'rejected',
+    notes?: string
+  ): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const res = await apiService.put<any>(`/api/events/bookings/${bookingId}/status`, { 
+        status,
+        notes 
+      });
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao atualizar status' };
+      }
+      return { 
+        success: true, 
+        data: normalizeEventBooking(res.data), 
+        message: `Status atualizado para ${status}` 
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha ao atualizar status da reserva' };
+    }
+  }
+
+  // ==================== PAGAMENTOS MANUAIS ====================
+
+  async registerManualPayment(
+    bookingId: string,
+    payload: {
+      amount: number;
+      paymentMethod: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+      referenceNumber: string;
+      notes?: string;
+    }
+  ): Promise<ServiceResponse<any>> {
+    try {
+      const res = await apiService.post<any>(`/api/events/bookings/${bookingId}/payments`, payload);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao registrar pagamento' };
+      }
+      return { 
+        success: true, 
+        data: res.data, 
+        message: 'Pagamento manual registrado com sucesso' 
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha ao registrar pagamento manual' };
+    }
+  }
+
+  async updatePaymentStatus(
+    bookingId: string,
+    paymentStatus: 'pending' | 'partial' | 'paid' | 'refunded' | 'failed' | 'cancelled',
+    reference?: string
+  ): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const res = await apiService.put<any>(`/api/events/bookings/${bookingId}/payment-status`, { 
+        paymentStatus,
+        reference 
+      });
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao atualizar status de pagamento' };
+      }
+      return { 
+        success: true, 
+        data: normalizeEventBooking(res.data), 
+        message: `Pagamento atualizado para ${paymentStatus}` 
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Falha ao atualizar status de pagamento' };
+    }
+  }
+
+  // ==================== DETALHES COMPLETOS (BOOKING + PAGAMENTOS + LOGS) ====================
+
+  async getFullBookingDetails(bookingId: string): Promise<ServiceResponse<any>> {
+    try {
+      const res = await apiService.get<any>(`/api/events/bookings/${bookingId}/full-details`);
+      if (!res.success) {
+        return { success: false, error: res.error || 'Reserva não encontrada' };
+      }
+      return { 
+        success: true, 
+        data: {
+          booking: normalizeEventBooking(res.data.booking),
+          payments: res.data.payments || [],
+          logs: res.data.logs || [],
+        }
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Erro ao obter detalhes completos' };
+    }
+  }
+
+  // ==================== RESUMO FINANCEIRO ====================
+
+  async getHotelFinancialSummary(
+    hotelId: string, 
+    startDate?: string, 
+    endDate?: string
+  ): Promise<ServiceResponse<any>> {
+    try {
+      const params: any = {};
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+      
+      const res = await apiService.get<any>(`/api/events/hotels/${hotelId}/financial-summary`, { params });
+      if (!res.success) {
+        return { success: false, error: res.error || 'Erro ao buscar resumo financeiro' };
+      }
+      return { 
+        success: true, 
+        data: res.data 
+      };
+    } catch (err: any) {
+      console.error('[getHotelFinancialSummary]', err);
+      return { success: false, error: err.message || 'Falha ao buscar resumo financeiro' };
     }
   }
 }

@@ -1,5 +1,6 @@
 // src/apps/hotels-app/pages/hotel-management/HotelManagerDashboard.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'wouter'; // ✅ ADICIONADO: Para navegação
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
@@ -14,6 +15,7 @@ import {
   BarChart3,
   MessageSquare,
   Settings,
+  FileText, // ✅ ADICIONADO: Para ícone de reservas
 } from 'lucide-react';
 import { hotelService, HotelDashboard } from '@/services/hotelService';
 import { useToast } from '@/shared/hooks/use-toast';
@@ -21,19 +23,18 @@ import RoomTypesManagement from '../../components/room-types/RoomTypesManagement
 import EventSpacesManagementModern from '../../components/event-spaces/EventSpacesManagementModern';
 import CreateHotelForm from '../../components/CreateHotelForm';
 import EditHotelForm from '../../components/EditHotelForm';
-import { useActiveHotel } from '@/contexts/ActiveHotelContext'; // ← Import correto direto
-import { convertServiceHotelToSharedHotel } from '@/services/hotelService'; // ← Import da função de conversão
-import { Hotel as SharedHotel } from '@/shared/types/hotels'; // ← Tipo específico
+import { useActiveHotel } from '@/contexts/ActiveHotelContext';
+import { Hotel as SharedHotel } from '@/shared/types/hotels';
 
 /**
  * Dashboard principal do gerenciador de hotéis
  * Mostra estatísticas e permite gerenciar quartos, eventos, reservas e promoções
  */
 const HotelManagerDashboard: React.FC = () => {
-  // CORREÇÃO: Usando import normal do contexto (não mais require)
-  const { activeHotel: contextHotel, isLoading: contextLoading, refreshActiveHotel } = useActiveHotel();
+  const [location, navigate] = useLocation(); // ✅ ADICIONADO: Para navegação
+  const { activeHotel, isLoading: contextLoading, refreshActiveHotel } = useActiveHotel();
 
-    const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
+  const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
@@ -42,10 +43,11 @@ const HotelManagerDashboard: React.FC = () => {
   const [myHotelsCount, setMyHotelsCount] = useState<number>(0);
   const { toast } = useToast();
 
-  // CORREÇÃO: Converter o hotel do contexto para o tipo compartilhado
-  const activeHotel = contextHotel ? convertServiceHotelToSharedHotel(contextHotel) : null;
+  // 🔧 REFS PARA CONTROLE DE LOOP
+  const hasLoadedDashboardRef = useRef(false);
+  const previousHotelIdRef = useRef<string | null>(null);
 
-    // Carrega número de hotéis do usuário
+  // Carrega número de hotéis do usuário (executa apenas uma vez)
   useEffect(() => {
     const loadMyHotelsCount = async () => {
       try {
@@ -63,7 +65,19 @@ const HotelManagerDashboard: React.FC = () => {
 
   // Carrega/re-carrega dashboard quando o hotel ativo mudar
   useEffect(() => {
-    console.log('🔄 Dashboard: Hotel ativo mudou para:', activeHotel?.name || 'nenhum');
+    // 🔧 CORREÇÃO: Verifica se o hotel REALMENTE mudou (comparando IDs)
+    const currentHotelId = activeHotel?.id || null;
+    
+    // Se é o mesmo hotel (mesmo ID) e já carregamos, não recarrega
+    if (currentHotelId === previousHotelIdRef.current && hasLoadedDashboardRef.current) {
+      return;
+    }
+
+    console.log('🔄 Dashboard: Hotel REAL mudou para:', activeHotel?.name || 'nenhum');
+    
+    // Atualiza referências
+    previousHotelIdRef.current = currentHotelId;
+    hasLoadedDashboardRef.current = false;
 
     const loadDashboardData = async () => {
       if (!activeHotel?.id) {
@@ -73,6 +87,8 @@ const HotelManagerDashboard: React.FC = () => {
         return;
       }
 
+      // 🔧 CORREÇÃO: Marca que está carregando para evitar múltiplas chamadas
+      hasLoadedDashboardRef.current = true;
       setLoadingDashboard(true);
       setError(null);
 
@@ -96,7 +112,7 @@ const HotelManagerDashboard: React.FC = () => {
     };
 
     loadDashboardData();
-  }, [activeHotel?.id]); // ← Dependência no hotel convertido
+  }, [activeHotel?.id]);
 
   // Listener para mudanças no localStorage (caso mude em outra aba)
   useEffect(() => {
@@ -138,24 +154,38 @@ const HotelManagerDashboard: React.FC = () => {
   };
 
   // Função chamada quando a edição é bem-sucedida
-  // CORREÇÃO: Agora aceita SharedHotel (tipo compartilhado)
   const handleEditSuccess = (updatedHotel: SharedHotel) => {
     setEditingHotel(false);
-    
-    // O contexto já será atualizado pelo selector ou refresh, mas podemos forçar:
-    refreshActiveHotel();
     
     toast({
       title: 'Hotel atualizado',
       description: 'As alterações foram salvas com sucesso.',
     });
+    
+    // 🔧 CORREÇÃO: Reseta as flags de carregamento para permitir recarga se necessário
+    hasLoadedDashboardRef.current = false;
+    previousHotelIdRef.current = null;
+    
+    // Atualiza o hotel no contexto após um pequeno delay
+    setTimeout(() => {
+      refreshActiveHotel();
+    }, 500);
+  };
+
+  // ✅ NOVAS FUNÇÕES DE NAVEGAÇÃO
+  const handleNavigateToBookings = () => {
+    navigate('/hotels/events/bookings');
+  };
+
+  const handleNavigateToEventsDashboard = () => {
+    navigate('/hotels/events/dashboard');
   };
 
   // Formulário de edição - deve vir ANTES dos outros returns
   if (editingHotel && activeHotel) {
     return (
       <EditHotelForm
-        hotel={activeHotel} // ← Já é do tipo SharedHotel após conversão
+        hotel={activeHotel}
         onSuccess={handleEditSuccess}
         onCancel={() => setEditingHotel(false)}
       />
@@ -256,7 +286,7 @@ const HotelManagerDashboard: React.FC = () => {
   // Dashboard completo com hotel selecionado
   return (
     <div className="space-y-8 p-4 md:p-6">
-            {/* Header com nome do hotel */}
+      {/* Header com nome do hotel */}
       <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-600">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="flex items-start gap-4">
@@ -307,7 +337,7 @@ const HotelManagerDashboard: React.FC = () => {
           <p className="text-xs text-muted-foreground mt-2">próximos 30 dias</p>
         </Card>
 
-                <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-0 shadow-sm hover:shadow-md transition-all">
+        <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-0 shadow-sm hover:shadow-md transition-all">
           <p className="text-sm text-muted-foreground mb-1">Receita Total</p>
           <p className="text-3xl font-bold text-purple-700">
             {dashboard?.total_revenue 
@@ -327,7 +357,7 @@ const HotelManagerDashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* Ações rápidas */}
+      {/* ✅ Ações rápidas MODIFICADAS - Adicionado botões de navegação */}
       <Card className="p-6 bg-white border-0 shadow-sm">
         <h3 className="font-semibold text-lg mb-4">Ações Rápidas</h3>
         <div className="flex flex-wrap gap-3">
@@ -347,8 +377,33 @@ const HotelManagerDashboard: React.FC = () => {
             Adicionar Espaço
           </Button>
 
+          {/* ✅ NOVO: Botão para Dashboard de Eventos */}
           <Button
-            onClick={() => toast({ title: 'Disponibilidade', description: 'Use o gerenciador de quartos por enquanto.', variant: 'default' })}
+            onClick={handleNavigateToEventsDashboard}
+            variant="outline"
+            className="border-green-600 text-green-600 hover:bg-green-50"
+          >
+            <Calendar className="w-4 h-4 mr-2" />
+            Dashboard Eventos
+          </Button>
+
+          {/* ✅ NOVO: Botão para Gestão de Reservas */}
+          <Button
+            onClick={handleNavigateToBookings}
+            variant="outline"
+            className="border-amber-600 text-amber-600 hover:bg-amber-50"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Ver Reservas
+          </Button>
+
+          {/* Botão original de disponibilidade mantido */}
+          <Button
+            onClick={() => toast({ 
+              title: 'Disponibilidade', 
+              description: 'Use o gerenciador de quartos por enquanto.', 
+              variant: 'default' 
+            })}
             variant="outline"
             className="border-blue-600 text-blue-600 hover:bg-blue-50"
           >
@@ -385,9 +440,38 @@ const HotelManagerDashboard: React.FC = () => {
               <h3 className="font-semibold text-dark mb-3">
                 Bem-vindo ao {activeHotel.name}
               </h3>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground mb-4">
                 Aqui você gerencia quartos, espaços de eventos, reservas, promoções e avaliações.
               </p>
+              
+              {/* ✅ NOVO: Cards de navegação rápida no overview */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <Card className="p-4 border border-green-200 hover:border-green-400 transition-colors cursor-pointer" 
+                      onClick={handleNavigateToEventsDashboard}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <Calendar className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Dashboard de Eventos</h4>
+                      <p className="text-sm text-gray-600">Veja estatísticas e reservas de eventos</p>
+                    </div>
+                  </div>
+                </Card>
+                
+                <Card className="p-4 border border-amber-200 hover:border-amber-400 transition-colors cursor-pointer" 
+                      onClick={handleNavigateToBookings}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">Gestão de Reservas</h4>
+                      <p className="text-sm text-gray-600">Gerencie todas as reservas e pagamentos</p>
+                    </div>
+                  </div>
+                </Card>
+              </div>
             </div>
           </TabsContent>
 
