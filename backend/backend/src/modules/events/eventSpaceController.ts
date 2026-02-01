@@ -255,6 +255,34 @@ const processEquipmentField = (equipment: any): any => {
   return {};
 };
 
+// ✅ CORREÇÃO ADICIONADA: Função para normalizar booking para resposta de pagamento
+const normalizeEventBookingForPaymentResponse = (booking: any) => {
+  if (!booking) return null;
+  
+  // Converter de camelCase para snake_case
+  return {
+    id: booking.id,
+    event_space_id: booking.eventSpaceId,
+    hotel_id: booking.hotelId,
+    organizer_name: booking.organizerName,
+    organizer_email: booking.organizerEmail,
+    event_title: booking.eventTitle,
+    event_type: booking.eventType,
+    start_date: booking.startDate,
+    end_date: booking.endDate,
+    expected_attendees: booking.expectedAttendees,
+    total_price: booking.totalPrice || "0",
+    base_price: booking.basePrice || "0",
+    security_deposit: booking.securityDeposit || "0",
+    deposit_paid: booking.depositPaid || "0",
+    balance_due: booking.balanceDue || (booking.totalPrice || "0"), // ✅ Campo crítico
+    status: booking.status || 'pending_approval',
+    payment_status: booking.paymentStatus || 'pending',
+    created_at: booking.createdAt,
+    updated_at: booking.updatedAt,
+  };
+};
+
 // ==================== VALIDATION SCHEMAS (SISTEMA DE DIÁRIAS) ====================
 const createEventSpaceSchema = z.object({
   hotel_id: z.string().uuid({ message: "ID do hotel inválido" }),
@@ -412,7 +440,7 @@ const createEventBookingSchema = z.object({
   special_requests: z.string().optional(),
   additional_services: z.record(z.any()).optional().default({}),
   catering_required: z.boolean().optional().default(false),
-  user_id: z.string().uuid().optional(),
+  user_id: z.string().optional(), // ✅ CORREÇÃO: Não precisa ser UUID, pode ser Firebase UID (string)
   // ✅ REMOVIDO: status e payment_status - sempre controlados pelo backend
 });
 
@@ -1763,30 +1791,47 @@ router.get('/bookings/:bookingId/deposit', verifyFirebaseToken, requireEventBook
   }
 });
 
+// ✅ CORREÇÃO CRÍTICA: Endpoint de pagamentos atualizado (agora com Firebase UIDs)
 router.post('/bookings/:bookingId/payments', verifyFirebaseToken, requireEventBookingAccess, async (req: Request, res: Response) => {
   try {
     const { bookingId } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.id; // ✅ Firebase UID direto
     
     const validated = manualEventPaymentSchema.parse(req.body);
     
+    // Verificar se a reserva existe
     const booking = await getEventBookingById(bookingId);
     if (!booking) {
       return res.status(404).json({ success: false, message: 'Reserva não encontrada' });
     }
     
-    const payment = await eventPaymentService.registerManualEventPayment(bookingId, {
+    // ✅ CORREÇÃO: Passa o userId diretamente (Firebase UID)
+    const result = await eventPaymentService.registerManualEventPayment(bookingId, {
       amount: validated.amount,
       paymentMethod: validated.payment_method,
       referenceNumber: validated.reference,
       paymentType: validated.payment_type,
-      registeredBy: userId,
+      registeredBy: userId, // ✅ Firebase UID direto
+      notes: validated.notes,
     });
+    
+    // ✅ CORREÇÃO: Normalizar booking para resposta
+    const normalizedBooking = normalizeEventBookingForPaymentResponse(result.booking);
     
     res.status(201).json({
       success: true,
       message: 'Pagamento registrado com sucesso',
-      data: payment,
+      data: {
+        paymentId: result.paymentId,
+        booking: normalizedBooking, // ✅ Booking normalizado e atualizado
+        message: result.message,
+        paymentSummary: result.paymentSummary || {
+          totalPrice: toNumber(booking.totalPrice),
+          amountPaid: toNumber(booking.depositPaid),
+          amountDue: toNumber(booking.balanceDue),
+          paymentStatus: booking.paymentStatus,
+        },
+      },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -1796,7 +1841,7 @@ router.post('/bookings/:bookingId/payments', verifyFirebaseToken, requireEventBo
         errors: error.errors,
       });
     }
-    console.error('Erro ao registrar pagamento:', error);
+    console.error('❌ Erro ao registrar pagamento:', error);
     res.status(500).json({
       success: false,
       message: 'Erro ao registrar pagamento: ' + (error as Error).message
@@ -1806,7 +1851,7 @@ router.post('/bookings/:bookingId/payments', verifyFirebaseToken, requireEventBo
 
 router.get('/bookings/:bookingId/receipt', verifyFirebaseToken, requireEventBookingAccess, async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = (req as any).user?.id; // ✅ Firebase UID direto
     
     const booking = await getEventBookingById(req.params.bookingId);
     if (!booking) {
@@ -1823,7 +1868,7 @@ router.get('/bookings/:bookingId/receipt', verifyFirebaseToken, requireEventBook
     }
     
     const lastPayment = payments[0];
-    const receipt = await eventPaymentService.generateEventReceipt(lastPayment.id, userId);
+    const receipt = await eventPaymentService.generateEventReceipt(lastPayment.id, userId); // ✅ Firebase UID direto
     
     res.json({
       success: true,
@@ -1838,14 +1883,14 @@ router.get('/bookings/:bookingId/receipt', verifyFirebaseToken, requireEventBook
   }
 });
 
-// ROTA DE CONFIRMAÇÃO DE PAGAMENTO
+// ✅ CORREÇÃO: ROTA DE CONFIRMAÇÃO DE PAGAMENTO (com Firebase UIDs)
 router.post('/bookings/:bookingId/payments/confirm',
   verifyFirebaseToken,
   requireHotelOwnerForBooking,
   async (req: Request, res: Response) => {
     try {
       const { paymentId } = req.body;
-      const userId = (req as any).user?.id;
+      const userId = (req as any).user?.id; // ✅ Firebase UID direto
       
       if (!paymentId) {
         return res.status(400).json({
@@ -1854,6 +1899,7 @@ router.post('/bookings/:bookingId/payments/confirm',
         });
       }
       
+      // ✅ CORREÇÃO: Passa o userId diretamente (Firebase UID)
       const result = await eventPaymentService.confirmEventPayment(paymentId, userId);
       
       res.json({

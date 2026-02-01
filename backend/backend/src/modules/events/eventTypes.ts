@@ -1,4 +1,4 @@
-// src/modules/events/eventTypes.ts - VERSÃO CORRIGIDA
+// src/modules/events/eventTypes.ts - VERSÃO CORRIGIDA (SISTEMA DE DIÁRIAS)
 
 export interface EventSpaceDetails {
   space: {
@@ -8,37 +8,32 @@ export interface EventSpaceDetails {
     description: string | null;
     capacityMin: number;
     capacityMax: number;
-    basePriceHourly: string | null;
-    basePriceHalfDay: string | null;
-    basePriceFullDay: string | null;
-    pricePerHour: string | null;
-    pricePerDay: string | null;
-    pricePerEvent: string | null;
+    // ✅ CORREÇÃO: Campo correto para sistema diário
+    basePricePerDay: string;
     weekendSurchargePercent: number | null;
     areaSqm: number | null;
     amenities: string[] | null;
-    eventTypes: string[] | null;
+    allowedEventTypes: string[] | null;
+    prohibitedEventTypes: string[] | null;
     images: string[] | null;
     spaceType: string | null;
-    ceilingHeight: string | null;
     naturalLight: boolean | null;
     hasStage: boolean | null;
-    stageDimensions: string | null;
     loadingAccess: boolean | null;
     dressingRooms: number | null;
     securityDeposit: string | null;
     insuranceRequired: boolean | null;
-    maxDurationHours: number | null;
-    minBookingHours: number | null;
     noiseRestriction: string | null;
     alcoholAllowed: boolean | null;
-    includesCatering: boolean | null;
-    includesFurniture: boolean | null;
-    includesCleaning: boolean | null;
-    includesSecurity: boolean | null;
     floorPlanImage: string | null;
     virtualTourUrl: string | null;
     approvalRequired: boolean | null;
+    // ✅ CORREÇÃO: Campos de catering (sistema diário)
+    offersCatering: boolean;
+    cateringDiscountPercent: number;
+    cateringMenuUrls: string[];
+    equipment: any;
+    setupOptions: string[] | null;
     slug: string | null;
     isActive: boolean | null;
     isFeatured: boolean | null;
@@ -52,23 +47,37 @@ export interface EventSpaceDetails {
     lat: string | null;
     lng: string | null;
     locationGeom: any;
-    distanceFromCenterKm: string | null;
-    popularityScore: number | null;
     capacityTheater: number | null;
     capacityClassroom: number | null;
     capacityBanquet: number | null;
     capacityStanding: number | null;
     capacityCocktail: number | null;
-    allowedEventTypes: string[] | null;
-    prohibitedEventTypes: string[] | null;
-    equipment: any;
-    setupOptions: string[] | null;
+    mainImage: string | null;
+    termsAndRules: string | null;
+    // ✅ REMOVIDO: Campos do sistema horário
+    // basePriceHourly: string | null;
+    // basePriceHalfDay: string | null;
+    // basePriceFullDay: string | null;
+    // pricePerHour: string | null;
+    // pricePerDay: string | null;
+    // pricePerEvent: string | null;
+    // ceilingHeight: string | null;
+    // stageDimensions: string | null;
+    // maxDurationHours: number | null;
+    // minBookingHours: number | null;
+    // includesCatering: boolean | null;
+    // includesFurniture: boolean | null;
+    // includesCleaning: boolean | null;
+    // includesSecurity: boolean | null;
+    // distanceFromCenterKm: string | null;
+    // popularityScore: number | null;
   };
   hotel: any;
   basePrice?: string | null;
-  priceHalfDay?: string | null;
-  priceFullDay?: string | null;
-  pricePerHour?: string | null;
+  // ✅ REMOVIDO: Campos do sistema horário
+  // priceHalfDay?: string | null;
+  // priceFullDay?: string | null;
+  // pricePerHour?: string | null;
 }
 
 export interface CreateEventSpaceInput {
@@ -77,37 +86,32 @@ export interface CreateEventSpaceInput {
   description?: string;
   capacityMin: number;
   capacityMax: number;
-  basePriceHourly?: string | null;
-  basePriceHalfDay?: string | null;
-  basePriceFullDay?: string | null;
-  pricePerHour?: string | null;
-  pricePerDay?: string | null;
-  pricePerEvent?: string | null;
+  // ✅ CORREÇÃO: Campo correto para sistema diário
+  basePricePerDay: string;
   weekendSurchargePercent?: number;
   areaSqm?: number | null;
   amenities?: string[] | null;
-  eventTypes?: string[] | null;
+  allowedEventTypes?: string[] | null;
+  prohibitedEventTypes?: string[] | null;
   images?: string[] | null;
   spaceType?: string | null;
-  ceilingHeight?: string | null;
   naturalLight?: boolean;
   hasStage?: boolean;
-  stageDimensions?: string | null;
   loadingAccess?: boolean;
   dressingRooms?: number | null;
   securityDeposit?: string | null;
   insuranceRequired?: boolean;
-  maxDurationHours?: number | null;
-  minBookingHours?: number | null;
   noiseRestriction?: string | null;
   alcoholAllowed?: boolean;
-  includesCatering?: boolean;
-  includesFurniture?: boolean;
-  includesCleaning?: boolean;
-  includesSecurity?: boolean;
+  // ✅ CORREÇÃO: Campos de catering (sistema diário)
+  offersCatering?: boolean;
+  cateringDiscountPercent?: number;
+  cateringMenuUrls?: string[];
   floorPlanImage?: string | null;
   virtualTourUrl?: string | null;
   approvalRequired?: boolean;
+  equipment?: any;
+  setupOptions?: string[] | null;
   slug?: string | null;
   isActive?: boolean;
   isFeatured?: boolean;
@@ -118,77 +122,141 @@ export interface CreateEventSpaceInput {
   managedByHotelManagerId?: string | null;
   lat?: string | null;
   lng?: string | null;
-  distanceFromCenterKm?: string | null;
-  popularityScore?: number | null;
   capacityTheater?: number | null;
   capacityClassroom?: number | null;
   capacityBanquet?: number | null;
   capacityStanding?: number | null;
   capacityCocktail?: number | null;
-  allowedEventTypes?: string[] | null;
-  prohibitedEventTypes?: string[] | null;
-  equipment?: any;
-  setupOptions?: string[] | null;
+  mainImage?: string | null;
+  termsAndRules?: string | null;
+  // ✅ REMOVIDO: Campos do sistema horário
+  // basePriceHourly?: string | null;
+  // basePriceHalfDay?: string | null;
+  // basePriceFullDay?: string | null;
+  // pricePerHour?: string | null;
+  // pricePerDay?: string | null;
+  // pricePerEvent?: string | null;
+  // ceilingHeight?: string | null;
+  // stageDimensions?: string | null;
+  // maxDurationHours?: number | null;
+  // minBookingHours?: number | null;
+  // includesCatering?: boolean;
+  // includesFurniture?: boolean;
+  // includesCleaning?: boolean;
+  // includesSecurity?: boolean;
+  // distanceFromCenterKm?: string | null;
+  // popularityScore?: number | null;
 }
 
-// Tipo para criar reserva - deve corresponder EXATAMENTE ao serviço
+// ✅ CORREÇÃO COMPLETA: Tipo para criar reserva no SISTEMA DE DIÁRIAS
 export interface CreateEventBookingInput {
   eventSpaceId: string;
   hotelId: string;
   organizerName: string;
   organizerEmail: string;
-  organizerPhone?: string | undefined;  // ✅ CORRIGIDO: apenas string | undefined (não null)
-  companyName?: string | undefined;     // ✅ CORRIGIDO: apenas string | undefined (não null)
+  organizerPhone?: string | undefined;
   eventTitle: string;
-  eventDescription?: string | undefined; // ✅ CORRIGIDO: apenas string | undefined
+  eventDescription?: string | undefined;
   eventType: string;
-  startDatetime: string;
-  endDatetime: string;
+  // ✅ CORREÇÃO: Usar startDate e endDate (sistema diário)
+  startDate: string;  // YYYY-MM-DD
+  endDate: string;    // YYYY-MM-DD
   expectedAttendees: number;
-  specialRequests?: string | undefined;  // ✅ CORRIGIDO: apenas string | undefined
+  specialRequests?: string | undefined;
   additionalServices?: any;
-  setupTimeStart?: string | undefined;   // ✅ CORRIGIDO: apenas string | undefined
-  teardownTimeEnd?: string | undefined;  // ✅ CORRIGIDO: apenas string | undefined
-  staffRequired?: number | undefined;
-  setupConfiguration?: string | undefined;
-  specialSetupRequirements?: string | undefined;
+  // ✅ CORREÇÃO: Campo cateringRequired (sistema diário)
   cateringRequired?: boolean;
-  avEquipmentRequired?: boolean;
-  securityRequired?: boolean;
-  cleaningRequired?: boolean;
-  durationHours?: string;  // ✅ APENAS string
-  basePrice?: string;      // ✅ APENAS string
-  equipmentFees?: string | undefined;
-  serviceFees?: string | undefined;
-  weekendSurcharge?: string | undefined;
+  durationDays?: string;
+  basePrice?: string;
+  totalPrice?: string;
   securityDeposit?: string | undefined;
-  totalPrice?: string;     // ✅ APENAS string
   depositPaid?: string | undefined;
   balanceDue?: string | undefined;
   userId?: string;
-  status?: string;
-  paymentStatus?: string;
+  // ✅ CORREÇÃO: Status controlado pelo backend
+  status?: 'pending_approval' | 'confirmed' | 'cancelled' | 'rejected' | 'completed';
+  paymentStatus?: 'pending' | 'partial' | 'paid' | 'failed' | 'refunded';
   paymentReference?: string | undefined;
   invoiceNumber?: string | undefined;
   cancellationReason?: string | undefined;
   cancelledAt?: Date | undefined;
   confirmedAt?: Date | undefined;
-  reminderSent?: boolean;
-  lastReminderSent?: Date | undefined;
-  reminderType?: string | undefined;
-  reminderCount?: number | undefined;
-  contractSigned?: boolean;
-  contractUrl?: string | undefined;
-  termsAccepted?: boolean;
+  // ✅ REMOVIDO: Campos do sistema horário
+  // startDatetime: string;
+  // endDatetime: string;
+  // companyName?: string | undefined;
+  // setupTimeStart?: string | undefined;
+  // teardownTimeEnd?: string | undefined;
+  // staffRequired?: number | undefined;
+  // setupConfiguration?: string | undefined;
+  // specialSetupRequirements?: string | undefined;
+  // avEquipmentRequired?: boolean;
+  // securityRequired?: boolean;
+  // cleaningRequired?: boolean;
+  // equipmentFees?: string | undefined;
+  // serviceFees?: string | undefined;
+  // weekendSurcharge?: string | undefined;
+  // reminderSent?: boolean;
+  // lastReminderSent?: Date | undefined;
+  // reminderType?: string | undefined;
+  // reminderCount?: number | undefined;
+  // contractSigned?: boolean;
+  // contractUrl?: string | undefined;
+  // termsAccepted?: boolean;
+}
+
+// ✅ CORREÇÃO: Interface para EventBooking completo (usado em queries)
+export interface EventBookingType {
+  id: string;
+  eventSpaceId: string;
+  hotelId: string;
+  organizerName: string;
+  organizerEmail: string;
+  organizerPhone?: string;
+  eventTitle: string;
+  eventDescription?: string;
+  eventType: string;
+  // ✅ CORREÇÃO: Campos de data no sistema diário
+  startDate: string;  // YYYY-MM-DD
+  endDate: string;    // YYYY-MM-DD
+  durationDays: number;
+  expectedAttendees: number;
+  specialRequests?: string;
+  additionalServices?: any;
+  // ✅ CORREÇÃO: Campo cateringRequired
+  cateringRequired: boolean;
+  basePrice: string;
+  totalPrice: string;
+  securityDeposit: string;
+  depositPaid: string;
+  balanceDue: string;
+  status: 'pending_approval' | 'confirmed' | 'cancelled' | 'rejected' | 'completed';
+  paymentStatus: 'pending' | 'partial' | 'paid' | 'failed' | 'refunded';
+  paymentReference?: string;
+  invoiceNumber?: string;
+  cancellationReason?: string;
+  cancelledAt?: Date;
+  userId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  // ✅ REMOVIDO: Campos do sistema horário
+  // startDatetime: string;
+  // endDatetime: string;
+  // equipmentFees: string;
+  // serviceFees: string;
+  // weekendSurcharge: string;
 }
 
 export interface SearchEventSpaceResult {
   space: EventSpaceDetails['space'];
   hotel: any;
-  basePrice?: string | null;
-  priceHalfDay?: string | null;
-  priceFullDay?: string | null;
-  pricePerHour?: string | null;
+  // ✅ CORREÇÃO: Preço no sistema diário
+  basePricePerDay?: string;
+  // ✅ REMOVIDO: Campos do sistema horário
+  // basePrice?: string | null;
+  // priceHalfDay?: string | null;
+  // priceFullDay?: string | null;
+  // pricePerHour?: string | null;
 }
 
 export interface TimeSlot {
@@ -201,12 +269,45 @@ export interface TimeSlot {
 export interface EventAvailability {
   id?: string;
   eventSpaceId: string;
-  date: Date;
+  date: Date | string;  // ✅ Aceita Date ou string (YYYY-MM-DD)
   isAvailable: boolean;
   stopSell: boolean;
   priceOverride?: string | null;
-  minBookingHours?: number;
+  // ✅ CORREÇÃO CRÍTICA: Mudado para minBookingHoursDefault (consistente com banco)
+  minBookingHoursDefault?: number;  // ✅ CORREÇÃO: "Default" adicionado
   slots?: TimeSlot[];
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+// ✅ ADICIONADO: Interface para resposta de criação de booking
+export interface CreateEventBookingResponse {
+  success: boolean;
+  message: string;
+  data?: EventBookingType;
+}
+
+// ✅ ADICIONADO: Interface para pagamento manual de evento
+export interface ManualEventPaymentInput {
+  amount: number;
+  paymentMethod: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+  reference: string;
+  notes?: string;
+  paymentType?: string;
+}
+
+// ✅ ADICIONADO: Interface para confirmação de booking
+export interface ConfirmEventBookingInput {
+  bookingId: string;
+  notes?: string;
+  confirmedBy: string;
+}
+
+// ✅ ADICIONADO: Interface para resposta da API
+export interface ApiResponse<T = any> {
+  success: boolean;
+  message?: string;
+  data?: T;
+  error?: string;
+  errors?: Array<{ path: string; message: string }>;
 }

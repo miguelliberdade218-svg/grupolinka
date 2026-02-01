@@ -1,5 +1,7 @@
 // src/apps/hotels-app/components/event-spaces/BookingActions.tsx
-import React, { useState } from 'react';
+// ✅ VERSÃO CORRIGIDA - 26/01/2026 - COM STATUS REAIS DO BACKEND
+
+import React, { useState, useCallback } from 'react';
 import { Button } from '@/shared/components/ui/button';
 import {
   AlertDialog,
@@ -23,32 +25,32 @@ import {
   FileText,
   RefreshCw,
   AlertTriangle,
-  Clock,
-  CheckSquare,
-  PlayCircle,
-  PauseCircle,
 } from 'lucide-react';
 import { useToast } from '@/shared/hooks/use-toast';
 import type { PaymentStatusType } from '@/shared/types/event-spaces';
 import { PaymentRegisterModal } from './PaymentRegisterModal';
+import { eventSpaceService } from '@/services/eventSpaceService';
 
+// ✅ CORREÇÃO: Interface atualizada apenas com status reais do backend
 interface BookingActionsProps {
   booking: {
     id: string;
-    status: 'pending_approval' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected';
+    status: 'pending_approval' | 'confirmed' | 'cancelled' | 'rejected'; // ✅ APENAS ESTES
     payment_status?: PaymentStatusType;
     balance_due?: string | number;
+    deposit_paid?: string | number;
+    total_price?: string | number;
     event_title?: string;
     organizer_name?: string;
     start_date?: string;
     end_date?: string;
   };
-  onAction: (action: string, data?: { reason?: string; notes?: string }) => Promise<void>;
+  onAction?: (action: string, data?: { reason?: string; notes?: string }) => Promise<void>;
   showDetails?: boolean;
   showPayments?: boolean;
   showEdit?: boolean;
   compact?: boolean;
-  onActionSuccess?: () => void; // Novo prop para recarregar dados após ação
+  onActionSuccess?: () => void; // ✅ ADICIONADO para atualização de UI
 }
 
 export const BookingActions: React.FC<BookingActionsProps> = ({
@@ -58,25 +60,43 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
   showPayments = true,
   showEdit = true,
   compact = false,
-  onActionSuccess,
+  onActionSuccess, // ✅ CORREÇÃO: Receber callback de sucesso
 }) => {
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-  const [showStartDialog, setShowStartDialog] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false); // Novo estado para o modal de pagamentos
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [actionReason, setActionReason] = useState('');
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // ✅ CORREÇÃO: Calcular balance corretamente
+  const calculateBalance = useCallback(() => {
+    const balance = Number(booking.balance_due || 0);
+    return balance > 0 ? balance : 0;
+  }, [booking.balance_due]);
+
+  // ✅ CORREÇÃO: Usar useCallback para evitar re-renders desnecessários
+  const handlePaymentSuccess = useCallback(() => {
+    if (onActionSuccess) {
+      onActionSuccess();
+    }
+    setShowPaymentModal(false);
+    toast({
+      title: '✅ Sucesso',
+      description: 'Pagamento registrado com sucesso',
+      variant: 'success',
+    });
+  }, [onActionSuccess]);
+
+  const hasBalance = calculateBalance() > 0;
+  const isPendingPayment = booking.payment_status === 'pending' || booking.payment_status === 'partial';
+
+  // ✅ CORREÇÃO: Apenas ações suportadas pelo backend
   const getActionSuccessMessage = (action: string) => {
     const messages: Record<string, string> = {
       confirm: 'Reserva confirmada com sucesso',
       reject: 'Reserva rejeitada',
       cancel: 'Reserva cancelada',
-      complete: 'Evento concluído',
-      start: 'Evento iniciado',
-      pause: 'Evento pausado',
       payments: 'Abrindo gestão de pagamentos...',
       edit: 'Abrindo edição...',
       details: 'Detalhes carregados',
@@ -85,14 +105,12 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
     return messages[action] || 'Ação realizada com sucesso';
   };
 
+  // ✅ CORREÇÃO: Apenas ações suportadas pelo backend
   const getActionErrorMessage = (action: string, errorMsg?: string) => {
     const messages: Record<string, string> = {
       confirm: 'Falha ao confirmar reserva',
       reject: 'Falha ao rejeitar reserva',
       cancel: 'Falha ao cancelar reserva',
-      complete: 'Falha ao concluir evento',
-      start: 'Falha ao iniciar evento',
-      pause: 'Falha ao pausar evento',
       payments: 'Falha ao abrir pagamentos',
       edit: 'Falha ao abrir edição',
       details: 'Falha ao carregar detalhes',
@@ -101,10 +119,11 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
     return errorMsg || messages[action] || 'Falha ao realizar ação';
   };
 
+  // ✅ CORREÇÃO: HandleAction simplificado apenas para ações suportadas
   const handleAction = async (action: string, data?: { reason?: string; notes?: string }) => {
     setLoadingAction(action);
+    
     try {
-      // Caso especial para a ação de pagamentos
       if (action === 'payments') {
         setShowPaymentModal(true);
         toast({
@@ -112,17 +131,70 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
           description: getActionSuccessMessage(action),
           variant: 'success',
         });
-        return; // Não chama onAction para pagamentos
+        return;
+      }
+      
+      let result;
+      
+      switch (action) {
+        case 'confirm':
+          result = await eventSpaceService.confirmBooking(booking.id);
+          break;
+        
+        case 'reject':
+          if (!data?.reason || data.reason.trim().length < 5) {
+            throw new Error('Motivo obrigatório (mínimo 5 caracteres)');
+          }
+          result = await eventSpaceService.rejectBooking(booking.id, data.reason);
+          break;
+        
+        case 'cancel':
+          result = await eventSpaceService.cancelBooking(
+            booking.id, 
+            data?.reason || 'Cancelado pelo gestor'
+          );
+          break;
+        
+        case 'edit':
+        case 'details':
+        case 'review':
+          if (onAction) {
+            await onAction(action, data);
+          }
+          break;
+        
+        default:
+          if (onAction) {
+            await onAction(action, data);
+          } else {
+            throw new Error(`Ação não suportada: ${action}`);
+          }
       }
 
-      // Para outras ações, chama a função onAction normalmente
-      await onAction(action, data);
+      if (result && !result.success) {
+        throw new Error(result.error || `Falha na ação ${action}`);
+      }
+
       toast({
         title: '✅ Sucesso',
         description: getActionSuccessMessage(action),
         variant: 'success',
       });
+
+      // ✅ CORREÇÃO CRÍTICA: Chamar onActionSuccess para atualizar UI
+      if (onActionSuccess) {
+        console.log('📞 Chamando onActionSuccess para ação:', action);
+        onActionSuccess();
+      } else {
+        console.warn('⚠️ onActionSuccess não definido! UI não atualizará.');
+      }
+
+      if (onAction && !['payments', 'edit', 'details', 'review'].includes(action)) {
+        await onAction(action, data);
+      }
+
     } catch (error: any) {
+      console.error(`Erro na ação ${action}:`, error);
       toast({
         title: '❌ Erro',
         description: getActionErrorMessage(action, error.message),
@@ -131,18 +203,15 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
     } finally {
       setLoadingAction(null);
       setActionReason('');
-      // Fechar todos os diálogos (exceto o modal de pagamentos)
       setShowRejectDialog(false);
       setShowCancelDialog(false);
-      setShowCompleteDialog(false);
-      setShowStartDialog(false);
     }
   };
 
+  // ✅ CORREÇÃO: getStatusActions simplificado para status reais
   const getStatusActions = () => {
     const actions = [];
 
-    // Ações baseadas no status
     switch (booking.status) {
       case 'pending_approval':
         actions.push(
@@ -182,23 +251,7 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
         break;
 
       case 'confirmed':
-        actions.push(
-          <Button
-            key="start"
-            size={compact ? "sm" : "default"}
-            onClick={() => setShowStartDialog(true)}
-            disabled={loadingAction === 'start'}
-            className="bg-blue-600 hover:bg-blue-700"
-            aria-label="Iniciar evento"
-          >
-            {loadingAction === 'start' ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-            ) : (
-              <PlayCircle className="h-4 w-4 mr-2" aria-hidden="true" />
-            )}
-            {!compact && 'Iniciar Evento'}
-          </Button>
-        );
+        // ✅ APENAS cancelar para confirmed (backend não suporta in_progress/completed)
         actions.push(
           <Button
             key="cancel"
@@ -217,105 +270,57 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
           </Button>
         );
         break;
+    }
 
-      case 'in_progress':
+    // Botões comuns a todos os status (exceto finais)
+    if (!['cancelled', 'rejected'].includes(booking.status)) {
+      if (showDetails) {
         actions.push(
           <Button
-            key="complete"
-            size={compact ? "sm" : "default"}
-            onClick={() => setShowCompleteDialog(true)}
-            disabled={loadingAction === 'complete'}
-            className="bg-purple-600 hover:bg-purple-700"
-            aria-label="Concluir evento"
-          >
-            {loadingAction === 'complete' ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-            ) : (
-              <CheckSquare className="h-4 w-4 mr-2" aria-hidden="true" />
-            )}
-            {!compact && 'Concluir'}
-          </Button>
-        );
-        actions.push(
-          <Button
-            key="pause"
+            key="details"
             variant="outline"
             size={compact ? "sm" : "default"}
-            onClick={() => handleAction('pause')}
-            disabled={loadingAction === 'pause'}
-            aria-label="Pausar evento"
+            onClick={() => handleAction('details')}
+            aria-label="Ver detalhes"
           >
-            {loadingAction === 'pause' ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-            ) : (
-              <PauseCircle className="h-4 w-4 mr-2" aria-hidden="true" />
-            )}
-            {!compact && 'Pausar'}
+            <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
+            {!compact && 'Detalhes'}
           </Button>
         );
-        break;
-
-      case 'completed':
+      }
+      
+      if (showPayments && (hasBalance || isPendingPayment)) {
+        const balance = calculateBalance();
         actions.push(
           <Button
-            key="review"
-            variant="outline"
+            key="payments"
+            variant={hasBalance ? "default" : "outline"}
             size={compact ? "sm" : "default"}
-            onClick={() => handleAction('review')}
-            disabled={loadingAction === 'review'}
-            aria-label="Avaliar evento"
+            onClick={() => handleAction('payments')}
+            aria-label="Gerenciar pagamentos"
+            className={hasBalance ? "bg-amber-600 hover:bg-amber-700" : ""}
+            title={hasBalance ? `Saldo pendente: ${balance.toFixed(2)} MTn` : 'Gerenciar pagamentos'}
           >
-            <FileText className="h-4 w-4 mr-2" aria-hidden="true" />
-            {!compact && 'Avaliar'}
+            <CreditCard className="h-4 w-4 mr-2" aria-hidden="true" />
+            {!compact && (hasBalance ? `Pagar (${balance.toFixed(2)} MTn)` : 'Pagamentos')}
           </Button>
         );
-        break;
-    }
-
-    // Ações sempre disponíveis
-    if (showDetails) {
-      actions.push(
-        <Button
-          key="details"
-          variant="outline"
-          size={compact ? "sm" : "default"}
-          onClick={() => handleAction('details')}
-          aria-label="Ver detalhes"
-        >
-          <Eye className="h-4 w-4 mr-2" aria-hidden="true" />
-          {!compact && 'Detalhes'}
-        </Button>
-      );
-    }
-
-    if (showPayments && Number(booking.balance_due || 0) > 0) {
-      actions.push(
-        <Button
-          key="payments"
-          variant="outline"
-          size={compact ? "sm" : "default"}
-          onClick={() => handleAction('payments')}
-          aria-label="Gerenciar pagamentos"
-        >
-          <CreditCard className="h-4 w-4 mr-2" aria-hidden="true" />
-          {!compact && 'Pagamentos'}
-        </Button>
-      );
-    }
-
-    if (showEdit && ['pending_approval', 'confirmed'].includes(booking.status)) {
-      actions.push(
-        <Button
-          key="edit"
-          variant="outline"
-          size={compact ? "sm" : "default"}
-          onClick={() => handleAction('edit')}
-          aria-label="Editar reserva"
-        >
-          <Edit className="h-4 w-4 mr-2" aria-hidden="true" />
-          {!compact && 'Editar'}
-        </Button>
-      );
+      }
+      
+      if (showEdit && ['pending_approval', 'confirmed'].includes(booking.status)) {
+        actions.push(
+          <Button
+            key="edit"
+            variant="outline"
+            size={compact ? "sm" : "default"}
+            onClick={() => handleAction('edit')}
+            aria-label="Editar reserva"
+          >
+            <Edit className="h-4 w-4 mr-2" aria-hidden="true" />
+            {!compact && 'Editar'}
+          </Button>
+        );
+      }
     }
 
     return actions;
@@ -327,25 +332,14 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
         {getStatusActions()}
       </div>
 
-      {/* Modal de Pagamentos */}
+      {/* ✅ CORREÇÃO: No retorno do componente */}
       <PaymentRegisterModal
         open={showPaymentModal}
         onClose={() => setShowPaymentModal(false)}
         bookingId={booking.id}
         bookingTitle={booking.event_title || `Reserva ${booking.id}`}
-        balanceDue={Number(booking.balance_due || 0)}
-        onSuccess={() => {
-          // Recarregar dados da reserva ou lista
-          if (onActionSuccess) onActionSuccess();
-          // Fechar o modal
-          setShowPaymentModal(false);
-          // Mostrar mensagem de sucesso
-          toast({
-            title: '✅ Sucesso',
-            description: 'Pagamento registrado com sucesso',
-            variant: 'success',
-          });
-        }}
+        balanceDue={calculateBalance()} // ✅ Usar função calculada
+        onSuccess={handlePaymentSuccess} // ✅ Usar callback otimizado
       />
 
       {/* Diálogo de Rejeição */}
@@ -365,7 +359,7 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
             <Label htmlFor="rejectReason">Motivo da Rejeição *</Label>
             <Textarea
               id="rejectReason"
-              placeholder="Descreva o motivo da rejeição (mínimo 10 caracteres)..."
+              placeholder="Descreva o motivo da rejeição (mínimo 5 caracteres)..."
               value={actionReason}
               onChange={(e) => setActionReason(e.target.value)}
               rows={3}
@@ -376,7 +370,7 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => handleAction('reject', { reason: actionReason })}
-              disabled={!actionReason.trim() || actionReason.trim().length < 10}
+              disabled={!actionReason.trim() || actionReason.trim().length < 5}
               className="bg-red-600 hover:bg-red-700"
             >
               Confirmar Rejeição
@@ -415,76 +409,6 @@ export const BookingActions: React.FC<BookingActionsProps> = ({
               className="bg-amber-600 hover:bg-amber-700"
             >
               Confirmar Cancelamento
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Diálogo de Conclusão */}
-      <AlertDialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-purple-600">
-              <CheckSquare className="h-5 w-5" />
-              Concluir Evento
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Marcar o evento "{booking.event_title || booking.id}" como concluído?
-              Esta ação finalizará o evento e permitirá avaliações.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-4">
-            <Label htmlFor="completeNotes">Observações (opcional)</Label>
-            <Textarea
-              id="completeNotes"
-              placeholder="Observações sobre a conclusão do evento..."
-              value={actionReason}
-              onChange={(e) => setActionReason(e.target.value)}
-              rows={2}
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Voltar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => handleAction('complete', { notes: actionReason })}
-              className="bg-purple-600 hover:bg-purple-700"
-            >
-              Confirmar Conclusão
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Diálogo de Início */}
-      <AlertDialog open={showStartDialog} onOpenChange={setShowStartDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-blue-600">
-              <PlayCircle className="h-5 w-5" />
-              Iniciar Evento
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Iniciar o evento "{booking.event_title || booking.id}"? 
-              O status será alterado para "Em andamento".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-4">
-            <Label htmlFor="startNotes">Observações (opcional)</Label>
-            <Textarea
-              id="startNotes"
-              placeholder="Observações sobre o início do evento..."
-              value={actionReason}
-              onChange={(e) => setActionReason(e.target.value)}
-              rows={2}
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Voltar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => handleAction('start', { notes: actionReason })}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Iniciar Evento
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,21 +1,22 @@
 /**
  * src/apps/hotels-app/components/event-spaces/EventSpacesManagementModern.tsx
- * Gerenciamento moderno de espaços de eventos - VERSÃO FINAL CORRIGIDA 27/01/2026
+ * Gerenciamento moderno de espaços de eventos - VERSÃO FINAL CORRIGIDA 28/01/2026
+ * ✅ ATUALIZADO: Inclui EventSpaceSelector para gestão de espaço ativo
+ * ✅ NOVO: Adicionado botão Dashboard no Espaço Ativo com feedback de loading
+ * ✅ MELHORADO: Feedback visual ao navegar para dashboard
  * Alinhado com eventSpaceService e shared/types/event-spaces.ts
  * CORRIGIDO: Implementa delete real, edição real, debounce, fallback imagem, acessibilidade
- * ✅ CORREÇÃO FINAL: Modal de disponibilidade SEM Dialog wrapper
- * ✅ NOVA CORREÇÃO: Navegação para página de reservas/pagamentos
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useLocation } from 'wouter'; // ✅ ADICIONADO: Para navegação
+import { useLocation } from 'wouter';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { Input } from '@/shared/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import {
-  Loader2,
+  Loader2, // ✅ NOVO: Import para loading
   Plus,
   Edit,
   Trash,
@@ -29,22 +30,26 @@ import {
   Building,
   Star,
   Eye,
+  Target,
+  BarChart3,
 } from 'lucide-react';
 import { eventSpaceService } from '@/services/eventSpaceService';
 import { useToast } from '@/shared/hooks/use-toast';
-import type { EventSpace, EventBooking } from '@/shared/types/event-spaces';
+import type { EventSpace } from '@/shared/types/event-spaces';
 import CreateEventSpaceFormModern from './CreateEventSpaceFormModern';
 import EditEventSpaceFormModern from './EditEventSpaceFormModern';
 import EventSpaceAvailabilityCalendar from './EventSpaceAvailabilityCalendar';
 import EventSpaceBookingsList from './EventSpaceBookingsList';
 import EventSpaceReviewsList from './EventSpaceReviewsList';
+import { EventSpaceSelector } from './EventSpaceSelector';
+import { useActiveEventSpace } from '@/contexts/ActiveEventSpaceContext';
 
 interface EventSpacesManagementProps {
   hotelId: string;
 }
 
 export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> = ({ hotelId }) => {
-  const [location, navigate] = useLocation(); // ✅ ADICIONADO: Para navegação
+  const [location, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState('list');
   const [spaces, setSpaces] = useState<EventSpace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +60,11 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const { toast } = useToast();
 
+  // ✅ NOVO: Estado para feedback de loading do dashboard
+  const [loadingDashboard, setLoadingDashboard] = useState<string | null>(null);
+
+  const { activeEventSpace, setActiveEventSpace } = useActiveEventSpace();
+
   // ✅ Estados para modais
   const [selectedSpaceForAvailability, setSelectedSpaceForAvailability] = useState<EventSpace | null>(null);
   const [selectedSpaceForBookings, setSelectedSpaceForBookings] = useState<EventSpace | null>(null);
@@ -63,7 +73,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   const [showBookingsModal, setShowBookingsModal] = useState(false);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
 
-  // ✅ 4. DEBOUNCE NA BUSCA
+  // ✅ DEBOUNCE NA BUSCA
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
@@ -85,6 +95,10 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
       const res = await eventSpaceService.getEventSpacesByHotel(hotelId, false);
       if (res.success && res.data) {
         setSpaces(res.data);
+        
+        if (activeEventSpace && !res.data.find(s => s.id === activeEventSpace.id)) {
+          setActiveEventSpace(null);
+        }
       } else {
         setError(res.error || 'Falha ao carregar espaços');
       }
@@ -107,7 +121,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     loadSpaces();
   };
 
-  // ✅ 1. IMPLEMENTAR DELETE REAL
   const handleDelete = async (spaceId: string, name: string) => {
     if (!window.confirm(`Tem certeza que deseja deletar "${name}"?\nEsta ação não pode ser desfeita.`)) return;
 
@@ -116,6 +129,11 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
       if (!res.success) throw new Error(res.error || 'Falha ao deletar espaço');
 
       setSpaces(prev => prev.filter(s => s.id !== spaceId));
+      
+      if (activeEventSpace?.id === spaceId) {
+        setActiveEventSpace(null);
+      }
+      
       toast({
         title: "✅ Espaço removido",
         description: `"${name}" foi deletado com sucesso`,
@@ -132,7 +150,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     }
   };
 
-  // ✅ 2. IMPLEMENTAR EDIÇÃO REAL
   const handleEdit = (space: EventSpace) => {
     setEditingSpace(space);
   };
@@ -148,7 +165,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     });
   };
 
-  // ✅ HANDLERS PARA AS TABS HABILITADAS
   const handleAvailabilityClick = (space: EventSpace) => {
     setSelectedSpaceForAvailability(space);
     setActiveTab('availability');
@@ -157,8 +173,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
   const handleBookingsClick = (space: EventSpace) => {
     setSelectedSpaceForBookings(space);
-    setActiveTab('bookings');
-    // ✅ CORREÇÃO: Navegar para página de gestão de pagamentos
     navigate(`/hotels/events/spaces/${space.id}/bookings`);
   };
 
@@ -166,6 +180,14 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     setSelectedSpaceForReviews(space);
     setActiveTab('reviews');
     setShowReviewsModal(true);
+  };
+
+  // ✅ MELHORADO: Handler para dashboard específico do espaço com feedback
+  const handleDashboardClick = (space: EventSpace) => {
+    setLoadingDashboard(space.id);
+    navigate(`/hotels/events/spaces/${space.id}/dashboard`);
+    // Limpar após navegação
+    setTimeout(() => setLoadingDashboard(null), 1000);
   };
 
   const formatPrice = (price?: string | number) => {
@@ -179,6 +201,17 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     });
   };
 
+  const handleSpaceChange = (space: EventSpace | null) => {
+    if (space) {
+      toast({
+        title: "✅ Espaço selecionado",
+        description: `"${space.name}" agora está ativo`,
+        variant: "success",
+        duration: 2000,
+      });
+    }
+  };
+
   const filtered = useMemo(() => {
     if (!debouncedSearch) return spaces;
     
@@ -189,7 +222,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     );
   }, [spaces, debouncedSearch]);
 
-  // ✅ 3. MELHORAR FALLBACK DE IMAGEM
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const target = e.currentTarget;
     target.src = 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=2094&auto=format&fit=crop';
@@ -220,12 +252,129 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* Header */}
+      {/* ✅ HEADER COM SELETOR DE ESPAÇO ATIVO */}
+      <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-xl p-5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="h-5 w-5 text-violet-600" />
+              <h2 className="text-xl font-bold text-gray-900">Espaço Ativo para Gestão</h2>
+            </div>
+            <p className="text-sm text-gray-600">
+              Selecione um espaço para focar em suas reservas, disponibilidade e configurações
+            </p>
+          </div>
+          
+          <div className="min-w-[320px]">
+            <EventSpaceSelector 
+              hotelId={hotelId}
+              onChange={handleSpaceChange}
+              showHotelInfo={true}
+              showCreateButton={true}
+            />
+          </div>
+        </div>
+        
+        {/* ✅ DETALHES DO ESPAÇO ATIVO */}
+        {activeEventSpace && (
+          <div className="mt-4 p-4 bg-white rounded-lg border border-violet-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900">{activeEventSpace.name}</h3>
+                  <Badge 
+                    variant={activeEventSpace.isActive ? "default" : "destructive"}
+                    className={activeEventSpace.isActive 
+                      ? "bg-green-500 hover:bg-green-600" 
+                      : "bg-red-500 hover:bg-red-600"
+                    }
+                  >
+                    {activeEventSpace.isActive ? 'Ativo' : 'Inativo'}
+                  </Badge>
+                  {activeEventSpace.isFeatured && (
+                    <Badge className="bg-yellow-500 hover:bg-yellow-600">
+                      ⭐ Destaque
+                    </Badge>
+                  )}
+                </div>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-gray-500" />
+                    <span>{activeEventSpace.capacityMin}-{activeEventSpace.capacityMax} pessoas</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-gray-500" />
+                    <span>{activeEventSpace.spaceType || 'Não especificado'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span className="text-green-600 font-medium">
+                      {formatPrice(activeEventSpace.basePricePerDay)}/dia
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600">Área:</span>
+                    <span className="font-medium">{activeEventSpace.areaSqm ? `${activeEventSpace.areaSqm} m²` : '—'}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                {/* ✅ BOTÃO DASHBOARD MELHORADO COM FEEDBACK */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleDashboardClick(activeEventSpace)}
+                  className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                  disabled={loadingDashboard === activeEventSpace.id}
+                >
+                  {loadingDashboard === activeEventSpace.id ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                  )}
+                  {loadingDashboard === activeEventSpace.id ? 'Carregando...' : 'Dashboard'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleEdit(activeEventSpace)}
+                  className="border-violet-300 text-violet-700 hover:bg-violet-50"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBookingsClick(activeEventSpace)}
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Reservas
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleAvailabilityClick(activeEventSpace)}
+                  className="border-green-300 text-green-700 hover:bg-green-50"
+                >
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Calendário
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ✅ HEADER DA LISTA DE ESPAÇOS */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Building className="h-6 w-6 text-violet-600" />
-            <h2 className="text-3xl font-bold text-gray-900">Espaços de Eventos</h2>
+            <h2 className="text-3xl font-bold text-gray-900">Todos os Espaços de Eventos</h2>
           </div>
           <p className="text-gray-600 mt-1">
             {loading ? (
@@ -302,7 +451,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
               <h3 className="text-2xl font-bold text-gray-900 mb-3">
                 {searchTerm ? "Nenhum Resultado" : "Nenhum Espaço Cadastrado"}
               </h3>
-              {/* ✅ 5. MELHORAR MENSAGEM "SEM RESULTADOS" */}
               <p className="text-gray-600 mb-8 max-w-md mx-auto">
                 {searchTerm
                   ? `Não encontramos espaços correspondentes a "${searchTerm}".`
@@ -350,8 +498,20 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                 {filtered.map(space => (
                   <Card
                     key={space.id}
-                    className="overflow-hidden hover:shadow-xl transition-all duration-300 border border-gray-200 rounded-xl group hover:border-violet-200"
+                    className={`overflow-hidden hover:shadow-xl transition-all duration-300 border rounded-xl group ${
+                      activeEventSpace?.id === space.id 
+                        ? 'border-violet-400 ring-1 ring-violet-200' 
+                        : 'border-gray-200 hover:border-violet-200'
+                    }`}
                   >
+                    {activeEventSpace?.id === space.id && (
+                      <div className="absolute top-2 left-2 z-10">
+                        <Badge className="bg-violet-600 text-white text-xs px-2 py-0.5">
+                          Ativo
+                        </Badge>
+                      </div>
+                    )}
+                    
                     <div className="relative h-48 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
                       {space.images?.[0] ? (
                         <img
@@ -477,6 +637,27 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           Remover
                         </Button>
                       </div>
+                      
+                      {/* ✅ Botão para definir como espaço ativo */}
+                      {activeEventSpace?.id !== space.id && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-violet-600 hover:text-violet-800 hover:bg-violet-50 text-sm"
+                          onClick={() => {
+                            setActiveEventSpace(space);
+                            toast({
+                              title: "✅ Espaço ativado",
+                              description: `"${space.name}" agora é o espaço ativo`,
+                              variant: "success",
+                              duration: 2000,
+                            });
+                          }}
+                        >
+                          <Target className="h-3 w-3 mr-2" />
+                          Definir como Espaço Ativo
+                        </Button>
+                      )}
                     </div>
                   </Card>
                 ))}
@@ -525,7 +706,9 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {spaces.map(space => (
-                  <Card key={space.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <Card key={space.id} className={`overflow-hidden hover:shadow-lg transition-shadow ${
+                    activeEventSpace?.id === space.id ? 'ring-1 ring-violet-300' : ''
+                  }`}>
                     <div className="p-5">
                       <div className="flex items-start justify-between mb-4">
                         <div>
@@ -558,6 +741,14 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                             {space.capacityMin}–{space.capacityMax} pessoas
                           </span>
                         </div>
+                        {activeEventSpace?.id === space.id && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Status:</span>
+                            <Badge className="bg-violet-600 text-white text-xs">
+                              Espaço Ativo
+                            </Badge>
+                          </div>
+                        )}
                       </div>
 
                       <Button
@@ -616,7 +807,9 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {spaces.map(space => (
-                  <Card key={space.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <Card key={space.id} className={`overflow-hidden hover:shadow-lg transition-shadow ${
+                    activeEventSpace?.id === space.id ? 'ring-1 ring-blue-300' : ''
+                  }`}>
                     <div className="p-5">
                       <div className="flex items-start justify-between mb-4">
                         <div>
@@ -646,6 +839,14 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           <span className="text-gray-600">Aguardando aprovação:</span>
                           <span className="font-semibold text-amber-600">0</span>
                         </div>
+                        {activeEventSpace?.id === space.id && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Status:</span>
+                            <Badge className="bg-blue-600 text-white text-xs">
+                              Foco Ativo
+                            </Badge>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-2">
@@ -657,14 +858,20 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           <Eye className="h-4 w-4 mr-2" />
                           Ver Reservas & Pagamentos
                         </Button>
+                        {/* ✅ BOTÃO DASHBOARD NA TAB DE RESERVAS */}
                         <Button
-                          onClick={() => handleAvailabilityClick(space)}
+                          onClick={() => handleDashboardClick(space)}
                           variant="outline"
-                          className="flex-1 border-blue-300 text-blue-700 hover:bg-blue-50"
+                          className="flex-1 border-violet-300 text-violet-700 hover:bg-violet-50"
                           size="sm"
+                          disabled={loadingDashboard === space.id}
                         >
-                          <Calendar className="h-4 w-4 mr-2" />
-                          Calendário
+                          {loadingDashboard === space.id ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <BarChart3 className="h-4 w-4 mr-2" />
+                          )}
+                          {loadingDashboard === space.id ? 'Carregando...' : 'Dashboard'}
                         </Button>
                       </div>
                     </div>
@@ -715,7 +922,9 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {spaces.map(space => (
-                  <Card key={space.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <Card key={space.id} className={`overflow-hidden hover:shadow-lg transition-shadow ${
+                    activeEventSpace?.id === space.id ? 'ring-1 ring-amber-300' : ''
+                  }`}>
                     <div className="p-5">
                       <div className="flex items-start justify-between mb-4">
                         <div>
@@ -744,6 +953,14 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           <span className="text-gray-600">Última avaliação:</span>
                           <span className="font-semibold text-gray-900">—</span>
                         </div>
+                        {activeEventSpace?.id === space.id && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Status:</span>
+                            <Badge className="bg-amber-600 text-white text-xs">
+                              Espaço Ativo
+                            </Badge>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex gap-2">
@@ -783,17 +1000,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
           onClose={() => setShowAvailabilityModal(false)}
         />
       )}
-
-      {/* ✅ MODAL DE RESERVAS - REMOVIDO/COMENTADO (agora usa navegação) */}
-      {/* 
-      {showBookingsModal && selectedSpaceForBookings && (
-        <EventSpaceBookingsList 
-          spaceId={selectedSpaceForBookings.id}
-          spaceName={selectedSpaceForBookings.name}
-          onClose={() => setShowBookingsModal(false)}
-        />
-      )}
-      */}
 
       {/* ✅ MODAL DE AVALIAÇÕES */}
       {showReviewsModal && selectedSpaceForReviews && (

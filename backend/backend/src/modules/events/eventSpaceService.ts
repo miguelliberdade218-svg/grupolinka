@@ -1,4 +1,4 @@
-// src/modules/events/eventSpaceService.ts - VERSÃO FINAL CORRIGIDA
+// src/modules/events/eventSpaceService.ts - VERSÃO FINAL CORRIGIDA COM DISPONIBILIDADE INFINITA E DETECÇÃO DE CONFLITOS
 
 import { db } from "../../../db";
 import {
@@ -229,51 +229,82 @@ export const getEventSpaceCalendar = async (
     .orderBy(asc(eventAvailability.date));
 };
 
+// ✅ CORREÇÃO CRÍTICA: Função isEventSpaceAvailable corrigida para DISPONIBILIDADE INFINITA
+// ✅ E DETECÇÃO DE CONFLITOS INCLUINDO BOOKINGS pending_approval
 export const isEventSpaceAvailable = async (
   eventSpaceId: string,
   startDate: string,
   endDate: string
 ): Promise<{ available: boolean; message?: string }> => {
-  const dateRange = generateDateRange(startDate, endDate);
+  try {
+    const dateRange = generateDateRange(startDate, endDate);
 
-  for (const date of dateRange) {
-    const [avail] = await db.select().from(eventAvailability)
-      .where(and(
-        eq(eventAvailability.eventSpaceId, eventSpaceId),
-        sql`${eventAvailability.date}::date = ${date}::date`
-      ))
-      .limit(1);
+    for (const date of dateRange) {
+      // ✅ VERIFICAÇÃO 1: Verificar se há booking (confirmado, in_progress OU pending_approval) para esta data
+      const conflictingBooking = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(eventBookings)
+        .where(
+          and(
+            eq(eventBookings.eventSpaceId, eventSpaceId),
+            // ✅ CRÍTICO: Incluir pending_approval para evitar múltiplas reservas na mesma data
+            inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"]),
+            sql`${eventBookings.startDate}::date <= ${date}::date`,
+            sql`${eventBookings.endDate}::date > ${date}::date`
+          )
+        );
+      
+      if (conflictingBooking[0]?.count > 0) {
+        return { 
+          available: false, 
+          message: `Já reservado para ${date}` 
+        };
+      }
 
-    if (avail?.stopSell || !avail?.isAvailable) {
-      return { 
-        available: false, 
-        message: avail?.stopSell 
-          ? `Venda bloqueada em ${date}` 
-          : `Indisponível em ${date}`
-      };
+      // ✅ VERIFICAÇÃO 2: Verificar disponibilidade manual (APENAS SE HOUVER REGISTRO)
+      const [avail] = await db.select().from(eventAvailability)
+        .where(and(
+          eq(eventAvailability.eventSpaceId, eventSpaceId),
+          sql`${eventAvailability.date}::date = ${date}::date`
+        ))
+        .limit(1);
+
+      // ✅ CORREÇÃO: Se NÃO houver registro, CONTINUA DISPONÍVEL (disponibilidade infinita)
+      if (avail) {
+        // Só aplica restrições se HOUVER registro explícito
+        if (avail.stopSell) {
+          return { 
+            available: false, 
+            message: `Venda bloqueada em ${date}` 
+          };
+        }
+        
+        if (!avail.isAvailable) {
+          return { 
+            available: false, 
+            message: `Indisponível em ${date}` 
+          };
+        }
+        
+        // ✅ Verificar availableUnits também se necessário
+        if (avail.availableUnits !== null && avail.availableUnits <= 0) {
+          return { 
+            available: false, 
+            message: `Sem unidades disponíveis em ${date}` 
+          };
+        }
+      }
+      // ✅ Se não houver registro, DISPONÍVEL POR PADRÃO!
     }
 
-    const conflictingBooking = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(eventBookings)
-      .where(
-        and(
-          eq(eventBookings.eventSpaceId, eventSpaceId),
-          eq(eventBookings.status, "confirmed"),
-          sql`${eventBookings.startDate}::date <= ${date}::date`,
-          sql`${eventBookings.endDate}::date > ${date}::date`
-        )
-      );
-    
-    if (conflictingBooking[0]?.count > 0) {
-      return { 
-        available: false, 
-        message: `Já reservado para ${date}` 
-      };
-    }
+    return { available: true };
+  } catch (error) {
+    console.error('Erro ao verificar disponibilidade (isEventSpaceAvailable):', error);
+    return { 
+      available: false, 
+      message: 'Erro ao verificar disponibilidade' 
+    };
   }
-
-  return { available: true };
 };
 
 export const bulkUpdateEventAvailability = async (

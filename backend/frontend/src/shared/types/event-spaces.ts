@@ -1,5 +1,5 @@
 // src/shared/types/event-spaces.ts
-// VERSÃO COMPLETA E ALINHADA COM SCHEMA.TS (25/01/2026)
+// VERSÃO CORRIGIDA E ALINHADA COM REALIDADE DA APP - 26/01/2026
 // Usa camelCase para frontend, reflete exatamente o backend
 
 // ==================== EVENT SPACE ====================
@@ -142,8 +142,13 @@ export interface EventBooking {
   eventTitle: string;
   eventDescription?: string | null;
   eventType: string;
-  startDate: string;           // YYYY-MM-DD
-  endDate: string;             // YYYY-MM-DD
+  
+  // ✅ CORREÇÃO CRÍTICA: ADICIONAR AMBOS FORMATOS PARA COMPATIBILIDADE
+  startDate: string;           // YYYY-MM-DD - camelCase para frontend
+  start_date?: string;         // YYYY-MM-DD - snake_case do backend (opcional)
+  endDate: string;             // YYYY-MM-DD - camelCase para frontend
+  end_date?: string;           // YYYY-MM-DD - snake_case do backend (opcional)
+  
   durationDays: number;
   expectedAttendees: number;
   cateringRequired: boolean;
@@ -151,17 +156,42 @@ export interface EventBooking {
   additionalServices?: Record<string, any>;
   basePrice: string;
   totalPrice: string;
+  total_price?: string;        // ✅ ADICIONADO: para compatibilidade com backend
   securityDeposit: string;
-  status: 'pending_approval' | 'confirmed' | 'cancelled' | 'rejected' | 'completed';
+  
+  // ✅ CORREÇÃO: CAMPOS FINANCEIROS ADICIONADOS
+  depositPaid: string;      // ✅ ADICIONADO: depósito já pago
+  balanceDue: string;       // ✅ ADICIONADO: saldo pendente
+  
+  // ✅ CORREÇÃO: Status atualizado para incluir 'in_progress' e 'completed'
+  status: 'pending_approval' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected';
   paymentStatus: PaymentStatusType; // ✅ ALTERADO: usa o tipo completo
+  
   createdAt: string;
   updatedAt: string;
 
   // Campos calculados/display
   dateRange?: string;
   statusDisplay?: string;
+  
+  // ✅ CORREÇÃO: CAMPOS DO BACKEND (snake_case para compatibilidade)
+  deposit_paid?: string;
+  balance_due?: string;
+  payment_status?: string;
+  created_at?: string;
+  updated_at?: string;
+  
+  // ✅ CORREÇÃO: CAMPOS DE COMPATIBILIDADE ADICIONAIS
+  event_title?: string;                // Para compatibilidade com backend
+  organizer_name?: string;             // Para compatibilidade com backend
+  organizer_email?: string;            // Para compatibilidade com backend
+  expected_attendees?: number;         // Para compatibilidade com backend
+  
+  // Campo para compatibilidade com getFullBookingDetails
+  payments?: BookingPayment[];
 }
 
+// ✅ CORREÇÃO: Interface EventBookingRequest atualizada para compatibilidade
 export interface EventBookingRequest {
   eventSpaceId: string;
   organizerName: string;
@@ -170,8 +200,13 @@ export interface EventBookingRequest {
   eventTitle: string;
   eventDescription?: string;
   eventType: string;
-  startDate: string;
-  endDate: string;
+  
+  // ✅ CORREÇÃO: Usar ambos formatos para compatibilidade
+  startDate: string;      // YYYY-MM-DD - camelCase
+  start_date?: string;    // YYYY-MM-DD - snake_case (opcional)
+  endDate: string;        // YYYY-MM-DD - camelCase
+  end_date?: string;      // YYYY-MM-DD - snake_case (opcional)
+  
   expectedAttendees: number;
   cateringRequired?: boolean;
   specialRequests?: string;
@@ -269,21 +304,25 @@ export interface EventSpaceDetails {
 
 // ==================== 🆕 NOVOS TIPOS PARA GESTÃO DE RESERVAS E PAGAMENTOS ====================
 
+// ✅ CORREÇÃO: BookingStatusType atualizado para incluir status completos
 export type BookingStatusType = 
   | 'pending_approval' 
   | 'confirmed' 
+  | 'in_progress'        // ✅ ADICIONADO: Evento em andamento
+  | 'completed'          // ✅ ADICIONADO: Evento concluído
   | 'cancelled' 
-  | 'rejected' 
-  | 'completed';
+  | 'rejected';
 
+// ✅ CORREÇÃO: PaymentStatusType COMPLETO
 export type PaymentStatusType = 
-  | 'pending' 
-  | 'confirmed'     // ✅ ADICIONADO: usado no eventPaymentService.confirmEventPayment
-  | 'paid'          // ✅ ADICIONADO: usado no updateEventBookingPaymentStatus e lógica de total
-  | 'partial'       // usado em cálculos de saldo
-  | 'refunded'      // comum em sistemas financeiros
-  | 'failed'        // comum quando pagamento é rejeitado pelo gateway
-  | 'cancelled';    // quando a reserva é cancelada
+  | 'pending'           // Aguardando pagamento
+  | 'confirmed'         // Pagamento confirmado manualmente pelo gestor
+  | 'paid'              // Pagamento completo
+  | 'partial'           // Pagamento parcial
+  | 'refunded'          // Reembolsado
+  | 'failed'            // Falhou (gateway rejeitou)
+  | 'cancelled'         // Cancelado
+  | 'processing';       // Em processamento (para gateways)
 
 export interface ManualPaymentPayload {
   amount: number;
@@ -292,17 +331,53 @@ export interface ManualPaymentPayload {
   notes?: string;
 }
 
+// ✅ CORREÇÃO: TIPOS PARA REQUESTS DE PAGAMENTO
+export interface ManualPaymentRequest {
+  amount: number;
+  payment_method: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+  reference: string;
+  notes?: string;
+  payment_type?: string; // 'manual_event_payment' conforme backend
+}
+
+export interface UpdatePaymentStatusRequest {
+  status: PaymentStatusType;
+  notes?: string;
+}
+
+export interface PaymentConfirmationRequest {
+  paymentId: string;
+  confirmedBy: string;
+  notes?: string;
+}
+
+// ✅ CORREÇÃO: BookingPayment COMPLETO PARA REFLETIR O BACKEND
 export interface BookingPayment {
   id: string;
   bookingId: string;
-  amount: string;
-  paymentMethod: string;
+  amount: string;                    // Decimal como string
+  paymentMethod: string;             // 'mpesa', 'bank_transfer', etc.
   referenceNumber: string;
-  status: PaymentStatusType; // ✅ ALTERADO: usa o tipo completo
+  status: PaymentStatusType;
+  paymentType: string;               // 'manual_event_payment', 'deposit', etc.
+  registeredBy?: string;             // ID do usuário que registrou
+  confirmedBy?: string;              // ID do usuário que confirmou
   paidAt: string | null;
   confirmedAt: string | null;
   createdAt: string;
+  updatedAt: string;
   notes?: string;
+  
+  // Campos do backend (snake_case para compatibilidade)
+  payment_method?: string;
+  reference_number?: string;
+  payment_type?: string;
+  registered_by?: string;
+  confirmed_by?: string;
+  paid_at?: string | null;
+  confirmed_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface BookingLog {
@@ -317,4 +392,105 @@ export interface FullBookingDetails {
   booking: EventBooking;
   payments: BookingPayment[];
   logs: BookingLog[];
+}
+
+// ✅ CORREÇÃO: TIPOS PARA RESPONSES DE PAGAMENTO
+export interface PaymentDetailsResponse {
+  bookingId: string;
+  totalAmount: string;
+  depositRequired: string;
+  depositPaid: string;
+  balanceDue: string;
+  payments: BookingPayment[];
+  paymentStatus: PaymentStatusType;
+  lastPaymentDate?: string | null;
+}
+
+export interface DepositCalculation {
+  bookingId: string;
+  totalAmount: string;
+  depositPercentage: number;
+  depositAmount: string;
+  minimumDeposit: string;
+  requiredDeposit: string;
+  alreadyPaid: string;
+  remainingDeposit: string;
+}
+
+export interface PaymentReceipt {
+  receiptNumber: string;
+  bookingId: string;
+  paymentId: string;
+  amount: string;
+  paymentMethod: string;
+  referenceNumber: string;
+  paidAt: string;
+  issuedAt: string;
+  issuedBy: string;
+  notes?: string;
+  qrCode?: string; // Base64 para QR code
+}
+
+// ✅ CORREÇÃO: TIPOS PARA FINANCIAL SUMMARY
+export interface FinancialSummary {
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+  totalRevenue: string;
+  totalBookings: number;
+  confirmedBookings: number;
+  cancelledBookings: number;
+  averageBookingValue: string;
+  paymentMethods: {
+    method: string;
+    count: number;
+    amount: string;
+  }[];
+  dailyRevenue: Array<{
+    date: string;
+    revenue: string;
+    bookings: number;
+  }>;
+}
+
+// ✅ CORREÇÃO: TIPOS PARA AÇÕES DE PAGAMENTO
+export interface PaymentAction {
+  type: 'register' | 'confirm' | 'refund' | 'update_status';
+  payload: any;
+}
+
+export interface PaymentRegisterData {
+  bookingId: string;
+  amount: number;
+  paymentMethod: string;
+  reference: string;
+  notes?: string;
+}
+
+export interface PaymentConfirmData {
+  paymentId: string;
+  confirmedBy: string;
+  notes?: string;
+}
+
+// Tipos para modais/diálogos
+export interface PaymentModalProps {
+  open: boolean;
+  onClose: () => void;
+  bookingId: string;
+  bookingTitle: string;
+  balanceDue: number;
+  onSuccess: () => void;
+}
+
+// Tipos para cálculos
+export interface PaymentCalculation {
+  subtotal: number;
+  taxes: number;
+  fees: number;
+  total: number;
+  depositRequired: number;
+  alreadyPaid: number;
+  remaining: number;
 }

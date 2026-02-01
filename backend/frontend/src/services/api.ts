@@ -62,7 +62,8 @@ import {
   EventDashboardSummary,
   EventSpaceDetails,
   CreateEventSpaceRequest,
-  UpdateEventSpaceRequest
+  UpdateEventSpaceRequest,
+  PaymentStatusType, // ✅ ADICIONADO: Importar o tipo de status de pagamento
 } from '@/shared/types/event-spaces';
 
 // ====================== EXPORTAÇÕES ======================
@@ -261,6 +262,7 @@ export function normalizeEventSpaces(apiSpaces: any[]): EventSpace[] {
   return (apiSpaces || []).map(normalizeEventSpace);
 }
 
+// ✅ CORREÇÃO: Função normalizeEventBooking atualizada com campos depositPaid e balanceDue
 export function normalizeEventBooking(apiBooking: any): EventBooking {
   const booking = apiBooking.booking || apiBooking;
   
@@ -284,15 +286,27 @@ export function normalizeEventBooking(apiBooking: any): EventBooking {
     basePrice: String(booking.basePrice || booking.base_price || '0'),
     totalPrice: String(booking.totalPrice || booking.total_price || '0'),
     securityDeposit: String(booking.securityDeposit || booking.security_deposit || '0'),
-    status: booking.status || 'pending_approval',
-    paymentStatus: booking.paymentStatus || booking.payment_status || 'pending',
+    
+    // ✅ CORREÇÃO: Adicionar os novos campos financeiros
+    depositPaid: String(booking.depositPaid || booking.deposit_paid || booking.depositPaidAmount || '0'),
+    balanceDue: String(booking.balanceDue || booking.balance_due || booking.balanceDueAmount || '0'),
+    
+    status: (booking.status || 'pending_approval') as 'pending_approval' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected',
+    paymentStatus: (booking.paymentStatus || booking.payment_status || 'pending') as PaymentStatusType,
     createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
     updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
+    
+    // Campos calculados/display
+    dateRange: `${booking.startDate || booking.start_date} - ${booking.endDate || booking.end_date}`,
+    statusDisplay: getEventStatusDisplay(booking.status),
+    
+    // Campos do backend (snake_case para compatibilidade)
+    deposit_paid: booking.deposit_paid || booking.depositPaid,
+    balance_due: booking.balance_due || booking.balanceDue,
+    payment_status: booking.payment_status || booking.paymentStatus,
+    created_at: booking.created_at || booking.createdAt,
+    updated_at: booking.updated_at || booking.updatedAt,
   };
-  
-  // Campos display (opcionais)
-  normalized.dateRange = `${normalized.startDate} - ${normalized.endDate}`;
-  normalized.statusDisplay = getEventStatusDisplay(normalized.status);
   
   return normalized;
 }
@@ -301,10 +315,12 @@ export function normalizeEventBookings(apiBookings: any[]): EventBooking[] {
   return (apiBookings || []).map(normalizeEventBooking);
 }
 
+// ✅ CORREÇÃO: Função getEventStatusDisplay atualizada com status in_progress
 function getEventStatusDisplay(status: string): string {
   const map: Record<string, string> = {
     pending_approval: 'Aguardando aprovação',
     confirmed: 'Confirmado',
+    in_progress: 'Em andamento', // ✅ ADICIONADO
     cancelled: 'Cancelado',
     rejected: 'Rejeitado',
     completed: 'Concluído',
@@ -709,17 +725,28 @@ class ApiService {
     }
   }
 
+  // ✅ CORREÇÃO CRÍTICA: Método confirmEventBooking corrigido para enviar apenas objeto vazio
   async confirmEventBooking(bookingId: string): Promise<ApiResponse<EventBooking>> {
     try {
-      const res = await this.post<any>(`/api/events/bookings/${bookingId}/confirm`);
+      console.log('🎯 [confirmEventBooking] Chamado com bookingId:', bookingId);
+      console.log('📤 [confirmEventBooking] Payload sendo enviado: {}');
+      
+      // ✅ ENVIAR APENAS OBJETO VAZIO para evitar envio de campos incorretos
+      // NÃO enviar nenhum dado extra que possa conter startDatetime
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/confirm`, {});
+      
+      console.log('📥 [confirmEventBooking] Resposta recebida:', res);
       
       return {
         success: res.success ?? true,
         data: res.data ? normalizeEventBooking(res.data) : undefined,
       };
     } catch (err) {
-      console.error('[confirmEventBooking]', err);
-      return { success: false, error: (err as Error).message };
+      console.error('❌ [confirmEventBooking] ERRO:', err);
+      return { 
+        success: false, 
+        error: (err as Error).message || 'Falha ao confirmar reserva' 
+      };
     }
   }
 

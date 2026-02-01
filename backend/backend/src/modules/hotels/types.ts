@@ -235,6 +235,7 @@ export interface EventAvailability {
   endTime: string;
   price: number;
   isAvailable: boolean;
+  minBookingHoursDefault?: number;  // ✅ CORREÇÃO: Adicionado "Default" para consistência
   createdAt?: Date;
   updatedAt?: Date;
 }

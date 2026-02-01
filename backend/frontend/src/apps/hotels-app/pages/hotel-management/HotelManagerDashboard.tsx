@@ -1,6 +1,6 @@
 // src/apps/hotels-app/pages/hotel-management/HotelManagerDashboard.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'wouter'; // ✅ ADICIONADO: Para navegação
+import { useLocation } from 'wouter';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
@@ -15,7 +15,7 @@ import {
   BarChart3,
   MessageSquare,
   Settings,
-  FileText, // ✅ ADICIONADO: Para ícone de reservas
+  FileText,
 } from 'lucide-react';
 import { hotelService, HotelDashboard } from '@/services/hotelService';
 import { useToast } from '@/shared/hooks/use-toast';
@@ -31,7 +31,7 @@ import { Hotel as SharedHotel } from '@/shared/types/hotels';
  * Mostra estatísticas e permite gerenciar quartos, eventos, reservas e promoções
  */
 const HotelManagerDashboard: React.FC = () => {
-  const [location, navigate] = useLocation(); // ✅ ADICIONADO: Para navegação
+  const [location, navigate] = useLocation();
   const { activeHotel, isLoading: contextLoading, refreshActiveHotel } = useActiveHotel();
 
   const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
@@ -357,7 +357,7 @@ const HotelManagerDashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* ✅ Ações rápidas MODIFICADAS - Adicionado botões de navegação */}
+      {/* ✅ Ações rápidas SIMPLIFICADAS - Apenas 2 botões principais */}
       <Card className="p-6 bg-white border-0 shadow-sm">
         <h3 className="font-semibold text-lg mb-4">Ações Rápidas</h3>
         <div className="flex flex-wrap gap-3">
@@ -375,40 +375,6 @@ const HotelManagerDashboard: React.FC = () => {
           >
             <Plus className="w-4 h-4 mr-2" />
             Adicionar Espaço
-          </Button>
-
-          {/* ✅ NOVO: Botão para Dashboard de Eventos */}
-          <Button
-            onClick={handleNavigateToEventsDashboard}
-            variant="outline"
-            className="border-green-600 text-green-600 hover:bg-green-50"
-          >
-            <Calendar className="w-4 h-4 mr-2" />
-            Dashboard Eventos
-          </Button>
-
-          {/* ✅ NOVO: Botão para Gestão de Reservas */}
-          <Button
-            onClick={handleNavigateToBookings}
-            variant="outline"
-            className="border-amber-600 text-amber-600 hover:bg-amber-50"
-          >
-            <FileText className="w-4 h-4 mr-2" />
-            Ver Reservas
-          </Button>
-
-          {/* Botão original de disponibilidade mantido */}
-          <Button
-            onClick={() => toast({ 
-              title: 'Disponibilidade', 
-              description: 'Use o gerenciador de quartos por enquanto.', 
-              variant: 'default' 
-            })}
-            variant="outline"
-            className="border-blue-600 text-blue-600 hover:bg-blue-50"
-          >
-            <Calendar className="w-4 h-4 mr-2" />
-            Gerenciar Disponibilidade
           </Button>
         </div>
       </Card>
@@ -444,7 +410,7 @@ const HotelManagerDashboard: React.FC = () => {
                 Aqui você gerencia quartos, espaços de eventos, reservas, promoções e avaliações.
               </p>
               
-              {/* ✅ NOVO: Cards de navegação rápida no overview */}
+              {/* ✅ Cards de navegação rápida no overview */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                 <Card className="p-4 border border-green-200 hover:border-green-400 transition-colors cursor-pointer" 
                       onClick={handleNavigateToEventsDashboard}>

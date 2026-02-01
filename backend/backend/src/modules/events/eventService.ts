@@ -1,4 +1,4 @@
-// src/modules/events/eventService.ts - VERSÃO FINAL PARA SISTEMA DE DIÁRIAS
+// src/modules/events/eventService.ts - VERSÃO CORRIGIDA COM DISPONIBILIDADE INFINITA E DETECÇÃO DE CONFLITOS
 
 import { db } from "../../../db";
 import {
@@ -157,13 +157,15 @@ export async function searchEventSpaces(filters: {
         currentDate.setDate(start.getDate() + i);
         const currentDateStr = dateToYMD(currentDate);
         
+        // ✅ CORREÇÃO: Verificar conflitos com bookings (incluindo pending_approval)
         const conflictingBooking = await db
           .select({ count: sql<number>`count(*)` })
           .from(eventBookings)
           .where(
             and(
               eq(eventBookings.eventSpaceId, space.space.id),
-              eq(eventBookings.status, "confirmed"),
+              // ✅ CRÍTICO: Incluir pending_approval para evitar múltiplas reservas
+              inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"]),
               sql`${eventBookings.startDate}::date <= ${currentDateStr}::date`,
               sql`${eventBookings.endDate}::date > ${currentDateStr}::date`
             )
@@ -174,6 +176,8 @@ export async function searchEventSpaces(filters: {
           break;
         }
         
+        // ✅ CORREÇÃO: Verificar disponibilidade APENAS se existir registro
+        // Se não houver registro, assume DISPONÍVEL
         const availability = await db
           .select()
           .from(eventAvailability)
@@ -185,11 +189,15 @@ export async function searchEventSpaces(filters: {
           )
           .limit(1);
         
-        if (availability.length > 0 && 
-            (availability[0].stopSell || !availability[0].isAvailable)) {
-          isAvailableForAllDays = false;
-          break;
+        // ✅ Só considera bloqueio se EXISTIR registro E tiver restrições
+        if (availability.length > 0) {
+          const avail = availability[0];
+          if (avail.stopSell || !avail.isAvailable) {
+            isAvailableForAllDays = false;
+            break;
+          }
         }
+        // ✅ Se não houver registro, CONTINUA DISPONÍVEL
       }
       
       if (isAvailableForAllDays) {
@@ -351,7 +359,8 @@ export const getEventSpaceDetails = async (spaceId: string) => {
   return hotel ? { space, hotel } : null;
 };
 
-// ==================== DISPONIBILIDADE ====================
+// ==================== DISPONIBILIDADE - VERSÃO CORRIGIDA COM DISPONIBILIDADE INFINITA ====================
+// ✅ E DETECÇÃO DE CONFLITOS INCLUINDO BOOKINGS pending_approval
 export const checkEventSpaceAvailability = async (
   eventSpaceId: string,
   startDate: string,
@@ -361,17 +370,44 @@ export const checkEventSpaceAvailability = async (
   message?: string;
 }> => {
   try {
+    // ✅ 1. Verificar se o espaço existe e está ativo
+    const space = await getEventSpaceById(eventSpaceId);
+    if (!space) {
+      return {
+        isAvailable: false,
+        message: 'Espaço não encontrado'
+      };
+    }
+    
+    if (!space.isActive) {
+      return {
+        isAvailable: false,
+        message: 'Espaço inativo'
+      };
+    }
+
     const start = ymdToDateStart(startDate);
     const end = ymdToDateEnd(endDate);
+    
+    // Verificar se startDate <= endDate
+    if (start > end) {
+      return {
+        isAvailable: false,
+        message: 'Data de início deve ser anterior à data de fim'
+      };
+    }
+    
     const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
     
+    // ✅ 2. Verificar conflitos com bookings (incluindo pending_approval)
     const conflictingBooking = await db
       .select({ count: sql<number>`count(*)` })
       .from(eventBookings)
       .where(
         and(
           eq(eventBookings.eventSpaceId, eventSpaceId),
-          eq(eventBookings.status, "confirmed"),
+          // ✅ CRÍTICO: Incluir pending_approval para evitar múltiplas reservas
+          inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"]),
           or(
             sql`(${eventBookings.startDate}::date <= ${startDate}::date AND ${eventBookings.endDate}::date > ${startDate}::date)`,
             sql`(${eventBookings.startDate}::date <= ${endDate}::date AND ${eventBookings.endDate}::date > ${endDate}::date)`,
@@ -387,6 +423,7 @@ export const checkEventSpaceAvailability = async (
       };
     }
     
+    // ✅ 3. Verificar disponibilidade manual (APENAS SE HOUVER REGISTRO)
     for (let i = 0; i < daysDifference; i++) {
       const currentDate = new Date(start);
       currentDate.setDate(start.getDate() + i);
@@ -403,22 +440,36 @@ export const checkEventSpaceAvailability = async (
         )
         .limit(1);
       
-      if (availability.length > 0) {
-        if (availability[0].stopSell) {
-          return {
-            isAvailable: false,
-            message: `Dia ${currentDate.toLocaleDateString()} não disponível para reserva`
-          };
-        }
-        if (!availability[0].isAvailable) {
-          return {
-            isAvailable: false,
-            message: `Dia ${currentDate.toLocaleDateString()} indisponível`
-          };
-        }
+      // ✅ CORREÇÃO: Se NÃO houver registro, CONTINUA DISPONÍVEL
+      if (availability.length === 0) {
+        continue; // Disponibilidade infinita por padrão
+      }
+      
+      // ✅ Só aplica restrições se HOUVER registro explícito
+      if (availability[0].stopSell) {
+        return {
+          isAvailable: false,
+          message: `Dia ${currentDate.toLocaleDateString()} bloqueado para reservas`
+        };
+      }
+      
+      if (!availability[0].isAvailable) {
+        return {
+          isAvailable: false,
+          message: `Dia ${currentDate.toLocaleDateString()} marcado como indisponível`
+        };
+      }
+      
+      // ✅ Verificar também availableUnits se necessário
+      if (availability[0].availableUnits !== null && availability[0].availableUnits <= 0) {
+        return {
+          isAvailable: false,
+          message: `Dia ${currentDate.toLocaleDateString()} sem unidades disponíveis`
+        };
       }
     }
     
+    // ✅ 4. Se passou por todas as verificações, ESPAÇO DISPONÍVEL
     return {
       isAvailable: true,
       message: 'Espaço disponível para reserva'
@@ -560,7 +611,8 @@ export const checkBookingConflicts = async (
   
   const conditions: any[] = [
     eq(eventBookings.eventSpaceId, eventSpaceId),
-    eq(eventBookings.status, "confirmed"),
+    // ✅ CRÍTICO: Incluir pending_approval para evitar múltiplas reservas
+    inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"]),
     or(
       sql`(${eventBookings.startDate}::date <= ${startDateStr}::date AND ${eventBookings.endDate}::date > ${startDateStr}::date)`,
       sql`(${eventBookings.startDate}::date <= ${endDateStr}::date AND ${eventBookings.endDate}::date > ${endDateStr}::date)`,
@@ -728,4 +780,48 @@ export const getSpaceMinCapacity = async (eventSpaceId: string): Promise<number>
     .limit(1);
 
   return space?.capacityMin || 0;
+};
+
+// ==================== FUNÇÃO AUXILIAR: VERIFICAR SE ESPAÇO PODE SER RESERVADO ====================
+export const canBookEventSpace = async (
+  eventSpaceId: string,
+  startDate: string,
+  endDate: string,
+  expectedAttendees: number
+): Promise<{ 
+  canBook: boolean; 
+  message?: string;
+  conflicts?: any[];
+}> => {
+  try {
+    // 1. Verificar espaço
+    const space = await getEventSpaceById(eventSpaceId);
+    if (!space) {
+      return { canBook: false, message: 'Espaço não encontrado' };
+    }
+    
+    if (!space.isActive) {
+      return { canBook: false, message: 'Espaço inativo' };
+    }
+    
+    // 2. Verificar capacidade
+    if (expectedAttendees < space.capacityMin) {
+      return { canBook: false, message: `Número mínimo de participantes: ${space.capacityMin}` };
+    }
+    
+    if (expectedAttendees > space.capacityMax) {
+      return { canBook: false, message: `Número máximo de participantes: ${space.capacityMax}` };
+    }
+    
+    // 3. Verificar disponibilidade (usando a função corrigida)
+    const availability = await checkEventSpaceAvailability(eventSpaceId, startDate, endDate);
+    if (!availability.isAvailable) {
+      return { canBook: false, message: availability.message };
+    }
+    
+    return { canBook: true, message: 'Espaço disponível para reserva' };
+  } catch (error) {
+    console.error('Erro ao verificar se espaço pode ser reservado:', error);
+    return { canBook: false, message: 'Erro ao verificar disponibilidade' };
+  }
 };

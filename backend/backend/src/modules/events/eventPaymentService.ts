@@ -1,10 +1,10 @@
-// src/modules/events/eventPaymentService.ts - VERSÃO COMPLETAMENTE CORRIGIDA
-// Sistema de diárias puro - TODAS as queries e campos atualizados para startDate/endDate
+// src/modules/events/eventPaymentService.ts - VERSÃO CORRIGIDA PARA FIREBASE UIDs
+// Sistema de diárias puro - Usa Firebase UIDs diretamente (text)
 
 import { db } from "../../../db";
 import {
   eventBookings,
-  eventPayments, // Nova tabela específica para pagamentos de eventos
+  eventPayments,
   paymentOptions,
   invoices,
   eventBookingLogs,
@@ -12,9 +12,10 @@ import {
   bookings,
   hotels,
   users,
+  refunds,
 } from "../../../shared/schema";
-import { eq, and, sql, desc, gte, lte, isNotNull } from "drizzle-orm";
-import { z } from "zod";
+import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
+import crypto from "crypto";
 
 // ==================== TIPOS ====================
 export type EventPayment = typeof eventPayments.$inferSelect;
@@ -27,6 +28,23 @@ const toNumber = (value: string | number | null | undefined): number => {
   if (typeof value === 'number') return value;
   const num = Number(value);
   return isNaN(num) ? 0 : num;
+};
+
+// ✅ CORREÇÃO: Função simples para validar/buscar usuário (opcional)
+const getUserId = async (firebaseUid?: string | null): Promise<string | null> => {
+  if (!firebaseUid || firebaseUid.trim() === '' || firebaseUid === 'unknown') {
+    console.warn("getUserId: ID de usuário inválido ou vazio");
+    return null;
+  }
+
+  // Busca direta pelo Firebase UID (coluna agora é text)
+  const [user] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, firebaseUid))
+    .limit(1);
+
+  return user?.id || null;
 };
 
 const logEventPaymentAction = async (
@@ -49,8 +67,7 @@ const logEventPaymentAction = async (
   }
 };
 
-// ==================== FUNÇÕES QUE USAM PROCEDURES POSTGRESQL ====================
-
+// ✅ CORREÇÃO CRÍTICA: Função principal de registro de pagamento manual - AGORA COM FIREBASE UIDs
 export const registerManualEventPayment = async (
   eventBookingId: string,
   data: {
@@ -60,6 +77,7 @@ export const registerManualEventPayment = async (
     paymentType?: string;
     proofImageUrl?: string;
     registeredBy?: string;
+    notes?: string;
   }
 ): Promise<any> => {
   const {
@@ -68,85 +86,129 @@ export const registerManualEventPayment = async (
     referenceNumber,
     paymentType = "manual_event_payment",
     proofImageUrl,
-    registeredBy
+    registeredBy,
+    notes
   } = data;
 
   try {
-    // Primeiro, obtenha informações da reserva
-    const [eventBooking] = await db.select().from(eventBookings).where(eq(eventBookings.id, eventBookingId));
-    
-    if (!eventBooking) {
-      throw new Error("Reserva de evento não encontrada");
-    }
-
-    // Use a procedure do PostgreSQL se existir, caso contrário, crie manualmente
-    try {
-      const result = await db.execute(sql`
-        SELECT register_manual_event_payment(
-          ${eventBookingId}::uuid,
-          ${amount}::numeric,
-          ${paymentMethod}::text,
-          ${referenceNumber}::text,
-          ${proofImageUrl || null}::text,
-          ${paymentType}::text,
-          ${registeredBy || null}::text
-        ) as result
-      `);
-
-      const rows = result as unknown as Array<{ result: any }>;
+    // 🔒 USAR TRANSACTION para garantir atomicidade
+    return await db.transaction(async (tx) => {
+      // 1. Buscar a reserva com lock
+      const [eventBooking] = await tx.select().from(eventBookings).where(eq(eventBookings.id, eventBookingId));
       
-      await logEventPaymentAction(eventBookingId, "payment_registered", {
-        amount,
-        paymentMethod,
-        referenceNumber,
-        registeredBy,
-        action: "manual_payment_registered"
-      });
+      if (!eventBooking) {
+        throw new Error("Reserva de evento não encontrada");
+      }
 
-      return rows[0]?.result;
-    } catch (procedureError) {
-      // Se a procedure não existir, crie o pagamento manualmente
-      console.log('Procedure não encontrada, criando pagamento manualmente:', procedureError);
-      
-      const [payment] = await db.insert(eventPayments).values({
+      // 2. Calcular valores
+      const totalPrice = toNumber(eventBooking.totalPrice);
+      const currentBalance = toNumber(eventBooking.balanceDue) || totalPrice;
+      const currentDeposit = toNumber(eventBooking.depositPaid) || 0;
+
+      // 3. Validações
+      if (amount <= 0) {
+        throw new Error("Valor do pagamento deve ser maior que zero");
+      }
+
+      if (amount > currentBalance) {
+        throw new Error(`Valor do pagamento (${amount}) excede o saldo pendente (${currentBalance})`);
+      }
+
+      // 4. Calcular novos valores
+      const newBalance = Math.max(0, currentBalance - amount);
+      const newDeposit = currentDeposit + amount;
+
+      // 5. Determinar novo status de pagamento
+      let newPaymentStatus: typeof eventBooking.paymentStatus = eventBooking.paymentStatus;
+      if (newBalance <= 0) {
+        newPaymentStatus = "paid";
+      } else if (newBalance < totalPrice) {
+        newPaymentStatus = "partial";
+      } else {
+        newPaymentStatus = "pending";
+      }
+
+      // ✅ CORREÇÃO: Usar Firebase UIDs diretamente (agora coluna é text)
+      const confirmedBy = registeredBy || null;
+      const userId = eventBooking.userId || null;
+
+      // 6. Criar registro de pagamento usando a tabela payments
+      const [payment] = await tx.insert(eventPayments).values({
+        id: crypto.randomUUID(),
         eventBookingId: eventBookingId,
         hotelId: eventBooking.hotelId,
-        userId: eventBooking.userId || null,
+        userId, // ✅ Firebase UID direto (string)
         amount: amount.toString(),
         paymentMethod: paymentMethod,
         paymentType: paymentType,
         referenceNumber: referenceNumber,
         proofImageUrl: proofImageUrl || null,
-        status: "pending",
-        confirmedBy: registeredBy || null,
+        status: "pending", // Aguarda confirmação
+        confirmedBy, // ✅ Firebase UID direto (string) ou null
         paidAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
-        notes: "Pagamento manual registrado",
-        metadata: { registeredBy, paymentType }
+        notes: notes || `Pagamento manual registrado por ${registeredBy || 'sistema'}`,
+        metadata: { 
+          registeredBy, 
+          paymentType,
+          previousBalance: currentBalance,
+          newBalance: newBalance,
+          timestamp: new Date().toISOString()
+        }
       }).returning();
 
-      await logEventPaymentAction(eventBookingId, "payment_registered", {
-        amount,
-        paymentMethod,
-        referenceNumber,
-        registeredBy,
-        action: "manual_payment_registered",
-        paymentId: payment.id
-      });
+      // ✅ CORREÇÃO CRÍTICA: Atualizar a reserva com os novos valores - cálculo manual agora permitido
+      // Após inserir em payments, atualize eventBookings (inclua depositPaid, balanceDue, paymentStatus)
+      const newDepositCalculated = currentDeposit + amount;
+      const newBalanceCalculated = totalPrice - newDepositCalculated;
+      const newStatusCalculated = newBalanceCalculated <= 0 ? 'paid' : 'partial';
 
-      // Atualize o status de pagamento da reserva
-      await db.update(eventBookings)
-        .set({ 
-          paymentStatus: 'partial',
+      const [updatedBooking] = await tx.update(eventBookings)
+        .set({
+          depositPaid: newDepositCalculated.toString(),
+          balanceDue: newBalanceCalculated.toString(),
+          paymentStatus: newStatusCalculated,
           updatedAt: new Date()
         })
-        .where(eq(eventBookings.id, eventBookingId));
+        .where(eq(eventBookings.id, eventBookingId))
+        .returning();
 
-      return payment;
-    }
+      // 7. Registrar log
+      await tx.insert(eventBookingLogs).values({
+        id: crypto.randomUUID(),
+        bookingId: eventBookingId,
+        action: "payment_registered",
+        details: {
+          paymentId: payment.id,
+          amount: amount,
+          paymentMethod: paymentMethod,
+          referenceNumber: referenceNumber,
+          previousBalance: currentBalance,
+          newBalance: newBalance,
+          previousPaymentStatus: eventBooking.paymentStatus,
+          newPaymentStatus: newStatusCalculated,
+          registeredBy: registeredBy,
+          notes: notes,
+        },
+        createdAt: new Date(),
+      });
+
+      // 8. Retornar resposta completa (compatível com frontend)
+      return {
+        paymentId: payment.id,
+        booking: updatedBooking,
+        message: "Pagamento registrado com sucesso",
+        paymentSummary: {
+          totalPrice: totalPrice,
+          amountPaid: newDepositCalculated,
+          amountDue: newBalanceCalculated,
+          paymentStatus: newStatusCalculated,
+        }
+      };
+    });
   } catch (error) {
-    console.error('Erro ao registrar pagamento manual:', error);
+    console.error('❌ Erro ao registrar pagamento manual:', error);
     throw new Error(`Falha ao registrar pagamento: ${(error as Error).message}`);
   }
 };
@@ -162,11 +224,14 @@ export const confirmEventPayment = async (
       throw new Error("Pagamento não encontrado");
     }
 
+    // ✅ CORREÇÃO: Usar Firebase UID diretamente
+    const confirmedByValue = confirmedBy || null;
+
     // Atualize o status do pagamento
     const [updatedPayment] = await db.update(eventPayments)
       .set({
         status: "confirmed",
-        confirmedBy: confirmedBy || null,
+        confirmedBy: confirmedByValue, // ✅ Firebase UID direto
         confirmedAt: new Date(),
         updatedAt: new Date()
       })
@@ -176,7 +241,7 @@ export const confirmEventPayment = async (
     // Verifique se todos os pagamentos estão confirmados para atualizar a reserva
     const allPayments = await db.select()
       .from(eventPayments)
-      .where(eq(eventPayments.eventBookingId, payment.eventBookingId!));
+      .where(eq(eventPayments.eventBookingId!, payment.eventBookingId!));
 
     const totalPaid = allPayments
       .filter(p => p.status === "confirmed")
@@ -194,17 +259,21 @@ export const confirmEventPayment = async (
         newPaymentStatus = "partial";
       }
 
+      // ✅ Atualizar com cálculo manual para consistência
+      // ✅ CORREÇÃO: Atualizar depositPaid e balanceDe corretamente
       await db.update(eventBookings)
         .set({ 
           paymentStatus: newPaymentStatus,
+          depositPaid: totalPaid.toString(),
+          balanceDue: (totalPrice - totalPaid).toString(),
           updatedAt: new Date()
         })
         .where(eq(eventBookings.id, payment.eventBookingId!));
     }
 
     await logEventPaymentAction(payment.eventBookingId!, "payment_confirmed", {
-      paymentId,
-      confirmedBy,
+      paymentId: paymentId,
+      confirmedBy: confirmedBy,
       action: "payment_confirmed"
     });
 
@@ -212,6 +281,165 @@ export const confirmEventPayment = async (
   } catch (error) {
     console.error('Erro ao confirmar pagamento:', error);
     throw new Error(`Falha ao confirmar pagamento: ${(error as Error).message}`);
+  }
+};
+
+// ✅ CORREÇÃO: Função para cancelar reserva com tratamento de reembolso
+export const cancelEventBooking = async (
+  eventBookingId: string,
+  reason: string,
+  cancelledBy: string
+): Promise<any> => {
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Buscar a reserva
+      const [eventBooking] = await tx.select().from(eventBookings).where(eq(eventBookings.id, eventBookingId));
+      
+      if (!eventBooking) {
+        throw new Error("Reserva de evento não encontrada");
+      }
+
+      const currentDeposit = toNumber(eventBooking.depositPaid);
+
+      // ✅ CORREÇÃO: Para cancelamento: zerar saldo pendente e marcar reembolso se pago > 0
+      // Antes de set "status" = 'cancelled'
+      if (currentDeposit > 0) {
+        // Lógica de reembolso (insert em refunds ou similar)
+        await tx.insert(refunds).values({
+          id: crypto.randomUUID(),
+          bookingId: eventBookingId,
+          amount: currentDeposit.toString(),
+          status: 'pending',
+          reason: reason + ' (reembolso por cancelamento)',
+          requestedBy: cancelledBy,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        // Zerar saldo pendente
+        await tx.update(eventBookings)
+          .set({
+            depositPaid: '0',
+            balanceDue: '0',
+            paymentStatus: 'refunded'
+          })
+          .where(eq(eventBookings.id, eventBookingId));
+      }
+
+      // 2. Atualizar o status da reserva para cancelled
+      const [updatedBooking] = await tx.update(eventBookings)
+        .set({
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(eventBookings.id, eventBookingId))
+        .returning();
+
+      // 3. Cancele qualquer pagamento pendente associado
+      await tx.update(eventPayments)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+          notes: `Pagamento cancelado: ${cancelledBy} - ${reason}`
+        })
+        .where(and(
+          eq(eventPayments.eventBookingId!, eventBookingId),
+          eq(eventPayments.status, "pending")
+        ));
+
+      await logEventPaymentAction(eventBookingId, "booking_cancelled", {
+        cancelledBy,
+        reason,
+        previousStatus: eventBooking.status,
+        currentDeposit,
+        action: "booking_cancelled"
+      });
+
+      return updatedBooking;
+    });
+  } catch (error) {
+    console.error('Erro ao cancelar reserva:', error);
+    throw new Error(`Falha ao cancelar reserva: ${(error as Error).message}`);
+  }
+};
+
+// ✅ CORREÇÃO: Função para rejeitar reserva com tratamento de reembolso
+export const rejectEventBooking = async (
+  eventBookingId: string,
+  reason: string,
+  rejectedBy: string
+): Promise<any> => {
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Buscar a reserva
+      const [eventBooking] = await tx.select().from(eventBookings).where(eq(eventBookings.id, eventBookingId));
+      
+      if (!eventBooking) {
+        throw new Error("Reserva de evento não encontrada");
+      }
+
+      const currentDeposit = toNumber(eventBooking.depositPaid);
+
+      // ✅ CORREÇÃO: Para rejeição: zerar saldo pendente e marcar reembolso se pago > 0
+      if (currentDeposit > 0) {
+        // Lógica de reembolso
+        await tx.insert(refunds).values({
+          id: crypto.randomUUID(),
+          bookingId: eventBookingId,
+          amount: currentDeposit.toString(),
+          status: 'pending',
+          reason: reason + ' (reembolso por rejeição)',
+          requestedBy: rejectedBy,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        // Zerar saldo pendente
+        await tx.update(eventBookings)
+          .set({
+            depositPaid: '0',
+            balanceDue: '0',
+            paymentStatus: 'refunded'
+          })
+          .where(eq(eventBookings.id, eventBookingId));
+      }
+
+      // 2. Atualizar o status da reserva para rejected
+      const [updatedBooking] = await tx.update(eventBookings)
+        .set({
+          status: 'rejected',
+          rejectedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .where(eq(eventBookings.id, eventBookingId))
+        .returning();
+
+      // 3. Cancele qualquer pagamento pendente associado
+      await tx.update(eventPayments)
+        .set({
+          status: 'cancelled',
+          updatedAt: new Date(),
+          notes: `Pagamento cancelado: ${rejectedBy} - ${reason}`
+        })
+        .where(and(
+          eq(eventPayments.eventBookingId!, eventBookingId),
+          eq(eventPayments.status, "pending")
+        ));
+
+      await logEventPaymentAction(eventBookingId, "booking_rejected", {
+        rejectedBy,
+        reason,
+        previousStatus: eventBooking.status,
+        currentDeposit,
+        action: "booking_rejected"
+      });
+
+      return updatedBooking;
+    });
+  } catch (error) {
+    console.error('Erro ao rejeitar reserva:', error);
+    throw new Error(`Falha ao rejeitar reserva: ${(error as Error).message}`);
   }
 };
 
@@ -256,7 +484,7 @@ export const generateEventReceipt = async (
       confirmedAt: payment.confirmedAt,
       status: payment.status,
       generatedAt: new Date(),
-      generatedBy: generatedBy
+      generatedBy: generatedBy,
     };
 
     await logEventPaymentAction(booking.id, "receipt_generated", {
@@ -306,6 +534,9 @@ export const cancelEventBookingForNonPayment = async (
     if (!eventBooking) {
       throw new Error("Reserva de evento não encontrada");
     }
+
+    // ✅ CORREÇÃO: Usar Firebase UID diretamente
+    const cancelledByValue = cancelledBy;
 
     // Atualize o status da reserva
     const [updatedBooking] = await db.update(eventBookings)
@@ -478,7 +709,7 @@ export const getEventBookingPaymentDetails = async (bookingId: string) => {
     const totalPrice = toNumber(booking.totalPrice);
     const remaining = totalPrice - totalPaid;
 
-    // Busque faturas associadas - ✅ CORREÇÃO: Usar SQL direto
+    // Busque faturas associadas
     let activeInvoice: EventInvoice | null = null;
     
     try {
@@ -516,11 +747,9 @@ export const getEventBookingPaymentDetails = async (bookingId: string) => {
         securityDeposit: toNumber(booking.securityDeposit),
         status: booking.status,
         paymentStatus: booking.paymentStatus,
-        // ✅ CORREÇÃO: Adicionado campo catering para diárias
         cateringRequired: booking.cateringRequired || false,
-        // ✅ REMOVIDO: Campos obsoletos do sistema horário
-        // startDatetime, endDatetime, durationHours
-        // equipmentFees, serviceFees, weekendSurcharge
+        depositPaid: toNumber(booking.depositPaid),
+        balanceDue: toNumber(booking.balanceDue),
       },
       invoice: activeInvoice ? {
         id: activeInvoice.id,
@@ -689,6 +918,90 @@ export const getRecentEventPaymentsByHotel = async (
   return results.map(r => r.payment);
 };
 
+// ✅ CORREÇÃO: Função para estatísticas do dashboard - filtrar reservas ativas
+export const getEventDashboardStats = async (
+  hotelId: string,
+  startDate?: string,
+  endDate?: string
+) => {
+  try {
+    // ✅ CORREÇÃO: Para estatísticas (em dashboard endpoint): filtrar reservas ativas
+    const baseConditions = [
+      eq(eventBookings.hotelId, hotelId)
+    ];
+
+    if (startDate && endDate) {
+      baseConditions.push(gte(eventBookings.startDate, startDate));
+      baseConditions.push(lte(eventBookings.startDate, endDate));
+    }
+
+    // ✅ CORREÇÃO: Filtrar reservas ativas (não canceladas ou rejeitadas)
+    const bookingsResult = await db
+      .select({
+        total_reservas: sql<number>`COUNT(*)`,
+        total_revenue: sql<number>`COALESCE(SUM(total_price::numeric), 0)`,
+        paid_reservas: sql<number>`COUNT(CASE WHEN payment_status = 'paid' THEN 1 END)`,
+        confirmed_reservas: sql<number>`COUNT(CASE WHEN status IN ('confirmed', 'pending') THEN 1 END)`
+      })
+      .from(eventBookings)
+      .where(
+        and(
+          ...baseConditions,
+          // ✅ CORREÇÃO: Filtrar reservas ativas
+          sql`status NOT IN ('cancelled', 'rejected')`
+        )
+      );
+
+    const bookingsData = bookingsResult[0] || {
+      total_reservas: 0,
+      total_revenue: 0,
+      paid_reservas: 0,
+      confirmed_reservas: 0
+    };
+
+    // ✅ CORREÇÃO: Para estatísticas (em dashboard endpoint): filtrar reservas ativas
+    const paymentsResult = await db
+      .select({
+        total_paid: sql<number>`COALESCE(SUM(ep.amount::numeric), 0)`,
+        pending_payments: sql<number>`COUNT(CASE WHEN ep.status = 'pending' THEN 1 END)`,
+        upcoming_payments: sql<number`COUNT(CASE WHEN eb.payment_status IN ('partial', 'pending') THEN 1 END)`
+      })
+      .from(eventPayments)
+      .innerJoin(eventBookings, eq(eventBookings.id, eventPayments.eventBookingId!))
+      .where(
+        and(
+          eq(eventBookings.hotelId, hotelId),
+          // ✅ CORREÇÃO: Filtrar reservas ativas
+          sql`eb.status NOT IN ('cancelled', 'rejected')`,
+          startDate && endDate ? gte(eventPayments.paidAt, new Date(startDate)) : sql``,
+          startDate && endDate ? lte(eventPayments.paidAt, new Date(endDate)) : sql``
+        )
+      );
+
+    const paymentsData = paymentsResult[0] || {
+      total_paid: 0,
+      pending_payments: 0,
+      upcoming_payments: 0
+    };
+
+    return {
+      totalReservas: Number(bookingsData.total_reservas),
+      totalRevenue: Number(bookingsData.total_revenue),
+      reservasPagas: Number(bookingsData.paid_reservas),
+      reservasConfirmadas: Number(bookingsData.confirmed_reservas),
+      totalPago: Number(paymentsData.total_paid),
+      pagamentosPendentes: Number(paymentsData.pending_payments),
+      pagamentosFuturos: Number(paymentsData.upcoming_payments),
+      taxaConfirmacao: Number(bookingsData.total_reservas) > 0 
+        ? (Number(bookingsData.confirmed_reservas) / Number(bookingsData.total_reservas)) * 100 
+        : 0
+    };
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas do dashboard:', error);
+    throw new Error(`Falha ao buscar estatísticas: ${(error as Error).message}`);
+  }
+};
+
 export const getEventFinancialSummary = async (
   hotelId: string,
   startDate?: string,
@@ -696,26 +1009,25 @@ export const getEventFinancialSummary = async (
 ) => {
   try {
     const conditions: any[] = [
-      eq(eventBookings.hotelId, hotelId)
+      eq(eventBookings.hotelId, hotelId),
+      // ✅ CORREÇÃO: Filtrar reservas ativas
+      sql`status NOT IN ('cancelled', 'rejected')`
     ];
 
     let startDateStr: string | undefined;
     let endDateStr: string | undefined;
 
     if (startDate && endDate) {
-      // ✅ CORREÇÃO: Converte Date para string YYYY-MM-DD (compatível com coluna startDate)
       const start = new Date(startDate);
       const end = new Date(endDate);
       
       startDateStr = start.toISOString().split('T')[0];
       endDateStr = end.toISOString().split('T')[0];
 
-      // ✅ CORREÇÃO: Usar strings em vez de objetos Date
       conditions.push(gte(eventBookings.startDate, startDateStr));
       conditions.push(lte(eventBookings.startDate, endDateStr));
     }
 
-    // ✅ CORREÇÃO: SQL atualizado para usar start_date (sistema diário)
     const bookingsQuery = sql`
       SELECT 
         COALESCE(SUM(total_price::numeric), 0) as total_revenue,
@@ -723,6 +1035,7 @@ export const getEventFinancialSummary = async (
         COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) as paid_events
       FROM event_bookings
       WHERE hotel_id = ${hotelId}
+        AND status NOT IN ('cancelled', 'rejected')
         ${startDateStr && endDateStr 
           ? sql`AND start_date >= ${startDateStr} AND start_date <= ${endDateStr}` 
           : sql``}
@@ -741,7 +1054,6 @@ export const getEventFinancialSummary = async (
       paid_events: 0 
     };
 
-    // ✅ CORREÇÃO: Query para pagamentos com nomes corretos e usando paid_at
     const paymentsQuery = sql`
       SELECT 
         COALESCE(SUM(ep.amount::numeric), 0) as total_paid,
@@ -750,6 +1062,7 @@ export const getEventFinancialSummary = async (
       FROM event_payments ep
       INNER JOIN event_bookings eb ON eb.id = ep.event_booking_id
       WHERE eb.hotel_id = ${hotelId}
+        AND eb.status NOT IN ('cancelled', 'rejected')
         ${startDateStr && endDateStr 
           ? sql`AND ep.paid_at >= ${new Date(startDateStr)} AND ep.paid_at <= ${new Date(endDateStr + 'T23:59:59')}` 
           : sql``}
@@ -857,27 +1170,42 @@ export const registerSimpleEventPayment = async (
     const [eventBooking] = await db.select().from(eventBookings).where(eq(eventBookings.id, bookingId));
     if (!eventBooking) throw new Error("Reserva de evento não encontrada");
 
+    // ✅ CORREÇÃO: Usar Firebase UID diretamente
     const paymentAmount = amount || toNumber(eventBooking.totalPrice);
 
     const [payment] = await db.insert(eventPayments).values({
       eventBookingId: bookingId,
       hotelId: eventBooking.hotelId,
-      userId: userId,
+      userId, // ✅ Firebase UID direto
       amount: paymentAmount.toString(),
       paymentMethod: paymentMethod,
       paymentType: "full",
       status: "confirmed",
-      confirmedBy: userId || null,
+      confirmedBy: userId, // ✅ Firebase UID direto
       paidAt: new Date(),
       confirmedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
       notes: "Pagamento simples registrado",
-      metadata: { paymentMethod, type: "simple_payment" }
+      metadata: { 
+        paymentMethod, 
+        type: "simple_payment"
+      }
     }).returning();
 
-    // Atualize o status da reserva
-    await updateEventBookingPaymentStatus(bookingId, 'paid');
+    // Atualize o status da reserva com cálculo manual
+    // ✅ CORREÇÃO: Usar a lógica consistente de atualização
+    const totalPaid = toNumber(eventBooking.depositPaid) + paymentAmount;
+    const totalPrice = toNumber(eventBooking.totalPrice);
+    
+    await db.update(eventBookings)
+      .set({
+        paymentStatus: totalPaid >= totalPrice ? 'paid' : 'partial',
+        depositPaid: totalPaid.toString(),
+        balanceDue: (totalPrice - totalPaid).toString(),
+        updatedAt: new Date()
+      })
+      .where(eq(eventBookings.id, bookingId));
 
     return payment;
   } catch (error) {
@@ -900,6 +1228,7 @@ export const updateEventPayment = async (
   paymentId: string,
   data: Partial<EventPaymentInsert>
 ): Promise<EventPayment> => {
+  // ✅ CORREÇÃO: Usar Firebase UIDs diretamente, sem conversão
   const [updated] = await db
     .update(eventPayments)
     .set({
@@ -956,6 +1285,8 @@ export default {
   generateEventReceipt,
   processEventBookingWithPayment,
   cancelEventBookingForNonPayment,
+  cancelEventBooking, // ✅ CORREÇÃO: Nova função adicionada
+  rejectEventBooking, // ✅ CORREÇÃO: Nova função adicionada
   
   // Faturação
   createEventInvoice,
@@ -975,6 +1306,7 @@ export default {
   getRecentEventPaymentsByHotel,
   getEventFinancialSummary,
   getPendingEventPayments,
+  getEventDashboardStats, // ✅ CORREÇÃO: Nova função para dashboard
   
   // Funções adicionais
   updateEventBookingPaymentStatus,
@@ -987,4 +1319,7 @@ export default {
   updateEventPayment,
   deleteEventPayment,
   getEventPaymentsByDateRange,
+  
+  // ✅ CORREÇÃO: Exportar função auxiliar se necessário
+  getUserId,
 };

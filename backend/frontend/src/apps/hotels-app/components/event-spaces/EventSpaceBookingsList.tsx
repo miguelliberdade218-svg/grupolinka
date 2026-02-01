@@ -1,7 +1,10 @@
 // src/apps/hotels-app/components/event-spaces/EventSpaceBookingsList.tsx
 // Componente para listar reservas de um espaço de eventos - VERSÃO COMPLETA COM SERVIÇO REAL
+// ✅ CORREÇÃO CRÍTICA: Adicionado refreshKey e onActionSuccess para atualizar UI
+// ✅ CORREÇÃO: Problema de tipo ManualPaymentPayload corrigido
+// ✅ CORREÇÃO DOM: Substituído <p> por <div> em vários lugares para evitar erro de validação
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -35,6 +38,8 @@ import {
   BarChart,
   FileSpreadsheet,
   Receipt,
+  X,
+  Building,
 } from 'lucide-react';
 import { useToast } from '@/shared/hooks/use-toast';
 import { apiService } from '@/services/api';
@@ -43,8 +48,6 @@ import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import type { 
   ManualPaymentPayload, 
-  BookingPayment, 
-  BookingLog, 
   FullBookingDetails 
 } from '@/shared/types/event-spaces';
 
@@ -102,18 +105,32 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const itemsPerPage = 10;
   const { toast } = useToast();
 
+  // ✅ CORREÇÃO: Estado para refresh key para forçar re-render
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // ✅ MELHORADO: Estado para nome real do espaço com fallback melhorado
+  const [actualSpaceName, setActualSpaceName] = useState(spaceName);
+
   // ESTADOS ADICIONAIS
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [paymentDetails, setPaymentDetails] = useState<FullBookingDetails | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [paymentData, setPaymentData] = useState<ManualPaymentPayload>({
+  
+  // ✅ CORREÇÃO: paymentData atualizado para usar 'reference' em vez de 'referenceNumber'
+  const [paymentData, setPaymentData] = useState<{
+    amount: number;
+    paymentMethod: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+    reference: string; // ✅ MUDADO: reference em vez de referenceNumber
+    notes?: string;
+  }>({
     amount: 0,
     paymentMethod: 'mpesa',
-    referenceNumber: '',
+    reference: '',
     notes: '',
   });
+  
   const [stats, setStats] = useState<BookingStatsData>({
     total: 0,
     pending: 0,
@@ -154,16 +171,15 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedBookingForPayment, setSelectedBookingForPayment] = useState<Booking | null>(null);
 
-  useEffect(() => {
-    loadBookings();
-  }, [spaceId]);
+  // ✅ CORREÇÃO: Função para lidar com sucesso de ações usando useCallback
+  const handleActionSuccess = useCallback(() => {
+    console.log('🔄 Ação realizada com sucesso, recarregando dados...');
+    setRefreshKey(prev => prev + 1); // Força re-render
+    loadBookings(); // Recarrega dados do backend
+  }, []); // loadBookings será definido com useCallback
 
-  useEffect(() => {
-    filterBookings();
-    calculateStats(filteredBookings);
-  }, [bookings, advancedFilters]);
-
-  const loadBookings = async () => {
+  // ✅ CORREÇÃO: Atualizar useEffect para usar useCallback
+  const loadBookings = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -173,12 +189,21 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       });
       
       if (res.success && res.data) {
+        // ✅ CORREÇÃO: Garantir que todos os campos necessários existem
         const updatedBookings = res.data.map((booking: any) => ({
           ...booking,
           payment_status: booking.payment_status || 'pending',
           balance_due: booking.balance_due || booking.total_price,
           event_type: booking.event_type || 'outro',
           organizer_phone: booking.organizer_phone || '',
+          // ✅ GARANTIR que start_date e end_date existem
+          start_date: booking.start_date || booking.startDate || '',
+          end_date: booking.end_date || booking.endDate || '',
+          // Campos extras para compatibilidade
+          event_title: booking.event_title || booking.eventTitle || '',
+          organizer_name: booking.organizer_name || booking.organizerName || '',
+          organizer_email: booking.organizer_email || booking.organizerEmail || '',
+          expected_attendees: booking.expected_attendees || booking.expectedAttendees || 0,
         }));
         setBookings(updatedBookings);
         calculateStats(updatedBookings);
@@ -191,9 +216,39 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     } finally {
       setLoading(false);
     }
+  }, [spaceId]); // Adicionar dependência
+
+  useEffect(() => {
+    loadBookings();
+    
+    // ✅ MELHORADO: Carregar nome real do espaço com tratamento de erro melhorado
+    if (spaceName === 'Espaço de Eventos' && spaceId) {
+      loadSpaceName();
+    }
+  }, [spaceId, loadBookings]); // Adicionar loadBookings como dependência
+
+  useEffect(() => {
+    filterBookings();
+    calculateStats(filteredBookings);
+  }, [bookings, advancedFilters]);
+
+  // ✅ MELHORADO: Carregar nome real do espaço com fallback robusto
+  const loadSpaceName = async () => {
+    try {
+      const res = await eventSpaceService.getEventSpaceById(spaceId);
+      if (res.success && res.data) {
+        setActualSpaceName(res.data.name);
+      } else {
+        // Fallback: usar ID se não conseguir nome
+        setActualSpaceName(`Espaço ${spaceId.slice(0, 8)}...`);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar nome do espaço:', error);
+      // Fallback seguro
+      setActualSpaceName(`Espaço ${spaceId.slice(0, 8)}...`);
+    }
   };
 
-  // FUNÇÕES ADICIONAIS
   const loadPaymentDetails = async (bookingId: string) => {
     try {
       const res = await eventSpaceService.getFullBookingDetails(bookingId);
@@ -222,7 +277,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           title: '✅ Reserva rejeitada',
           description: res.message || 'A reserva foi rejeitada com sucesso',
         });
-        loadBookings();
+        handleActionSuccess(); // ✅ Usar a função de sucesso
       } else {
         throw new Error(res.error);
       }
@@ -242,7 +297,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           title: '✅ Reserva cancelada',
           description: res.data?.message || 'A reserva foi cancelada com sucesso',
         });
-        loadBookings();
+        handleActionSuccess(); // ✅ Usar a função de sucesso
       } else {
         throw new Error(res.error);
       }
@@ -254,18 +309,27 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
   };
 
+  // ✅ CORREÇÃO: handleRegisterPayment atualizado para usar 'reference' correto
   const handleRegisterPayment = async () => {
     if (!selectedBooking) return;
     
     setIsPaying(true);
     try {
-      const res = await eventSpaceService.registerManualPayment(selectedBooking.id, paymentData);
+      const paymentPayload = {
+        amount: paymentData.amount,
+        paymentMethod: paymentData.paymentMethod,
+        reference: paymentData.reference, // ✅ CORREÇÃO: Usar 'reference' em vez de 'referenceNumber'
+        notes: paymentData.notes,
+      };
+
+      const res = await eventSpaceService.registerManualPayment(selectedBooking.id, paymentPayload);
+      
       if (res.success) {
         toast({
           title: '✅ Pagamento registrado',
           description: res.message || 'Pagamento registrado com sucesso',
         });
-        loadBookings();
+        handleActionSuccess(); // ✅ Usar a função de sucesso
         // Recarregar detalhes completos
         const fullDetails = await eventSpaceService.getFullBookingDetails(selectedBooking.id);
         if (fullDetails.success && fullDetails.data) {
@@ -275,7 +339,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         setPaymentData({
           amount: 0,
           paymentMethod: 'mpesa',
-          referenceNumber: '',
+          reference: '',
           notes: '',
         });
       } else {
@@ -327,7 +391,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         Valor: ${formatCurrency(selectedBooking?.total_price || '0')}
         Data: ${new Date().toLocaleDateString('pt-MZ')}
         Método: ${paymentData.paymentMethod}
-        Referência: ${paymentData.referenceNumber}
+        Referência: ${paymentData.reference}
         
         Este é um comprovante de pagamento.
       `;
@@ -416,7 +480,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `reservas_${spaceName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `reservas_${actualSpaceName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
 
@@ -437,7 +501,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     setPaymentData({
       amount: Number(booking.balance_due || '0') || 0,
       paymentMethod: 'mpesa',
-      referenceNumber: `PAY-${booking.id?.slice(0, 8)?.toUpperCase() || 'UNKNOWN'}-${Date.now().toString().slice(-6)}`,
+      reference: `PAY-${booking.id?.slice(0, 8)?.toUpperCase() || 'UNKNOWN'}-${Date.now().toString().slice(-6)}`, // ✅ CORREÇÃO: reference
       notes: `Pagamento para reserva ${booking.event_title}`,
     });
     loadPaymentDetails(booking.id);
@@ -622,7 +686,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           title: '✅ Reserva confirmada',
           description: res.message || 'A reserva foi confirmada com sucesso',
         });
-        loadBookings();
+        handleActionSuccess(); // ✅ Usar a função de sucesso
         setShowDetailsDialog(false);
       } else {
         throw new Error(res.error);
@@ -706,18 +770,20 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 <div>
                   <h4 className="font-semibold mb-2">Informações do Evento</h4>
                   <div className="space-y-2">
-                    <p><span className="text-gray-600">Título:</span> {selectedBooking.event_title}</p>
-                    <p><span className="text-gray-600">Tipo:</span> {selectedBooking.event_type || 'Não especificado'}</p>
-                    <p><span className="text-gray-600">Data:</span> {formatDate(selectedBooking.start_date)} - {formatDate(selectedBooking.end_date)}</p>
-                    <p><span className="text-gray-600">Participantes:</span> {selectedBooking.expected_attendees}</p>
+                    {/* ✅ CORREÇÃO: Substituído <p> por <div> para evitar erro DOM */}
+                    <div className="text-gray-600"><span className="font-medium">Título:</span> {selectedBooking.event_title}</div>
+                    <div className="text-gray-600"><span className="font-medium">Tipo:</span> {selectedBooking.event_type || 'Não especificado'}</div>
+                    <div className="text-gray-600"><span className="font-medium">Data:</span> {formatDate(selectedBooking.start_date)} - {formatDate(selectedBooking.end_date)}</div>
+                    <div className="text-gray-600"><span className="font-medium">Participantes:</span> {selectedBooking.expected_attendees}</div>
                   </div>
                 </div>
                 <div>
                   <h4 className="font-semibold mb-2">Informações do Organizador</h4>
                   <div className="space-y-2">
-                    <p><span className="text-gray-600">Nome:</span> {selectedBooking.organizer_name}</p>
-                    <p><span className="text-gray-600">Email:</span> {selectedBooking.organizer_email}</p>
-                    <p><span className="text-gray-600">Telefone:</span> {selectedBooking.organizer_phone || 'Não informado'}</p>
+                    {/* ✅ CORREÇÃO: Substituído <p> por <div> para evitar erro DOM */}
+                    <div className="text-gray-600"><span className="font-medium">Nome:</span> {selectedBooking.organizer_name}</div>
+                    <div className="text-gray-600"><span className="font-medium">Email:</span> {selectedBooking.organizer_email}</div>
+                    <div className="text-gray-600"><span className="font-medium">Telefone:</span> {selectedBooking.organizer_phone || 'Não informado'}</div>
                   </div>
                 </div>
               </div>
@@ -726,16 +792,22 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 <div>
                   <h4 className="font-semibold mb-2">Informações Financeiras</h4>
                   <div className="space-y-2">
-                    <p><span className="text-gray-600">Valor Total:</span> {formatCurrency(selectedBooking.total_price)}</p>
-                    <p><span className="text-gray-600">Saldo Pendente:</span> {formatCurrency(selectedBooking.balance_due || '0')}</p>
-                    <p><span className="text-gray-600">Status Pagamento:</span> {getPaymentStatusBadge(selectedBooking.payment_status)}</p>
+                    {/* ✅ CORREÇÃO: Substituído <p> por <div> para evitar erro DOM */}
+                    <div className="text-gray-600"><span className="font-medium">Valor Total:</span> {formatCurrency(selectedBooking.total_price)}</div>
+                    <div className="text-gray-600"><span className="font-medium">Saldo Pendente:</span> {formatCurrency(selectedBooking.balance_due || '0')}</div>
+                    <div className="text-gray-600 flex items-center gap-2">
+                      <span className="font-medium">Status Pagamento:</span> {getPaymentStatusBadge(selectedBooking.payment_status)}
+                    </div>
                   </div>
                 </div>
                 <div>
                   <h4 className="font-semibold mb-2">Status da Reserva</h4>
                   <div className="space-y-2">
-                    <p><span className="text-gray-600">Status:</span> {getStatusBadge(selectedBooking.status)}</p>
-                    <p><span className="text-gray-600">Criada em:</span> {formatDate(selectedBooking.created_at)}</p>
+                    {/* ✅ CORREÇÃO: Substituído <p> por <div> para evitar erro DOM */}
+                    <div className="text-gray-600 flex items-center gap-2">
+                      <span className="font-medium">Status:</span> {getStatusBadge(selectedBooking.status)}
+                    </div>
+                    <div className="text-gray-600"><span className="font-medium">Criada em:</span> {formatDate(selectedBooking.created_at)}</div>
                   </div>
                 </div>
               </div>
@@ -786,7 +858,8 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                             <div className="flex justify-between items-center">
                               <div>
                                 <div className="flex items-center gap-2 mb-1">
-                                  <p className="font-medium">{formatCurrency(payment.amount)}</p>
+                                  {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                                  <div className="font-medium">{formatCurrency(payment.amount)}</div>
                                   <Badge 
                                     variant={
                                       payment.status === 'paid' ? 'default' :
@@ -803,17 +876,19 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                                      payment.status === 'cancelled' ? 'Cancelado' : payment.status}
                                   </Badge>
                                 </div>
-                                <p className="text-sm text-gray-600">
+                                {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                                <div className="text-sm text-gray-600">
                                   {payment.paymentMethod === 'mpesa' ? 'M-Pesa' :
                                    payment.paymentMethod === 'bank_transfer' ? 'Transferência' :
                                    payment.paymentMethod === 'card' ? 'Cartão' :
                                    payment.paymentMethod === 'cash' ? 'Dinheiro' : 'Mobile Money'} • {payment.referenceNumber}
-                                </p>
-                                <p className="text-xs text-gray-500">
+                                </div>
+                                {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                                <div className="text-xs text-gray-500">
                                   {payment.confirmedAt ? formatDate(payment.confirmedAt) : formatDate(payment.createdAt)}
-                                </p>
+                                </div>
                                 {payment.notes && (
-                                  <p className="text-xs text-gray-500 mt-1">Nota: {payment.notes}</p>
+                                  <div className="text-xs text-gray-500 mt-1">Nota: {payment.notes}</div>
                                 )}
                               </div>
                               <div className="flex gap-2">
@@ -843,7 +918,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                         ))}
                       </div>
                     ) : (
-                      <p className="text-gray-500 text-center py-4">Nenhum pagamento registrado</p>
+                      <div className="text-gray-500 text-center py-4">Nenhum pagamento registrado</div>
                     )}
                   </div>
                 </div>
@@ -866,7 +941,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-gray-500">Nenhum serviço adicional para esta reserva</p>
+                  <div className="text-gray-500">Nenhum serviço adicional para esta reserva</div>
                 </div>
               )}
             </TabsContent>
@@ -880,11 +955,12 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                       <Card key={log.id} className="p-3">
                         <div className="flex justify-between">
                           <div>
-                            <p className="font-medium">{log.action}</p>
+                            {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                            <div className="font-medium">{log.action}</div>
                             {log.performedBy && (
-                              <p className="text-sm text-gray-600">Por: {log.performedBy}</p>
+                              <div className="text-sm text-gray-600">Por: {log.performedBy}</div>
                             )}
-                            <p className="text-xs text-gray-500 mt-1">{formatDate(log.createdAt)}</p>
+                            <div className="text-xs text-gray-500 mt-1">{formatDate(log.createdAt)}</div>
                           </div>
                           {log.details && (
                             <div className="text-sm text-gray-600">
@@ -898,7 +974,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-gray-500">Nenhum histórico disponível</p>
+                  <div className="text-gray-500">Nenhum histórico disponível</div>
                 </div>
               )}
             </TabsContent>
@@ -918,8 +994,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                   payment_status: selectedBooking.payment_status as any,
                   balance_due: selectedBooking.balance_due,
                   event_title: selectedBooking.event_title,
+                  start_date: selectedBooking.start_date, // ✅ ADICIONADO
+                  end_date: selectedBooking.end_date,     // ✅ ADICIONADO
                 }}
                 onAction={handleBookingAction}
+                onActionSuccess={handleActionSuccess} // ✅ PASSAR CALLBACK
                 compact={false}
                 showDetails={false}
               />
@@ -972,9 +1051,10 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                   max={Number(selectedBooking.balance_due || '0')}
                   placeholder="Digite o valor do pagamento"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                <div className="text-xs text-gray-500 mt-1">
                   Máximo: {formatCurrency(selectedBooking.balance_due || '0')}
-                </p>
+                </div>
               </div>
               
               <div>
@@ -998,11 +1078,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
               </div>
               
               <div>
-                <Label htmlFor="referenceNumber">Número de Referência</Label>
+                <Label htmlFor="reference">Número de Referência</Label>
                 <Input
-                  id="referenceNumber"
-                  value={paymentData.referenceNumber}
-                  onChange={(e) => setPaymentData({...paymentData, referenceNumber: e.target.value})}
+                  id="reference"
+                  value={paymentData.reference}
+                  onChange={(e) => setPaymentData({...paymentData, reference: e.target.value})}
                   placeholder={
                     paymentData.paymentMethod === 'mpesa' ? 'Ex: MP123456789' :
                     paymentData.paymentMethod === 'bank_transfer' ? 'Ex: TRF-2025-001' :
@@ -1010,9 +1090,10 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                   }
                   readOnly={paymentData.paymentMethod !== 'cash'}
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                <div className="text-xs text-gray-500 mt-1">
                   {paymentData.paymentMethod === 'cash' ? 'Preencha com o número do comprovante' : 'Referência gerada automaticamente'}
-                </p>
+                </div>
               </div>
               
               <div>
@@ -1043,7 +1124,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 Registrando...
               </>
             ) : 'Registrar Pagamento'}
-        </Button>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1057,37 +1138,45 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-bold text-gray-900">Reservas do Espaço</h3>
-          <p className="text-sm text-gray-600">{spaceName}</p>
+      {/* ✅ HEADER MELHORADO */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Building className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                Reservas do Espaço: <span className="text-blue-700">{actualSpaceName}</span>
+              </h2>
+              {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+              <div className="text-gray-600">
+                Gerencie todas as reservas e pagamentos para este espaço específico
+              </div>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowExportDialog(true)}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Exportar
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadBookings}
-            disabled={loading}
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Atualizar
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-          >
-            Fechar
-          </Button>
+        
+        {/* ✅ INFO DO ESPAÇO */}
+        <div className="bg-white rounded-lg p-4 border border-blue-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-gray-500" />
+                <span className="text-sm">ID: {spaceId}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-gray-500" />
+                <span className="text-sm">{bookings.length} reserva(s)</span>
+              </div>
+            </div>
+            <Badge variant="outline" className="border-blue-300 text-blue-700">
+              Espaço Específico
+            </Badge>
+          </div>
         </div>
       </div>
 
@@ -1132,11 +1221,12 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           <h4 className="text-lg font-semibold text-gray-700 mb-2">
             Nenhuma reserva encontrada
           </h4>
-          <p className="text-gray-600">
+          {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+          <div className="text-gray-600">
             {advancedFilters.search || advancedFilters.status !== 'all' || advancedFilters.dateRange !== 'all'
               ? 'Tente ajustar os filtros'
               : 'Este espaço ainda não tem reservas'}
-          </p>
+          </div>
         </Card>
       ) : (
         <>
@@ -1148,10 +1238,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h4 className="font-semibold text-gray-900">{booking.event_title}</h4>
-                        <p className="text-sm text-gray-600">
+                        {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                        <div className="text-sm text-gray-600">
                           {booking.organizer_name} • {booking.organizer_email}
                           {booking.organizer_phone && ` • ${booking.organizer_phone}`}
-                        </p>
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         {getStatusBadge(booking.status)}
@@ -1191,15 +1282,18 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                       </div>
                     </div>
                   </div>
-                  {/* Botões de ação usando componente modular */}
+                  {/* ✅ CORREÇÃO: Botões de ação usando componente modular com onActionSuccess */}
                   <div className="flex gap-2">
                     <BookingActions
+                      key={`actions-${booking.id}-${refreshKey}`} // ✅ Força re-render
                       booking={{
                         id: booking.id,
                         status: booking.status as any,
                         payment_status: booking.payment_status as any,
                         balance_due: booking.balance_due,
                         event_title: booking.event_title,
+                        start_date: booking.start_date, // ✅ ADICIONADO
+                        end_date: booking.end_date,     // ✅ ADICIONADO
                       }}
                       onAction={async (action, data) => {
                         setSelectedBooking(booking);
@@ -1229,6 +1323,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                             console.log('Ação não implementada:', action);
                         }
                       }}
+                      onActionSuccess={handleActionSuccess} // ✅ PASSAR CALLBACK
                       compact={true}
                     />
                   </div>
@@ -1240,6 +1335,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           {/* Paginação */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
+              {/* ✅ CORREÇÃO: Substituído <div> já estava correto */}
               <div className="text-sm text-gray-600">
                 Mostrando {startIndex + 1}-{Math.min(endIndex, filteredBookings.length)} de {filteredBookings.length}
               </div>
@@ -1269,7 +1365,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         </>
       )}
 
-      {/* Modal de Pagamentos */}
+      {/* ✅ CORREÇÃO: Modal de Pagamentos atualizado para usar handleActionSuccess */}
       <PaymentRegisterModal
         open={showPaymentModal}
         onClose={() => {
@@ -1279,7 +1375,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         bookingId={selectedBookingForPayment?.id || ''}
         bookingTitle={selectedBookingForPayment?.event_title}
         balanceDue={Number(selectedBookingForPayment?.balance_due || 0)}
-        onSuccess={loadBookings}
+        onSuccess={handleActionSuccess} // ✅ Usar a mesma função
       />
 
       {/* Diálogos */}
