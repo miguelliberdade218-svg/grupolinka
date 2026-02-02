@@ -1,5 +1,6 @@
 // src/modules/events/eventPaymentService.ts - VERSÃO CORRIGIDA PARA FIREBASE UIDs
 // Sistema de diárias puro - Usa Firebase UIDs diretamente (text)
+// ✅ CORREÇÃO: Usando refundaAmount da tabela payments em vez da tabela refunds que não existe
 
 import { db } from "../../../db";
 import {
@@ -12,7 +13,7 @@ import {
   bookings,
   hotels,
   users,
-  refunds,
+  payments, // ✅ IMPORTANDO payments ao invés de refunds
 } from "../../../shared/schema";
 import { eq, and, sql, desc, gte, lte } from "drizzle-orm";
 import crypto from "crypto";
@@ -284,7 +285,7 @@ export const confirmEventPayment = async (
   }
 };
 
-// ✅ CORREÇÃO: Função para cancelar reserva com tratamento de reembolso
+// ✅ CORREÇÃO: Função para cancelar reserva com tratamento de reembolso - USANDO refundedAmount da tabela payments
 export const cancelEventBooking = async (
   eventBookingId: string,
   reason: string,
@@ -302,21 +303,47 @@ export const cancelEventBooking = async (
       const currentDeposit = toNumber(eventBooking.depositPaid);
 
       // ✅ CORREÇÃO: Para cancelamento: zerar saldo pendente e marcar reembolso se pago > 0
-      // Antes de set "status" = 'cancelled'
+      // ✅ USANDO refundedAmount da tabela payments ao invés de uma tabela refunds separada
       if (currentDeposit > 0) {
-        // Lógica de reembolso (insert em refunds ou similar)
-        await tx.insert(refunds).values({
-          id: crypto.randomUUID(),
-          bookingId: eventBookingId,
-          amount: currentDeposit.toString(),
-          status: 'pending',
-          reason: reason + ' (reembolso por cancelamento)',
-          requestedBy: cancelledBy,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+        // Primeiro, verificar se já existe um pagamento associado à reserva
+        const existingPayments = await tx
+          .select()
+          .from(payments)
+          .where(eq(payments.bookingId, eventBookingId));
+        
+        if (existingPayments.length > 0) {
+          // Atualizar o primeiro pagamento encontrado com o valor reembolsado
+          await tx.update(payments)
+            .set({
+              refundedAmount: currentDeposit.toString(),
+              paymentStatus: 'refunded',
+              updatedAt: new Date()
+            })
+            .where(eq(payments.id, existingPayments[0].id));
+        } else {
+          // Se não houver pagamento, criar um registro de pagamento com status refunded
+          await tx.insert(payments).values({
+            bookingId: eventBookingId,
+            userId: eventBooking.userId || null,
+            serviceType: 'event',
+            subtotal: currentDeposit.toString(),
+            platformFee: '0',
+            total: currentDeposit.toString(),
+            paymentMethod: 'refund',
+            paymentStatus: 'refunded',
+            refundedAmount: currentDeposit.toString(),
+            paidAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            metadata: {
+              reason: reason + ' (reembolso por cancelamento)',
+              cancelledBy: cancelledBy,
+              type: 'refund'
+            }
+          });
+        }
 
-        // Zerar saldo pendente
+        // Zerar saldo pendente na reserva de evento
         await tx.update(eventBookings)
           .set({
             depositPaid: '0',
@@ -364,7 +391,7 @@ export const cancelEventBooking = async (
   }
 };
 
-// ✅ CORREÇÃO: Função para rejeitar reserva com tratamento de reembolso
+// ✅ CORREÇÃO: Função para rejeitar reserva com tratamento de reembolso - USANDO refundedAmount da tabela payments
 export const rejectEventBooking = async (
   eventBookingId: string,
   reason: string,
@@ -382,20 +409,47 @@ export const rejectEventBooking = async (
       const currentDeposit = toNumber(eventBooking.depositPaid);
 
       // ✅ CORREÇÃO: Para rejeição: zerar saldo pendente e marcar reembolso se pago > 0
+      // ✅ USANDO refundedAmount da tabela payments ao invés de uma tabela refunds separada
       if (currentDeposit > 0) {
-        // Lógica de reembolso
-        await tx.insert(refunds).values({
-          id: crypto.randomUUID(),
-          bookingId: eventBookingId,
-          amount: currentDeposit.toString(),
-          status: 'pending',
-          reason: reason + ' (reembolso por rejeição)',
-          requestedBy: rejectedBy,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+        // Primeiro, verificar se já existe um pagamento associado à reserva
+        const existingPayments = await tx
+          .select()
+          .from(payments)
+          .where(eq(payments.bookingId, eventBookingId));
+        
+        if (existingPayments.length > 0) {
+          // Atualizar o primeiro pagamento encontrado com o valor reembolsado
+          await tx.update(payments)
+            .set({
+              refundedAmount: currentDeposit.toString(),
+              paymentStatus: 'refunded',
+              updatedAt: new Date()
+            })
+            .where(eq(payments.id, existingPayments[0].id));
+        } else {
+          // Se não houver pagamento, criar um registro de pagamento com status refunded
+          await tx.insert(payments).values({
+            bookingId: eventBookingId,
+            userId: eventBooking.userId || null,
+            serviceType: 'event',
+            subtotal: currentDeposit.toString(),
+            platformFee: '0',
+            total: currentDeposit.toString(),
+            paymentMethod: 'refund',
+            paymentStatus: 'refunded',
+            refundedAmount: currentDeposit.toString(),
+            paidAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            metadata: {
+              reason: reason + ' (reembolso por rejeição)',
+              rejectedBy: rejectedBy,
+              type: 'refund'
+            }
+          });
+        }
 
-        // Zerar saldo pendente
+        // Zerar saldo pendente na reserva de evento
         await tx.update(eventBookings)
           .set({
             depositPaid: '0',
@@ -409,7 +463,7 @@ export const rejectEventBooking = async (
       const [updatedBooking] = await tx.update(eventBookings)
         .set({
           status: 'rejected',
-          rejectedAt: new Date(),
+          cancelledAt: new Date(), // Use cancelledAt como data de rejeição
           updatedAt: new Date()
         })
         .where(eq(eventBookings.id, eventBookingId))
@@ -964,7 +1018,7 @@ export const getEventDashboardStats = async (
       .select({
         total_paid: sql<number>`COALESCE(SUM(ep.amount::numeric), 0)`,
         pending_payments: sql<number>`COUNT(CASE WHEN ep.status = 'pending' THEN 1 END)`,
-        upcoming_payments: sql<number`COUNT(CASE WHEN eb.payment_status IN ('partial', 'pending') THEN 1 END)`
+        upcoming_payments: sql<number>`COUNT(CASE WHEN eb.payment_status IN ('partial', 'pending') THEN 1 END)`
       })
       .from(eventPayments)
       .innerJoin(eventBookings, eq(eventBookings.id, eventPayments.eventBookingId!))
@@ -1276,6 +1330,119 @@ export const getEventPaymentsByDateRange = async (
   return results.map(r => r.payment);
 };
 
+// ==================== FUNÇÃO PARA PROCESSAR REEMBOLSO DIRETO (USANDO refundedAmount) ====================
+
+export const processEventRefund = async (
+  eventBookingId: string,
+  refundAmount: number,
+  reason: string,
+  processedBy: string
+): Promise<any> => {
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Buscar a reserva
+      const [eventBooking] = await tx.select().from(eventBookings).where(eq(eventBookings.id, eventBookingId));
+      
+      if (!eventBooking) {
+        throw new Error("Reserva de evento não encontrada");
+      }
+
+      const currentDeposit = toNumber(eventBooking.depositPaid);
+
+      // 2. Validar valor do reembolso
+      if (refundAmount <= 0) {
+        throw new Error("Valor do reembolso deve ser maior que zero");
+      }
+
+      if (refundAmount > currentDeposit) {
+        throw new Error(`Valor do reembolso (${refundAmount}) excede o depósito atual (${currentDeposit})`);
+      }
+
+      // 3. Buscar ou criar um pagamento para registrar o reembolso
+      const existingPayments = await tx
+        .select()
+        .from(payments)
+        .where(eq(payments.bookingId, eventBookingId))
+        .limit(1);
+
+      if (existingPayments.length > 0) {
+        // Atualizar o pagamento existente com o reembolso
+        await tx.update(payments)
+          .set({
+            refundedAmount: refundAmount.toString(),
+            paymentStatus: 'refunded',
+            updatedAt: new Date()
+          })
+          .where(eq(payments.id, existingPayments[0].id));
+      } else {
+        // Criar um novo registro de pagamento para o reembolso
+        await tx.insert(payments).values({
+          bookingId: eventBookingId,
+          userId: eventBooking.userId || null,
+          serviceType: 'event',
+          subtotal: refundAmount.toString(),
+          platformFee: '0',
+          total: refundAmount.toString(),
+          paymentMethod: 'refund',
+          paymentStatus: 'refunded',
+          refundedAmount: refundAmount.toString(),
+          paidAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          metadata: {
+            reason,
+            processedBy,
+            type: 'refund',
+            originalDeposit: currentDeposit
+          }
+        });
+      }
+
+      // 4. Atualizar a reserva de evento
+      const newDeposit = currentDeposit - refundAmount;
+      const newBalanceDue = toNumber(eventBooking.balanceDue) + refundAmount; // O saldo devido aumenta (cliente recebeu dinheiro de volta)
+
+      const [updatedBooking] = await tx.update(eventBookings)
+        .set({
+          depositPaid: newDeposit.toString(),
+          balanceDue: newBalanceDue.toString(),
+          paymentStatus: newDeposit > 0 ? 'partial' : 'refunded',
+          updatedAt: new Date()
+        })
+        .where(eq(eventBookings.id, eventBookingId))
+        .returning();
+
+      // 5. Registrar log
+      await tx.insert(eventBookingLogs).values({
+        id: crypto.randomUUID(),
+        bookingId: eventBookingId,
+        action: "refund_processed",
+        details: {
+          refundAmount,
+          reason,
+          processedBy,
+          previousDeposit: currentDeposit,
+          newDeposit,
+          previousPaymentStatus: eventBooking.paymentStatus,
+          newPaymentStatus: updatedBooking.paymentStatus,
+          action: "refund_processed"
+        },
+        createdAt: new Date(),
+      });
+
+      return {
+        success: true,
+        booking: updatedBooking,
+        refundAmount,
+        message: "Reembolso processado com sucesso"
+      };
+    });
+  } catch (error) {
+    console.error('Erro ao processar reembolso:', error);
+    throw new Error(`Falha ao processar reembolso: ${(error as Error).message}`);
+  }
+};
+
 // ==================== EXPORTS ====================
 
 export default {
@@ -1287,6 +1454,7 @@ export default {
   cancelEventBookingForNonPayment,
   cancelEventBooking, // ✅ CORREÇÃO: Nova função adicionada
   rejectEventBooking, // ✅ CORREÇÃO: Nova função adicionada
+  processEventRefund, // ✅ NOVA: Função para processar reembolsos
   
   // Faturação
   createEventInvoice,

@@ -534,14 +534,19 @@ class EventSpaceService {
     }
   }
 
-  async cancelBooking(bookingId: string, reason?: string): Promise<ServiceResponse<{ message: string }>> {
+  // ✅ CORREÇÃO: Função cancelBooking atualizada para enviar apenas reason
+  async cancelBooking(
+    bookingId: string, 
+    reason?: string
+  ): Promise<ServiceResponse<{ message: string }>> {
     try {
-      const res = await apiService.cancelEventBooking(bookingId, reason);
+      // ✅ CORREÇÃO: O backend já trata reembolso automaticamente
+      const res = await apiService.cancelEventBooking(bookingId, { reason });
+      
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao cancelar reserva' };
       }
       
-      // ✅ CORREÇÃO: Retornar mensagem apropriada
       return { 
         success: true, 
         data: { message: res.message || 'Cancelada com sucesso' },

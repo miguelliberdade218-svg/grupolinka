@@ -188,15 +188,23 @@ export const PaymentRegisterModal: React.FC<PaymentRegisterModalProps> = ({
           duration: 3000,
         });
         
-        // ✅ CORREÇÃO CRÍTICA: Fechar modal PRIMEIRO
+        // ✅ CORREÇÃO CRÍTICA: Fechar modal primeiro (como instruído)
         onClose();
         
-        // ✅ CORREÇÃO: Chamar onSuccess DEPOIS com pequeno delay
+        // ✅ CORREÇÃO: Chamar onSuccess com delay para garantir que o modal feche
         if (onSuccess) {
           console.log('📞 Chamando onSuccess callback após fechar modal');
+          
+          // Aguardar um pouco para garantir que o modal feche antes de recarregar
           setTimeout(() => {
             onSuccess();
-          }, 100);
+            
+            // ✅ ADICIONAL: Limpar formulário
+            setAmount(balanceDue);
+            setPaymentMethod('mpesa');
+            setReference('');
+            setNotes('');
+          }, 300);
         }
         
       } else {

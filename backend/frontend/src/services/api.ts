@@ -74,6 +74,15 @@ export type { LocalMatchStats as MatchStats };
 export type { LocalRideSearchResponse as RideSearchResponse };
 export type { LocalRideBookingRequest as RideBookingRequest };
 
+// ====================== FUNÇÃO AUXILIAR ======================
+
+const toNumber = (value: string | number | null | undefined): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  const num = Number(value);
+  return isNaN(num) ? 0 : num;
+};
+
 // ====================== FUNÇÕES UTILITÁRIAS RIDES (INTACTAS) ======================
 
 export function normalizeRide(apiRide: any): any {
@@ -262,9 +271,29 @@ export function normalizeEventSpaces(apiSpaces: any[]): EventSpace[] {
   return (apiSpaces || []).map(normalizeEventSpace);
 }
 
-// ✅ CORREÇÃO: Função normalizeEventBooking atualizada com campos depositPaid e balanceDue
+// ✅ CORREÇÃO COMPLETA: Função normalizeEventBooking atualizada com cálculo correto de campos financeiros
 export function normalizeEventBooking(apiBooking: any): EventBooking {
   const booking = apiBooking.booking || apiBooking;
+  
+  // ✅ CORREÇÃO: Calcular valores corretamente
+  const totalPrice = toNumber(booking.totalPrice || booking.total_price || '0');
+  const depositPaid = toNumber(booking.depositPaid || booking.deposit_paid || '0');
+  const basePrice = toNumber(booking.basePrice || booking.base_price || '0');
+  const securityDeposit = toNumber(booking.securityDeposit || booking.security_deposit || '0');
+  
+  // ✅ CORREÇÃO: Calcular balanceDue corretamente (se não fornecido, calcular)
+  let balanceDue = toNumber(booking.balanceDue || booking.balance_due || '0');
+  if (balanceDue === 0 && totalPrice > 0 && depositPaid < totalPrice) {
+    balanceDue = Math.max(0, totalPrice - depositPaid);
+  }
+  
+  // ✅ CORREÇÃO: Determinar payment_status automaticamente se não fornecido
+  let paymentStatus = booking.paymentStatus || booking.payment_status || 'pending';
+  if (balanceDue <= 0 && totalPrice > 0) {
+    paymentStatus = 'paid';
+  } else if (depositPaid > 0 && depositPaid < totalPrice) {
+    paymentStatus = 'partial';
+  }
   
   const normalized: EventBooking = {
     id: (booking.id || '') as string,
@@ -283,16 +312,16 @@ export function normalizeEventBooking(apiBooking: any): EventBooking {
     cateringRequired: !!booking.cateringRequired || !!booking.catering_required,
     specialRequests: booking.specialRequests || booking.special_requests || null,
     additionalServices: booking.additionalServices || booking.additional_services || {},
-    basePrice: String(booking.basePrice || booking.base_price || '0'),
-    totalPrice: String(booking.totalPrice || booking.total_price || '0'),
-    securityDeposit: String(booking.securityDeposit || booking.security_deposit || '0'),
+    basePrice: String(basePrice),
+    totalPrice: String(totalPrice),
+    securityDeposit: String(securityDeposit),
     
-    // ✅ CORREÇÃO: Adicionar os novos campos financeiros
-    depositPaid: String(booking.depositPaid || booking.deposit_paid || booking.depositPaidAmount || '0'),
-    balanceDue: String(booking.balanceDue || booking.balance_due || booking.balanceDueAmount || '0'),
+    // ✅ CORREÇÃO CRÍTICA: Campos financeiros calculados corretamente
+    depositPaid: String(depositPaid),
+    balanceDue: String(balanceDue),
     
     status: (booking.status || 'pending_approval') as 'pending_approval' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected',
-    paymentStatus: (booking.paymentStatus || booking.payment_status || 'pending') as PaymentStatusType,
+    paymentStatus: paymentStatus as PaymentStatusType,
     createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
     updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
     
@@ -301,9 +330,9 @@ export function normalizeEventBooking(apiBooking: any): EventBooking {
     statusDisplay: getEventStatusDisplay(booking.status),
     
     // Campos do backend (snake_case para compatibilidade)
-    deposit_paid: booking.deposit_paid || booking.depositPaid,
-    balance_due: booking.balance_due || booking.balanceDue,
-    payment_status: booking.payment_status || booking.paymentStatus,
+    deposit_paid: String(depositPaid),
+    balance_due: String(balanceDue),
+    payment_status: paymentStatus,
     created_at: booking.created_at || booking.createdAt,
     updated_at: booking.updated_at || booking.updatedAt,
   };
@@ -694,16 +723,29 @@ class ApiService {
     }
   }
 
-  async cancelEventBooking(bookingId: string, reason?: string): Promise<ApiResponse<{ message: string }>> {
+  // ✅ CORREÇÃO CRÍTICA: Função cancelEventBooking atualizada para usar endpoint correto
+  async cancelEventBooking(
+    bookingId: string, 
+    data?: { reason?: string }
+  ): Promise<ApiResponse<{ message: string }>> {
     try {
-      const res = await this.post<any>(`/api/events/bookings/${bookingId}/cancel`, { reason });
+      console.log('🎯 [cancelEventBooking] Chamado com bookingId:', bookingId, 'reason:', data?.reason);
+      
+      // ✅ CORREÇÃO: Usar endpoint correto conforme backend
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/cancel`, { reason: data?.reason });
+      
+      console.log('📥 [cancelEventBooking] Resposta recebida:', res);
+      
       return {
         success: res.success ?? true,
         data: { message: res.message || 'Cancelada com sucesso' },
       };
     } catch (err) {
-      console.error('[cancelEventBooking]', err);
-      return { success: false, error: (err as Error).message };
+      console.error('❌ [cancelEventBooking] ERRO:', err);
+      return { 
+        success: false, 
+        error: (err as Error).message || 'Falha ao cancelar reserva' 
+      };
     }
   }
 
@@ -871,6 +913,130 @@ class ApiService {
     }
   }
 
+  // ✅ NOVO MÉTODO: Buscar detalhes de pagamento de uma reserva
+  async getEventBookingPaymentDetails(bookingId: string): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.get<any>(`/api/events/bookings/${bookingId}/payment`);
+      
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        message: res.message,
+      };
+    } catch (err) {
+      console.error('[getEventBookingPaymentDetails]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  // ✅ NOVO MÉTODO: Registrar pagamento manual para uma reserva
+  async registerEventPayment(
+    bookingId: string,
+    paymentData: {
+      amount: number;
+      paymentMethod: string;
+      reference: string;
+      notes?: string;
+      payment_type?: string;
+    }
+  ): Promise<ApiResponse<any>> {
+    try {
+      // ✅ CORREÇÃO: Usar endpoint correto conforme backend
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/payments`, {
+        amount: paymentData.amount,
+        payment_method: paymentData.paymentMethod,
+        reference: paymentData.reference,
+        notes: paymentData.notes,
+        payment_type: paymentData.payment_type || 'manual_event_payment',
+      });
+      
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        message: res.message || 'Pagamento registrado com sucesso',
+      };
+    } catch (err) {
+      console.error('[registerEventPayment]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  // ✅ NOVO MÉTODO: Confirmar um pagamento (para gestores)
+  async confirmEventPayment(
+    bookingId: string,
+    paymentId: string
+  ): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.post<any>(`/api/events/bookings/${bookingId}/payments/confirm`, {
+        paymentId,
+      });
+      
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        message: res.message || 'Pagamento confirmado com sucesso',
+      };
+    } catch (err) {
+      console.error('[confirmEventPayment]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
+  // ✅ NOVO MÉTODO: Buscar histórico de pagamentos de uma reserva
+  async getEventBookingPayments(bookingId: string): Promise<ApiResponse<any[]>> {
+    try {
+      const res = await this.get<any>(`/api/events/bookings/${bookingId}/payment-history`);
+      
+      return {
+        success: res.success ?? true,
+        data: res.data || [],
+        count: res.count || 0,
+      };
+    } catch (err) {
+      console.error('[getEventBookingPayments]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message,
+        data: [] 
+      };
+    }
+  }
+
+  // ✅ NOVO MÉTODO: Buscar estatísticas financeiras para dashboard
+  async getEventFinancialSummary(
+    hotelId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<ApiResponse<any>> {
+    try {
+      const res = await this.get<any>(`/api/events/hotel/${hotelId}/financial-summary`, {
+        startDate,
+        endDate,
+      });
+      
+      return {
+        success: res.success ?? true,
+        data: res.data,
+        message: res.message,
+      };
+    } catch (err) {
+      console.error('[getEventFinancialSummary]', err);
+      return { 
+        success: false, 
+        error: (err as Error).message 
+      };
+    }
+  }
+
   // ====================== 🆕 NOVOS MÉTODOS PARA GESTÃO DE RESERVAS E PAGAMENTOS ======================
 
   /**
@@ -914,36 +1080,6 @@ class ApiService {
       };
     } catch (err) {
       console.error('[updateEventBookingStatus]', err);
-      return { 
-        success: false, 
-        error: (err as Error).message 
-      };
-    }
-  }
-
-  /**
-   * 💰 Registrar pagamento manual
-   * Endpoint: POST /api/events/bookings/:id/payments
-   * Para: Gestor registrar pagamentos offline/manuais
-   */
-  async registerEventPayment(
-    bookingId: string,
-    paymentData: {
-      amount: number;
-      paymentMethod: string;
-      referenceNumber: string;
-      notes?: string;
-    }
-  ): Promise<ApiResponse<any>> {
-    try {
-      const res = await this.post<any>(`/api/events/bookings/${bookingId}/payments`, paymentData);
-      return {
-        success: res.success ?? true,
-        data: res.data,
-        message: res.message || 'Pagamento manual registrado com sucesso',
-      };
-    } catch (err) {
-      console.error('[registerEventPayment]', err);
       return { 
         success: false, 
         error: (err as Error).message 

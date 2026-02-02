@@ -1,8 +1,13 @@
 // src/apps/hotels-app/components/event-spaces/EventSpaceBookingsList.tsx
-// Componente para listar reservas de um espaço de eventos - VERSÃO COMPLETA COM SERVIÇO REAL
-// ✅ CORREÇÃO CRÍTICA: Adicionado refreshKey e onActionSuccess para atualizar UI
-// ✅ CORREÇÃO: Problema de tipo ManualPaymentPayload corrigido
-// ✅ CORREÇÃO DOM: Substituído <p> por <div> em vários lugares para evitar erro de validação
+// ✅ VERSÃO CORRIGIDA COMPLETA COM ATUALIZAÇÃO PERIÓDICA CONTROLADA
+// ✅ Correção aplicada: Controle de paginação durante atualização automática
+// ✅ Adicionado: useQueryClient para invalidar queries
+// ✅ Adicionado: CancelConfirmationModal
+// ✅ Adicionado: Atualização periódica inteligente
+// ✅ Corrigido: Função calculateStats para excluir reservas canceladas
+// ✅ Corrigido: Sincronização frontend-backend
+// ✅ CORREÇÃO: Erros de declaração de função e propriedades resolvidos
+// ✅ CORREÇÃO: payment.reference substituído por payment.referenceNumber
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/shared/components/ui/card';
@@ -50,12 +55,14 @@ import type {
   ManualPaymentPayload, 
   FullBookingDetails 
 } from '@/shared/types/event-spaces';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Importar componentes modulares
 import BookingFilters, { type BookingFiltersState } from './BookingFilters';
 import BookingStats from './BookingStats';
 import BookingActions from './BookingActions';
 import { PaymentRegisterModal } from './PaymentRegisterModal';
+import { CancelConfirmationModal } from './CancelConfirmationModal';
 
 interface EventSpaceBookingsListProps {
   spaceId: string;
@@ -66,19 +73,33 @@ interface EventSpaceBookingsListProps {
 interface Booking {
   id: string;
   event_title: string;
+  eventTitle?: string; // ✅ ADICIONADO: Para compatibilidade
   organizer_name: string;
+  organizerName?: string; // ✅ ADICIONADO: Para compatibilidade
   organizer_email: string;
+  organizerEmail?: string; // ✅ ADICIONADO: Para compatibilidade
   start_date: string;
+  startDate?: string; // ✅ ADICIONADO: Para compatibilidade
   end_date: string;
+  endDate?: string; // ✅ ADICIONADO: Para compatibilidade
   expected_attendees: number;
+  expectedAttendees?: number; // ✅ ADICIONADO: Para compatibilidade
   status: string;
   total_price: string;
+  totalPrice?: string; // ✅ ADICIONADO: Para compatibilidade
   created_at: string;
+  createdAt?: string; // ✅ ADICIONADO: Para compatibilidade
   payment_status?: string;
+  paymentStatus?: string; // ✅ ADICIONADO: Para compatibilidade
   balance_due?: string;
+  balanceDue?: string; // ✅ ADICIONADO: Para compatibilidade
   event_type?: string;
+  eventType?: string; // ✅ ADICIONADO: Para compatibilidade
   organizer_phone?: string;
+  organizerPhone?: string; // ✅ ADICIONADO: Para compatibilidade
   eventSpaceId?: string;
+  deposit_paid?: string;
+  depositPaid?: string; // ✅ ADICIONADO: Para compatibilidade
 }
 
 interface BookingStatsData {
@@ -105,8 +126,19 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const itemsPerPage = 10;
   const { toast } = useToast();
 
-  // ✅ CORREÇÃO: Estado para refresh key para forçar re-render
-  const [refreshKey, setRefreshKey] = useState(0);
+  // ✅ CORREÇÃO: useQueryClient para invalidar queries
+  const queryClient = useQueryClient();
+
+  // ✅ CORREÇÃO: Estado para controlar atualização automática
+  const [shouldAutoRefresh, setShouldAutoRefresh] = useState(true);
+  
+  // ✅ NOVO: Estado para o modal de confirmação de cancelamento
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [bookingToCancel, setBookingToCancel] = useState<{
+    id: string;
+    title: string;
+    depositPaid: number;
+  } | null>(null);
 
   // ✅ MELHORADO: Estado para nome real do espaço com fallback melhorado
   const [actualSpaceName, setActualSpaceName] = useState(spaceName);
@@ -171,15 +203,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedBookingForPayment, setSelectedBookingForPayment] = useState<Booking | null>(null);
 
-  // ✅ CORREÇÃO: Função para lidar com sucesso de ações usando useCallback
-  const handleActionSuccess = useCallback(() => {
-    console.log('🔄 Ação realizada com sucesso, recarregando dados...');
-    setRefreshKey(prev => prev + 1); // Força re-render
-    loadBookings(); // Recarrega dados do backend
-  }, []); // loadBookings será definido com useCallback
+  // ✅ CORREÇÃO: Flag para controlar quando resetar a paginação
+  const [shouldResetPageOnFilter, setShouldResetPageOnFilter] = useState(true);
 
-  // ✅ CORREÇÃO: Atualizar useEffect para usar useCallback
-  const loadBookings = useCallback(async () => {
+  // ✅ CORREÇÃO: loadBookings definido PRIMEIRO para evitar erro de uso antes da declaração
+  const loadBookings = useCallback(async (shouldResetPage = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -194,6 +222,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           ...booking,
           payment_status: booking.payment_status || 'pending',
           balance_due: booking.balance_due || booking.total_price,
+          deposit_paid: booking.deposit_paid || booking.depositPaid || '0',
           event_type: booking.event_type || 'outro',
           organizer_phone: booking.organizer_phone || '',
           // ✅ GARANTIR que start_date e end_date existem
@@ -201,12 +230,21 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
           end_date: booking.end_date || booking.endDate || '',
           // Campos extras para compatibilidade
           event_title: booking.event_title || booking.eventTitle || '',
+          eventTitle: booking.eventTitle || booking.event_title || '', // ✅ CORREÇÃO: Adicionado campo camelCase
           organizer_name: booking.organizer_name || booking.organizerName || '',
+          organizerName: booking.organizerName || booking.organizer_name || '', // ✅ CORREÇÃO: Adicionado campo camelCase
           organizer_email: booking.organizer_email || booking.organizerEmail || '',
+          organizerEmail: booking.organizerEmail || booking.organizer_email || '', // ✅ CORREÇÃO: Adicionado campo camelCase
           expected_attendees: booking.expected_attendees || booking.expectedAttendees || 0,
+          expectedAttendees: booking.expectedAttendees || booking.expected_attendees || 0, // ✅ CORREÇÃO: Adicionado campo camelCase
         }));
         setBookings(updatedBookings);
         calculateStats(updatedBookings);
+        
+        // ✅ CORREÇÃO: Resetar paginação apenas quando solicitado
+        if (shouldResetPage) {
+          setCurrentPage(1);
+        }
       } else {
         setError(res.error || 'Falha ao carregar reservas');
       }
@@ -216,10 +254,30 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [spaceId]); // Adicionar dependência
+  }, [spaceId]);
+
+  // ✅ CORREÇÃO: Função para lidar com sucesso de ações usando useCallback e useQueryClient
+  const handleActionSuccess = useCallback(async () => {
+    console.log('🔄 Ação realizada com sucesso, recarregando dados...');
+    
+    // ✅ CORREÇÃO CRÍTICA: Invalidar queries específicas para forçar re-fetch
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['eventBookings', spaceId] }),
+      queryClient.invalidateQueries({ queryKey: ['bookingDetails'] }),
+      queryClient.invalidateQueries({ queryKey: ['payments'] }),
+    ]);
+    
+    // Recarrega os dados SEM resetar paginação
+    await loadBookings(false);
+    
+    // Se houver uma reserva selecionada, recarrega seus detalhes também
+    if (selectedBooking) {
+      await loadPaymentDetails(selectedBooking.id);
+    }
+  }, [spaceId, loadBookings, selectedBooking, queryClient]);
 
   useEffect(() => {
-    loadBookings();
+    loadBookings(true);
     
     // ✅ MELHORADO: Carregar nome real do espaço com tratamento de erro melhorado
     if (spaceName === 'Espaço de Eventos' && spaceId) {
@@ -227,9 +285,26 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
   }, [spaceId, loadBookings]); // Adicionar loadBookings como dependência
 
+  // ✅ CORREÇÃO: Adicionar useEffect para atualização periódica CONTROLADA
   useEffect(() => {
-    filterBookings();
-    calculateStats(filteredBookings);
+    // Atualizar a cada 30 segundos apenas se:
+    // 1. Atualização automática está ativada
+    // 2. Nenhum modal está aberto
+    // 3. O usuário está na página 1
+    if (shouldAutoRefresh && !showDetailsDialog && !showPaymentDialog && !showCancelModal && !showPaymentModal && currentPage === 1) {
+      const interval = setInterval(() => {
+        console.log('🔄 Atualização periódica de dados (página 1)...');
+        // ✅ CORREÇÃO: Não resetar página durante atualização automática
+        loadBookings(false);
+      }, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [shouldAutoRefresh, showDetailsDialog, showPaymentDialog, showCancelModal, showPaymentModal, currentPage, loadBookings]);
+
+  useEffect(() => {
+    // ✅ CORREÇÃO: Resetar paginação apenas quando filtros mudam
+    filterBookings(shouldResetPageOnFilter);
   }, [bookings, advancedFilters]);
 
   // ✅ MELHORADO: Carregar nome real do espaço com fallback robusto
@@ -306,6 +381,17 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         title: '❌ Erro ao cancelar',
         description: err.message || 'Falha ao cancelar reserva',
       });
+    }
+  };
+
+  // ✅ NOVA FUNÇÃO: Lidar com cancelamento confirmado
+  const handleCancelConfirmed = async (bookingId: string, reason: string) => {
+    try {
+      await handleCancelBooking(bookingId, reason);
+      setShowCancelModal(false);
+      setBookingToCancel(null);
+    } catch (error) {
+      console.error('Erro ao cancelar reserva:', error);
     }
   };
 
@@ -416,19 +502,29 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
   };
 
+  // ✅ CORREÇÃO: Função calculateStats atualizada para excluir reservas canceladas
   const calculateStats = (bookingsList: Booking[]) => {
-    const total = bookingsList.length;
-    const pending = bookingsList.filter(b => b.status === 'pending_approval').length;
-    const confirmed = bookingsList.filter(b => b.status === 'confirmed').length;
-    const completed = bookingsList.filter(b => b.status === 'completed').length;
+    // ✅ CORREÇÃO: Filtrar reservas ativas (não canceladas/rejeitadas)
+    const activeBookings = bookingsList.filter(b => 
+      !['cancelled', 'rejected'].includes(b.status)
+    );
+    
+    const total = activeBookings.length;
+    const pending = activeBookings.filter(b => b.status === 'pending_approval').length;
+    const confirmed = activeBookings.filter(b => b.status === 'confirmed').length;
+    const completed = activeBookings.filter(b => b.status === 'completed').length;
     const cancelled = bookingsList.filter(b => 
-      b.status === 'cancelled' || b.status === 'rejected'
+      ['cancelled', 'rejected'].includes(b.status)
     ).length;
     
-    const revenue = bookingsList.reduce((sum, b) => sum + Number(b.total_price || 0), 0);
-    const pendingRevenue = bookingsList
-      .filter(b => b.payment_status === 'pending' || b.payment_status === 'partial')
+    // ✅ CORREÇÃO: Calcular receita apenas de reservas ativas
+    const revenue = activeBookings.reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+    
+    // ✅ CORREÇÃO: Calcular receita pendente apenas de reservas ativas
+    const pendingRevenue = activeBookings
+      .filter(b => ['pending', 'partial'].includes(b.payment_status || ''))
       .reduce((sum, b) => sum + Number(b.balance_due || 0), 0);
+      
     const averageBookingValue = total > 0 ? revenue / total : 0;
     
     setStats({
@@ -514,7 +610,8 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     setShowPaymentModal(true);
   };
 
-  const filterBookings = () => {
+  // ✅ CORREÇÃO: filterBookings com parâmetro para controlar reset da paginação
+  const filterBookings = (shouldResetPage = true) => {
     let filtered = [...bookings];
 
     // Status
@@ -582,7 +679,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
 
     setFilteredBookings(filtered);
-    setCurrentPage(1);
+    
+    // ✅ CORREÇÃO: Resetar página apenas quando solicitado
+    if (shouldResetPage) {
+      setCurrentPage(1);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -699,7 +800,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
   };
 
-  // Handler para ações do BookingActions
+  // ✅ CORREÇÃO: Handler para ações do BookingActions com modal de confirmação
   const handleBookingAction = async (action: string, data?: { reason?: string; notes?: string }) => {
     if (!selectedBooking) return;
 
@@ -711,7 +812,13 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         await handleRejectBooking(selectedBooking.id, data?.reason || '');
         break;
       case 'cancel':
-        await handleCancelBooking(selectedBooking.id, data?.reason || 'Cancelado pelo gestor');
+        // ✅ CORREÇÃO: Abrir modal de confirmação
+        setBookingToCancel({
+          id: selectedBooking.id,
+          title: selectedBooking.event_title || selectedBooking.eventTitle || 'Reserva',
+          depositPaid: Number(selectedBooking.deposit_paid || selectedBooking.depositPaid || 0),
+        });
+        setShowCancelModal(true);
         break;
       case 'details':
         openBookingDetails(selectedBooking);
@@ -740,6 +847,26 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       default:
         console.log('Ação não implementada:', action);
     }
+  };
+
+  // ✅ NOVA FUNÇÃO: Atualização manual
+  const handleManualRefresh = async () => {
+    console.log('🔄 Atualização manual solicitada...');
+    // Desativar atualização automática temporariamente
+    setShouldAutoRefresh(false);
+    
+    // Recarregar dados
+    await loadBookings(false);
+    
+    toast({
+      title: '✅ Dados atualizados',
+      description: 'Lista de reservas foi atualizada',
+    });
+    
+    // Reativar atualização automática após 30 segundos
+    setTimeout(() => {
+      setShouldAutoRefresh(true);
+    }, 30000);
   };
 
   // COMPONENTES DE DIÁLOGO
@@ -794,6 +921,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                   <div className="space-y-2">
                     {/* ✅ CORREÇÃO: Substituído <p> por <div> para evitar erro DOM */}
                     <div className="text-gray-600"><span className="font-medium">Valor Total:</span> {formatCurrency(selectedBooking.total_price)}</div>
+                    <div className="text-gray-600"><span className="font-medium">Depósito Pago:</span> {formatCurrency(selectedBooking.deposit_paid || '0')}</div>
                     <div className="text-gray-600"><span className="font-medium">Saldo Pendente:</span> {formatCurrency(selectedBooking.balance_due || '0')}</div>
                     <div className="text-gray-600 flex items-center gap-2">
                       <span className="font-medium">Status Pagamento:</span> {getPaymentStatusBadge(selectedBooking.payment_status)}
@@ -819,7 +947,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <Card className="p-4">
                       <div className="text-lg font-bold text-blue-600">
-                        {formatCurrency(paymentDetails.booking.totalPrice || paymentDetails.booking.totalPrice || '0')}
+                        {formatCurrency(paymentDetails.booking.totalPrice || paymentDetails.booking.total_price || '0')}
                       </div>
                       <div className="text-sm text-gray-600">Total</div>
                     </Card>
@@ -843,7 +971,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                     </Card>
                     <Card className="p-4">
                       <div className="text-lg font-bold text-purple-600">
-                        {formatCurrency(paymentDetails.booking.securityDeposit || '0')}
+                        {formatCurrency(paymentDetails.booking.securityDeposit || paymentDetails.booking.securityDeposit || '0')}
                       </div>
                       <div className="text-sm text-gray-600">Depósito</div>
                     </Card>
@@ -1155,9 +1283,22 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
               </div>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* ✅ BOTÃO DE ATUALIZAÇÃO MANUAL */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleManualRefresh}
+              disabled={loading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         
         {/* ✅ INFO DO ESPAÇO */}
@@ -1172,9 +1313,19 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 <Users className="h-4 w-4 text-gray-500" />
                 <span className="text-sm">{bookings.length} reserva(s)</span>
               </div>
+              <div className="flex items-center gap-2">
+                <Badge 
+                  variant={shouldAutoRefresh ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => setShouldAutoRefresh(!shouldAutoRefresh)}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  {shouldAutoRefresh ? 'Auto-atualização: ON' : 'Auto-atualização: OFF'}
+                </Badge>
+              </div>
             </div>
             <Badge variant="outline" className="border-blue-300 text-blue-700">
-              Espaço Específico
+              {currentPage > 1 ? `Página ${currentPage}` : 'Espaço Específico'}
             </Badge>
           </div>
         </div>
@@ -1183,7 +1334,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       {/* Filtros */}
       <BookingFilters
         filters={advancedFilters}
-        onFilterChange={setAdvancedFilters}
+        onFilterChange={(newFilters) => {
+          setAdvancedFilters(newFilters);
+          // ✅ CORREÇÃO: Ativar reset de página quando filtros mudam
+          setShouldResetPageOnFilter(true);
+        }}
         onClearFilters={() => {
           setAdvancedFilters({
             status: 'all',
@@ -1196,8 +1351,12 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
             startDate: undefined,
             endDate: undefined,
           });
+          setShouldResetPageOnFilter(true);
         }}
-        onApplyFilters={filterBookings}
+        onApplyFilters={() => {
+          filterBookings(true);
+          setShouldResetPageOnFilter(false);
+        }}
       />
 
       {/* Estatísticas */}
@@ -1211,7 +1370,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       ) : error ? (
         <Card className="p-6 text-center">
           <div className="text-red-600 mb-2">{error}</div>
-          <Button onClick={loadBookings} variant="outline">
+          <Button onClick={() => loadBookings(true)} variant="outline">
             Tentar novamente
           </Button>
         </Card>
@@ -1269,15 +1428,15 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600">Saldo:</span>
-                        <span className="font-medium ml-2 text-amber-600">
-                          {formatCurrency(booking.balance_due || '0')}
+                        <span className="text-gray-600">Depósito:</span>
+                        <span className="font-medium ml-2 text-blue-600">
+                          {formatCurrency(booking.deposit_paid || '0')}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-600">Criada:</span>
-                        <span className="font-medium ml-2">
-                          {formatDateShort(booking.created_at)}
+                        <span className="text-gray-600">Saldo:</span>
+                        <span className="font-medium ml-2 text-amber-600">
+                          {formatCurrency(booking.balance_due || '0')}
                         </span>
                       </div>
                     </div>
@@ -1285,7 +1444,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                   {/* ✅ CORREÇÃO: Botões de ação usando componente modular com onActionSuccess */}
                   <div className="flex gap-2">
                     <BookingActions
-                      key={`actions-${booking.id}-${refreshKey}`} // ✅ Força re-render
+                      key={`actions-${booking.id}`}
                       booking={{
                         id: booking.id,
                         status: booking.status as any,
@@ -1294,6 +1453,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                         event_title: booking.event_title,
                         start_date: booking.start_date, // ✅ ADICIONADO
                         end_date: booking.end_date,     // ✅ ADICIONADO
+                        deposit_paid: booking.deposit_paid,
                       }}
                       onAction={async (action, data) => {
                         setSelectedBooking(booking);
@@ -1305,7 +1465,13 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                             await handleRejectBooking(booking.id, data?.reason || '');
                             break;
                           case 'cancel':
-                            await handleCancelBooking(booking.id, data?.reason || '');
+                            // ✅ CORREÇÃO: Abrir modal de confirmação
+                            setBookingToCancel({
+                              id: booking.id,
+                              title: booking.event_title || booking.eventTitle || 'Reserva',
+                              depositPaid: Number(booking.deposit_paid || booking.depositPaid || 0),
+                            });
+                            setShowCancelModal(true);
                             break;
                           case 'details':
                             openBookingDetails(booking);
@@ -1338,12 +1504,23 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
               {/* ✅ CORREÇÃO: Substituído <div> já estava correto */}
               <div className="text-sm text-gray-600">
                 Mostrando {startIndex + 1}-{Math.min(endIndex, filteredBookings.length)} de {filteredBookings.length}
+                {currentPage > 1 && (
+                  <span className="text-amber-600 ml-2">
+                    • Atualização automática pausada nesta página
+                  </span>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  onClick={() => {
+                    setCurrentPage(prev => Math.max(prev - 1, 1));
+                    // ✅ CORREÇÃO: Reativar auto-atualização se voltar para página 1
+                    if (currentPage === 2) {
+                      setShouldAutoRefresh(true);
+                    }
+                  }}
                   disabled={currentPage === 1}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -1354,7 +1531,13 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  onClick={() => {
+                    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                    // ✅ CORREÇÃO: Desativar auto-atualização se navegar para página > 1
+                    if (currentPage === 1) {
+                      setShouldAutoRefresh(false);
+                    }
+                  }}
                   disabled={currentPage === totalPages}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -1376,6 +1559,23 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         bookingTitle={selectedBookingForPayment?.event_title}
         balanceDue={Number(selectedBookingForPayment?.balance_due || 0)}
         onSuccess={handleActionSuccess} // ✅ Usar a mesma função
+      />
+
+      {/* ✅ NOVO: Modal de confirmação de cancelamento */}
+      <CancelConfirmationModal
+        open={showCancelModal}
+        onClose={() => {
+          setShowCancelModal(false);
+          setBookingToCancel(null);
+        }}
+        bookingId={bookingToCancel?.id || ''}
+        bookingTitle={bookingToCancel?.title || ''}
+        depositPaid={bookingToCancel?.depositPaid || 0}
+        onConfirm={async (reason) => {
+          if (bookingToCancel) {
+            await handleCancelConfirmed(bookingToCancel.id, reason);
+          }
+        }}
       />
 
       {/* Diálogos */}
