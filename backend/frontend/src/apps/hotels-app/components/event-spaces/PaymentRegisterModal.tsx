@@ -296,9 +296,10 @@ export const PaymentRegisterModal: React.FC<PaymentRegisterModalProps> = ({
                 minimumFractionDigits: 2,
               })}
             </div>
-            <p className="text-sm text-amber-600">
+            {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+            <div className="text-sm text-amber-600">
               Registre um pagamento parcial ou completo
-            </p>
+            </div>
           </div>
 
           {/* Informação do usuário logado */}
@@ -428,9 +429,10 @@ export const PaymentRegisterModal: React.FC<PaymentRegisterModalProps> = ({
                 <div className="flex items-start gap-1 mt-1">
                   <Info className="h-3 w-3 text-amber-600 mt-0.5 flex-shrink-0" />
                   <div className="flex-1">
-                    <p className="text-xs text-amber-600">
+                    {/* ✅ CORREÇÃO: Substituído <p> por <div> */}
+                    <div className="text-xs text-amber-600">
                       Referência gerada automaticamente para controle interno
-                    </p>
+                    </div>
                     {!reference.startsWith('CASH-') && (
                       <Button
                         type="button"

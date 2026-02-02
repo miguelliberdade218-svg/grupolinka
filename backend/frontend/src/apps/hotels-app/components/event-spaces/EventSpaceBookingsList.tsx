@@ -1,10 +1,12 @@
 // src/apps/hotels-app/components/event-spaces/EventSpaceBookingsList.tsx
-// ✅ VERSÃO CORRIGIDA COMPLETA COM ATUALIZAÇÃO PERIÓDICA CONTROLADA
+// ✅ VERSÃO CORRIGIDA COMPLETA COM NOVOS COMPONENTES INTEGRADOS
+// ✅ Adicionado: StatsPeriodSelector, EnhancedBookingStats, ExportDataModal
+// ✅ Adicionado: Filtragem por período nas estatísticas
+// ✅ Adicionado: Exportação completa com múltiplos formatos
 // ✅ Correção aplicada: Controle de paginação durante atualização automática
 // ✅ Adicionado: useQueryClient para invalidar queries
-// ✅ Adicionado: CancelConfirmationModal
 // ✅ Adicionado: Atualização periódica inteligente
-// ✅ Corrigido: Função calculateStats para excluir reservas canceladas
+// ✅ CORRIGIDO: Função calculateStats para excluir reservas canceladas/rejeitadas das estatísticas
 // ✅ Corrigido: Sincronização frontend-backend
 // ✅ CORREÇÃO: Erros de declaração de função e propriedades resolvidos
 // ✅ CORREÇÃO: payment.reference substituído por payment.referenceNumber
@@ -59,10 +61,14 @@ import { useQueryClient } from '@tanstack/react-query';
 
 // Importar componentes modulares
 import BookingFilters, { type BookingFiltersState } from './BookingFilters';
-import BookingStats from './BookingStats';
 import BookingActions from './BookingActions';
 import { PaymentRegisterModal } from './PaymentRegisterModal';
 import { CancelConfirmationModal } from './CancelConfirmationModal';
+
+// ✅ ADICIONADO: Importar novos componentes
+import { StatsPeriodSelector, type StatsPeriod } from './StatsPeriodSelector';
+import { EnhancedBookingStats } from './EnhancedBookingStats';
+import { ExportDataModal } from './ExportDataModal';
 
 interface EventSpaceBookingsListProps {
   spaceId: string;
@@ -126,6 +132,11 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const itemsPerPage = 10;
   const { toast } = useToast();
 
+  // ✅ ADICIONADO: Estado para período das estatísticas
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>('all');
+  // ✅ ADICIONADO: Estado para modal de exportação
+  const [showExportModal, setShowExportModal] = useState(false);
+
   // ✅ CORREÇÃO: useQueryClient para invalidar queries
   const queryClient = useQueryClient();
 
@@ -148,7 +159,6 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
   const [paymentDetails, setPaymentDetails] = useState<FullBookingDetails | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const [showExportDialog, setShowExportDialog] = useState(false);
   
   // ✅ CORREÇÃO: paymentData atualizado para usar 'reference' em vez de 'referenceNumber'
   const [paymentData, setPaymentData] = useState<{
@@ -205,6 +215,35 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
 
   // ✅ CORREÇÃO: Flag para controlar quando resetar a paginação
   const [shouldResetPageOnFilter, setShouldResetPageOnFilter] = useState(true);
+
+  // ✅ ADICIONADO: Função para filtrar por período
+  const filterByPeriod = useCallback((bookingsList: Booking[], period: StatsPeriod): Booking[] => {
+    if (period === 'all') return bookingsList;
+    
+    const now = new Date();
+    const startOfPeriod = new Date();
+    
+    switch (period) {
+      case 'year':
+        startOfPeriod.setFullYear(now.getFullYear(), 0, 1); // 1º de janeiro
+        break;
+      case 'month':
+        startOfPeriod.setMonth(now.getMonth(), 1); // 1º do mês
+        break;
+      case 'week':
+        startOfPeriod.setDate(now.getDate() - now.getDay()); // Domingo da semana
+        break;
+      case 'today':
+        startOfPeriod.setHours(0, 0, 0, 0); // Início do dia
+        break;
+      default:
+        return bookingsList;
+    }
+    
+    return bookingsList.filter(booking => 
+      new Date(booking.start_date) >= startOfPeriod
+    );
+  }, []);
 
   // ✅ CORREÇÃO: loadBookings definido PRIMEIRO para evitar erro de uso antes da declaração
   const loadBookings = useCallback(async (shouldResetPage = false) => {
@@ -291,7 +330,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     // 1. Atualização automática está ativada
     // 2. Nenhum modal está aberto
     // 3. O usuário está na página 1
-    if (shouldAutoRefresh && !showDetailsDialog && !showPaymentDialog && !showCancelModal && !showPaymentModal && currentPage === 1) {
+    if (shouldAutoRefresh && !showDetailsDialog && !showPaymentDialog && !showCancelModal && !showPaymentModal && !showExportModal && currentPage === 1) {
       const interval = setInterval(() => {
         console.log('🔄 Atualização periódica de dados (página 1)...');
         // ✅ CORREÇÃO: Não resetar página durante atualização automática
@@ -300,7 +339,7 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       
       return () => clearInterval(interval);
     }
-  }, [shouldAutoRefresh, showDetailsDialog, showPaymentDialog, showCancelModal, showPaymentModal, currentPage, loadBookings]);
+  }, [shouldAutoRefresh, showDetailsDialog, showPaymentDialog, showCancelModal, showPaymentModal, showExportModal, currentPage, loadBookings]);
 
   useEffect(() => {
     // ✅ CORREÇÃO: Resetar paginação apenas quando filtros mudam
@@ -502,27 +541,36 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
     }
   };
 
-  // ✅ CORREÇÃO: Função calculateStats atualizada para excluir reservas canceladas
-  const calculateStats = (bookingsList: Booking[]) => {
-    // ✅ CORREÇÃO: Filtrar reservas ativas (não canceladas/rejeitadas)
-    const activeBookings = bookingsList.filter(b => 
-      !['cancelled', 'rejected'].includes(b.status)
+  // ✅ CORREÇÃO CRÍTICA: Função calculateStats atualizada para filtrar por período
+  const calculateStats = useCallback((bookingsList: Booking[]) => {
+    // ✅ FILTRAR: Primeiro por período selecionado
+    const periodFiltered = filterByPeriod(bookingsList, statsPeriod);
+    
+    // ✅ FILTRAR: Depois por reservas ATIVAS (não canceladas/rejeitadas/arquivadas)
+    const activeBookings = periodFiltered.filter(b => 
+      !['cancelled', 'rejected', 'archived'].includes(b.status)
+    );
+    
+    // ✅ FILTRAR: Apenas reservas com pagamento PENDENTE/PARCIAL para receita pendente
+    const pendingPaymentBookings = activeBookings.filter(b => 
+      ['pending', 'partial'].includes(b.payment_status || '')
     );
     
     const total = activeBookings.length;
     const pending = activeBookings.filter(b => b.status === 'pending_approval').length;
     const confirmed = activeBookings.filter(b => b.status === 'confirmed').length;
     const completed = activeBookings.filter(b => b.status === 'completed').length;
-    const cancelled = bookingsList.filter(b => 
+    const cancelled = periodFiltered.filter(b => 
       ['cancelled', 'rejected'].includes(b.status)
     ).length;
     
-    // ✅ CORREÇÃO: Calcular receita apenas de reservas ativas
-    const revenue = activeBookings.reduce((sum, b) => sum + Number(b.total_price || 0), 0);
+    // ✅ RECEITA REALIZADA: Soma de reservas ativas com pagamento confirmado/pago
+    const revenue = activeBookings
+      .filter(b => b.payment_status === 'paid' || b.payment_status === 'confirmed')
+      .reduce((sum, b) => sum + Number(b.total_price || 0), 0);
     
-    // ✅ CORREÇÃO: Calcular receita pendente apenas de reservas ativas
-    const pendingRevenue = activeBookings
-      .filter(b => ['pending', 'partial'].includes(b.payment_status || ''))
+    // ✅ RECEITA PENDENTE: Apenas de reservas ATIVAS com pagamento pendente/parcial
+    const pendingRevenue = pendingPaymentBookings
       .reduce((sum, b) => sum + Number(b.balance_due || 0), 0);
       
     const averageBookingValue = total > 0 ? revenue / total : 0;
@@ -534,10 +582,10 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
       completed,
       cancelled,
       revenue,
-      pendingRevenue,
+      pendingRevenue, // ✅ AGORA CORRETO: apenas reservas ativas pendentes
       averageBookingValue,
     });
-  };
+  }, [statsPeriod, filterByPeriod]);
 
   const handleExportBookings = (format: 'csv' | 'excel' | 'pdf') => {
     if (format !== 'csv') {
@@ -1359,8 +1407,30 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         }}
       />
 
-      {/* Estatísticas */}
-      <BookingStats stats={stats} />
+      {/* ✅ ATUALIZADO: Seção de estatísticas com novos componentes */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <StatsPeriodSelector
+            period={statsPeriod}
+            onPeriodChange={setStatsPeriod}
+          />
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowExportModal(true)}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Exportar Dados
+          </Button>
+        </div>
+        
+        <EnhancedBookingStats
+          stats={stats}
+          period={statsPeriod}
+          isLoading={loading}
+        />
+      </div>
 
       {/* Lista de reservas */}
       {loading ? (
@@ -1578,60 +1648,19 @@ export const EventSpaceBookingsList: React.FC<EventSpaceBookingsListProps> = ({
         }}
       />
 
+      {/* ✅ ADICIONADO: Modal de Exportação de Dados */}
+      <ExportDataModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        bookings={filteredBookings}
+        spaceName={actualSpaceName}
+        period={statsPeriod}
+        stats={stats}
+      />
+
       {/* Diálogos */}
       <BookingDetailsDialog />
       <PaymentDialog />
-      
-      {/* Diálogo de Exportação */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5" />
-              Exportar Reservas
-            </DialogTitle>
-            <DialogDescription>
-              Selecione o formato para exportação
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="grid grid-cols-3 gap-4 py-4">
-            <Button
-              variant="outline"
-              className="h-24 flex flex-col gap-2"
-              onClick={() => handleExportBookings('csv')}
-            >
-              <FileSpreadsheet className="h-8 w-8" />
-              <span>CSV</span>
-              <span className="text-xs text-gray-500">Dados estruturados</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-24 flex flex-col gap-2"
-              onClick={() => handleExportBookings('excel')}
-            >
-              <FileSpreadsheet className="h-8 w-8" />
-              <span>Excel</span>
-              <span className="text-xs text-gray-500">Planilha editável</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-24 flex flex-col gap-2"
-              onClick={() => handleExportBookings('pdf')}
-            >
-              <FileText className="h-8 w-8" />
-              <span>PDF</span>
-              <span className="text-xs text-gray-500">Relatório formatado</span>
-            </Button>
-          </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
-              Cancelar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
