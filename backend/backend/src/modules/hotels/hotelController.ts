@@ -1,8 +1,9 @@
-// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (21/01/2026)
-// Com correções para rota /host/me, min_nights_default, disponibilidade bulk update e todas as correções anteriores
+// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (03/02/2026)
+// ✅ CORREÇÃO APLICADA: País sempre "Moçambique" (forçado em POST e PUT)
 // ✅ CORREÇÕES APLICADAS: Validação de available_units vs total_units e price com null/undefined
 // ✅ CORREÇÃO DO BULK UPDATE: Aceitar ambos os formatos (snake_case e camelCase) do frontend
 // ✅ CORREÇÃO CRÍTICA: Transformação automática de snake_case para camelCase no schema
+// ✅ ATUALIZADO: Adicionado campo location_id nos schemas de hotel
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -20,6 +21,7 @@ import {
   getHotelsByProvince,
   getHotelsByLocality,
   getHostDashboardSummary,
+  syncHotelLocation, // ✅ NOVO: Adicionado para sincronização de localização
 } from './hotelService';
 
 import {
@@ -89,6 +91,7 @@ const createHotelBaseSchema = z.object({
   country: z.string().default('Moçambique'),
   lat: z.string().regex(/^-?\d+(\.\d+)?$/).optional(), // String com formato numérico
   lng: z.string().regex(/^-?\d+(\.\d+)?$/).optional(), // String com formato numérico
+  location_id: z.string().uuid().optional(), // ✅ NOVO: Referência à localização real
   contact_email: z.string().email(),
   contact_phone: z.string().optional(),
   policies: z.string().optional(),
@@ -205,6 +208,11 @@ const voteHelpfulSchema = z.object({
 
 const respondReviewSchema = z.object({
   responseText: z.string().min(10).max(1000),
+});
+
+// ✅ NOVO: Schema para sincronização de localização
+const syncLocationSchema = z.object({
+  maxDistanceKm: z.number().min(0.1).max(100).optional().default(5),
 });
 
 // ✅ CORREÇÃO CRÍTICA: Schema para bulk update de disponibilidade com transformação automática
@@ -441,7 +449,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ✅ CORRIGIDO: Rota de criação de hotel com host_id do usuário autenticado
+// ✅ CORRIGIDO: Rota de criação de hotel com host_id do usuário autenticado E país fixo Moçambique
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
@@ -453,12 +461,15 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Nome obrigatório (mínimo 3 caracteres)' });
     }
 
+    // ✅ CORREÇÃO: Forçar país como "Moçambique" sempre
     const validated = createHotelSchema.parse({
       ...rawData,
       host_id: userId,  // Força host_id do usuário logado
+      country: 'Moçambique', // ✅ FORÇAR sempre Moçambique
       slug: rawData.slug || generateSlug(rawData.name.trim()),
       lat: rawData.lat?.toString(),
       lng: rawData.lng?.toString(),
+      location_id: rawData.location_id || undefined,
     });
 
     const newHotel = await createHotel(validated);
@@ -477,14 +488,21 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// ✅ CORRIGIDO: Rota de atualização de hotel com país fixo Moçambique
 router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     console.log("🔵 [HOTEL UPDATE] Payload recebido:", JSON.stringify(req.body, null, 2));
     
     const rawData = req.body;
     
+    // ✅ CORREÇÃO: Forçar país como "Moçambique" sempre
+    const normalizedData = {
+      ...rawData,
+      country: 'Moçambique', // ✅ FORÇAR sempre Moçambique
+    };
+    
     // Validação de campos obrigatórios
-    if (rawData.name !== undefined && (!rawData.name || typeof rawData.name !== 'string' || rawData.name.trim().length < 3)) {
+    if (normalizedData.name !== undefined && (!normalizedData.name || typeof normalizedData.name !== 'string' || normalizedData.name.trim().length < 3)) {
       return res.status(400).json({ 
         success: false, 
         message: 'Nome obrigatório (mínimo 3 caracteres)' 
@@ -492,10 +510,11 @@ router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Res
     }
 
     const data = {
-      ...rawData,
-      lat: rawData.lat?.toString(),
-      lng: rawData.lng?.toString(),
-      slug: rawData.slug || (rawData.name ? generateSlug(rawData.name) : undefined),
+      ...normalizedData,
+      lat: normalizedData.lat?.toString(),
+      lng: normalizedData.lng?.toString(),
+      location_id: normalizedData.location_id || undefined,
+      slug: normalizedData.slug || (normalizedData.name ? generateSlug(normalizedData.name) : undefined),
     };
 
     const validatedData = updateHotelSchema.parse(data);
@@ -521,6 +540,71 @@ router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Res
     }
     console.error('Erro ao atualizar hotel:', error);
     res.status(500).json({ success: false, message: 'Erro ao atualizar hotel' });
+  }
+});
+
+// ✅ NOVA ROTA: Sincronização de localização
+router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
+  try {
+    const hotelId = req.params.id;
+    const { maxDistanceKm = 5 } = req.body;
+    
+    const validated = syncLocationSchema.parse({ maxDistanceKm });
+    
+    // Buscar hotel
+    const hotel = await getHotelById(hotelId);
+    if (!hotel) {
+      return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
+    }
+    
+    if (!hotel.lat || !hotel.lng) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Hotel não tem coordenadas para sincronizar' 
+      });
+    }
+    
+    // Sincronizar localização
+    const result = await syncHotelLocation(hotelId);
+    
+    if (!result.success) {
+      return res.json({
+        success: true,
+        message: 'Nenhuma localização próxima encontrada',
+        data: null,
+      });
+    }
+    
+    // Buscar informações da localização
+    const location = await db.execute(sql`
+      SELECT 
+        id,
+        name,
+        province,
+        district,
+        type,
+        lat,
+        lng
+      FROM mozambique_locations
+      WHERE id = ${result.locationId}
+    `);
+    
+    const locationData = (location as any).rows?.[0] || null;
+    
+    // Buscar hotel atualizado
+    const updatedHotel = await getHotelById(hotelId);
+    
+    res.json({
+      success: true,
+      message: 'Localização sincronizada com sucesso',
+      data: {
+        hotel: updatedHotel,
+        location: locationData,
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao sincronizar localização:', error);
+    res.status(500).json({ success: false, message: 'Erro ao sincronizar localização' });
   }
 });
 
@@ -845,7 +929,7 @@ router.post('/:hotelId/reviews/:reviewId/respond', requireAuth, requireHotelOwne
 // ======================= BUSCA POR RAIO (NOVA ROTA) - VERSÃO SIMPLIFICADA =======================
 router.get('/search/nearby', async (req: Request, res: Response) => {
   try {
-    const { lat, lng, radius = 60 } = req.query;
+    const { lat, lng, radius = 60, useExactLocations = false } = req.query;
 
     const latNum = parseFloat(lat as string);
     const lngNum = parseFloat(lng as string);
@@ -855,31 +939,74 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "lat e lng obrigatórios" });
     }
 
-    // VERSÃO SIMPLIFICADA - sem filtros complexos
-    const query = sql`
-      SELECT 
-        h.id,
-        h.name,
-        h.slug,
-        h.description,
-        h.address,
-        h.locality,
-        h.province,
-        h.lat,
-        h.lng,
-        h.rating,
-        h.total_reviews,
-        h.amenities,
-        -- Calcula distância aproximada usando fórmula de Haversine
-        (6371 * acos(
-          cos(radians(${latNum})) * 
-          cos(radians(CAST(h.lat AS numeric))) * 
-          cos(radians(CAST(h.lng AS numeric)) - radians(${lngNum})) + 
-          sin(radians(${latNum})) * 
-          sin(radians(CAST(h.lat AS numeric)))
-        )) AS distance_km
-      FROM hotels h
-      WHERE h.is_active = true
+    let query;
+    
+    if (useExactLocations === 'true') {
+      // ✅ NOVO: Busca usando localizações exatas (mozambique_locations)
+      query = sql`
+        SELECT 
+          h.*,
+          ml.name as exact_location_name,
+          ml.type as location_type,
+          ml.province as exact_province,
+          ml.district as exact_district,
+          ml.locality as exact_locality,
+          -- Distância da localização exata
+          ST_Distance(
+            ST_SetSRID(ST_MakePoint(ml.lng, ml.lat), 4326)::geography,
+            ST_SetSRID(ST_MakePoint(${lngNum}, ${latNum}), 4326)::geography
+          ) / 1000 as distance_from_exact_location_km,
+          -- Distância do hotel (fallback)
+          (6371 * acos(
+            cos(radians(${latNum})) * 
+            cos(radians(CAST(h.lat AS numeric))) * 
+            cos(radians(CAST(h.lng AS numeric)) - radians(${lngNum})) + 
+            sin(radians(${latNum})) * 
+            sin(radians(CAST(h.lat AS numeric)))
+          )) AS distance_from_hotel_km
+        FROM hotels h
+        LEFT JOIN mozambique_locations ml ON h.location_id = ml.id
+        WHERE h.is_active = true
+        AND (
+          -- Se tem location_id, usa distância da localização exata
+          (h.location_id IS NOT NULL AND 
+           ST_Distance(
+             ST_SetSRID(ST_MakePoint(ml.lng, ml.lat), 4326)::geography,
+             ST_SetSRID(ST_MakePoint(${lngNum}, ${latNum}), 4326)::geography
+           ) <= ${radiusMeters})
+          OR
+          -- Se não tem location_id, usa distância do hotel (fallback)
+          (h.location_id IS NULL AND h.lat IS NOT NULL AND h.lng IS NOT NULL AND
+           (6371 * acos(
+             cos(radians(${latNum})) * 
+             cos(radians(CAST(h.lat AS numeric))) * 
+             cos(radians(CAST(h.lng AS numeric)) - radians(${lngNum})) + 
+             sin(radians(${latNum})) * 
+             sin(radians(CAST(h.lat AS numeric)))
+           )) <= ${Number(radius)})
+        )
+        ORDER BY 
+          CASE 
+            WHEN h.location_id IS NOT NULL THEN 1  -- Prioridade para hotéis com localização exata
+            ELSE 2
+          END,
+          COALESCE(distance_from_exact_location_km, distance_from_hotel_km) ASC
+        LIMIT 50
+      `;
+    } else {
+      // Busca tradicional (mantida para compatibilidade)
+      query = sql`
+        SELECT 
+          h.*,
+          (6371 * acos(
+            cos(radians(${latNum})) * 
+            cos(radians(CAST(h.lat AS numeric))) * 
+            cos(radians(CAST(h.lng AS numeric)) - radians(${lngNum})) + 
+            sin(radians(${latNum})) * 
+            sin(radians(CAST(h.lat AS numeric)))
+          )) AS distance_km
+        FROM hotels h
+        WHERE h.is_active = true
         AND h.lat IS NOT NULL
         AND h.lng IS NOT NULL
         AND (6371 * acos(
@@ -889,14 +1016,12 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
           sin(radians(${latNum})) * 
           sin(radians(CAST(h.lat AS numeric)))
         )) <= ${Number(radius)}
-      ORDER BY distance_km ASC
-      LIMIT 20
-    `;
+        ORDER BY distance_km ASC
+        LIMIT 20
+      `;
+    }
 
-    // Executar query
     const hotels = await db.execute(query);
-    
-    // Converter resultado para array (o Drizzle retorna diferentes formatos)
     const hotelsArray = Array.isArray(hotels) ? hotels : 
                        (hotels as any).rows ? (hotels as any).rows : 
                        hotels as any[];
@@ -906,7 +1031,12 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
       data: hotelsArray,
       center: { lat: latNum, lng: lngNum },
       radius_km: Number(radius),
-      count: hotelsArray.length
+      useExactLocations: useExactLocations === 'true',
+      count: hotelsArray.length,
+      stats: {
+        withExactLocation: hotelsArray.filter((h: any) => h.location_id).length,
+        withCoordinatesOnly: hotelsArray.filter((h: any) => h.lat && h.lng && !h.location_id).length,
+      }
     });
   } catch (error) {
     console.error("Erro na busca por proximidade:", error);

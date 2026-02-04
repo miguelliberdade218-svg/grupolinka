@@ -19,8 +19,12 @@ export interface Hotel {
   locality: string; // OBRIGATÓRIO - Localidade/Cidade
   province: string;
   country?: string;
-  lat?: string | null; // String numérico (ex: "-23.8544")
-  lng?: string | null; // String numérico (ex: "35.4735")
+  
+  // ✅ NOVO: Campos de localização real
+  location_id?: string | null;  // ID da localização no banco
+  lat?: string | null;         // Latitude (string)
+  lng?: string | null;         // Longitude (string)
+  
   contact_email: string;
   contact_phone?: string | null;
   policies?: string | null;
@@ -45,8 +49,12 @@ export interface CreateHotelRequest {
   locality: string; // OBRIGATÓRIO
   province: string;
   country?: string;
-  lat?: string | number;
-  lng?: string | number;
+  
+  // ✅ NOVO: Campos de localização
+  location_id?: string;        // ID opcional
+  lat?: string | number;      // Opcional
+  lng?: string | number;      // Opcional
+  
   contact_email: string;
   contact_phone?: string;
   policies?: string;
@@ -64,8 +72,12 @@ export interface UpdateHotelRequest {
   locality?: string;
   province?: string;
   country?: string;
-  lat?: string | number;
-  lng?: string | number;
+  
+  // ✅ NOVO: Campos de localização
+  location_id?: string;        // ID opcional
+  lat?: string | number;      // Opcional
+  lng?: string | number;      // Opcional
+  
   contact_email?: string;
   contact_phone?: string;
   policies?: string;

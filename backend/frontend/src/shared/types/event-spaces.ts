@@ -66,6 +66,14 @@ export interface EventSpace {
   rating?: number;
   totalReviews?: number;
 
+  // ✅ NOVO: Campos de localização (podem ser herdados do hotel)
+  locality?: string | null;
+  province?: string | null;
+  lat?: string | null;
+  lng?: string | null;
+  location_id?: string | null;
+  inherits_hotel_location?: boolean;  // Flag para herdar localização
+
   createdAt: string;
   updatedAt: string;
 
@@ -76,6 +84,9 @@ export interface EventSpace {
     name: string;
     locality: string;
     province: string;
+    lat?: string | null;
+    lng?: string | null;
+    location_id?: string | null;
   } | null;
 }
 
@@ -111,10 +122,26 @@ export interface CreateEventSpaceRequest {
   virtualTourUrl?: string | null;
   isActive?: boolean;
   isFeatured?: boolean;
+  
+  // ✅ NOVO: Campos opcionais de localização
+  locality?: string | null;
+  province?: string | null;
+  lat?: string | number | null;
+  lng?: string | number | null;
+  location_id?: string | null;
+  inherits_hotel_location?: boolean;
 }
 
 export interface UpdateEventSpaceRequest extends Partial<CreateEventSpaceRequest> {
   id: string; // obrigatório para update
+  
+  // ✅ NOVO: Campos opcionais de localização (explicitamente incluídos para clareza)
+  locality?: string | null;
+  province?: string | null;
+  lat?: string | number | null;
+  lng?: string | number | null;
+  location_id?: string | null;
+  inherits_hotel_location?: boolean;
 }
 
 // ==================== SEARCH PARAMS ====================

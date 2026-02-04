@@ -3,6 +3,8 @@
  * Entry point principal da app Hotels - VERSÃO FINAL INTEGRADA E CORRIGIDA 28/01/2026
  * ATUALIZADO: Inclui ActiveEventSpaceProvider e páginas de espaços de eventos
  * ✅ INCLUÍDO: Rota para dashboard específico do espaço COM WRAPPER
+ * ✅ CORRIGIDO: Substituído HotelCreationPage por CreateHotelForm
+ * ✅ CORRIGIDO: Adicionado navigate para redirecionamento pós-criação
  */
 
 import React from 'react';
@@ -14,7 +16,9 @@ import { ActiveEventSpaceProvider } from '@/contexts/ActiveEventSpaceContext';
 import { Button } from '@/shared/components/ui/button';
 import HotelsHeader from './components/HotelsHeader';
 import HotelManagerDashboard from './pages/hotel-management/HotelManagerDashboard';
-import HotelCreationPage from './pages/HotelCreationPage';
+// ❌ REMOVIDO: import HotelCreationPage from './pages/HotelCreationPage';
+// ✅ ADICIONADO: Import do CreateHotelForm moderno
+import CreateHotelForm from './components/CreateHotelForm';
 import EventSpacesManagementModern from './components/event-spaces/EventSpacesManagementModern';
 import EventBookingsPage from './pages/EventBookingsPage';
 import EventDashboardPage from './pages/events/EventDashboardPage';
@@ -42,6 +46,9 @@ function AppContent() {
   const activeHotelId = activeHotel?.id || '';
   const [, setLocation] = useLocation();
   const location = useLocation()[0];
+  
+  // ✅ ADICIONADO: Hook useLocation para navigation
+  const [_, navigate] = useLocation();
 
   // Redirecionamentos automáticos
   React.useEffect(() => {
@@ -60,7 +67,25 @@ function AppContent() {
         <Switch>
           {/* Gestão de hotéis */}
           <Route path="/hotels/manage" component={HotelManagerDashboard} />
-          <Route path="/hotels/create" component={HotelCreationPage} />
+          
+          {/* ✅ CORRIGIDO: Substituído HotelCreationPage por CreateHotelForm */}
+          <Route path="/hotels/create">
+            {() => (
+              <CreateHotelForm 
+                onSuccess={(hotelId) => {
+                  console.log('✅ Hotel criado com sucesso, redirecionando...');
+                  // Redireciona para o dashboard após criar hotel
+                  setTimeout(() => {
+                    navigate('/hotels/manage');
+                  }, 1500);
+                }}
+                onCancel={() => {
+                  console.log('❌ Criação cancelada, voltando ao dashboard...');
+                  navigate('/hotels/manage');
+                }}
+              />
+            )}
+          </Route>
 
           {/* Dashboard de Eventos */}
           <Route path="/hotels/events/dashboard">

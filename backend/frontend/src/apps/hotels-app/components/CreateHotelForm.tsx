@@ -9,6 +9,10 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { hotelService, HotelCreateRequest } from '@/services/hotelService';
 import { useToast } from '@/shared/hooks/use-toast';
 
+// ✅ NOVO: Importar LocationAutocomplete
+import LocationAutocomplete, { LocationOption } from '@/shared/components/LocationAutocomplete';
+import { locationsService } from '@/services/locationsService';
+
 interface CreateHotelFormProps {
   onSuccess?: (hotelId: string) => void;
   onCancel?: () => void;
@@ -19,17 +23,25 @@ const CreateHotelForm: React.FC<CreateHotelFormProps> = ({ onSuccess, onCancel }
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // ✅ NOVO: Estado para localização selecionada
+  const [selectedLocation, setSelectedLocation] = useState<LocationOption | null>(null);
+
+  // ✅ ATUALIZADO: Estado do formulário com novos campos de localização
   const [formData, setFormData] = useState<HotelCreateRequest>({
     name: '',
     description: '',
     address: '',
-    locality: '',
-    province: '',
+    locality: '',      // Mantido
+    province: '',      // Mantido
     country: 'Moçambique',
     contact_email: '',
     contact_phone: '',
     check_in_time: '14:00',
     check_out_time: '12:00',
+    // ✅ NOVO: Campos de localização
+    lat: '',
+    lng: '',
+    location_id: '',
   });
 
   const handleInputChange = (
@@ -39,29 +51,70 @@ const CreateHotelForm: React.FC<CreateHotelFormProps> = ({ onSuccess, onCancel }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // ✅ NOVO: Função para lidar com seleção de localização
+  const handleLocationSelect = (locationOption: LocationOption) => {
+    console.log('📍 Localização selecionada:', locationOption);
+    setSelectedLocation(locationOption);
+    
+    // Preencher automaticamente os campos do formulário
+    setFormData(prev => ({
+      ...prev,
+      locality: locationOption.city || locationOption.label.split(',')[0] || '',
+      province: locationOption.province || '',
+      lat: locationOption.lat?.toString() || '',
+      lng: locationOption.lng?.toString() || '',
+      location_id: locationOption.id || '',
+    }));
+  };
+
+  // ✅ NOVO: Função para lidar com digitação livre
+  const handleLocationInputChange = (locationOption: LocationOption) => {
+    // Se o usuário está digitando (não selecionou da lista)
+    if (!locationOption.id) {
+      setSelectedLocation(null);
+      setFormData(prev => ({
+        ...prev,
+        locality: locationOption.label, // Usar o que foi digitado
+        province: '', // Limpar província
+        lat: '', // Limpar coordenadas
+        lng: '',
+        location_id: '', // Limpar ID
+      }));
+    }
+  };
+
   const validateForm = (): boolean => {
+    setError(null);
+    
+    // Validação básica
     if (!formData.name.trim()) {
       setError('O nome do hotel é obrigatório');
       return false;
     }
+    
     if (!formData.address.trim()) {
       setError('O endereço é obrigatório');
       return false;
     }
+    
+    // ✅ NOVA VALIDAÇÃO: Localização
     if (!formData.locality.trim()) {
-      setError('A localidade (cidade) é obrigatória');
+      setError('A localização é obrigatória');
       return false;
     }
+    
+    // Validação de email
     if (!formData.contact_email.trim()) {
       setError('O email de contato é obrigatório');
       return false;
     }
-    // Validação simples de email
+    
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.contact_email)) {
       setError('Email inválido');
       return false;
     }
+    
     return true;
   };
 
@@ -182,60 +235,87 @@ const CreateHotelForm: React.FC<CreateHotelFormProps> = ({ onSuccess, onCancel }
               />
             </div>
 
-            {/* Endereço e Localidade */}
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <Label htmlFor="address">Endereço Completo *</Label>
-                <Input
-                  id="address"
-                  name="address"
-                  value={formData.address}
-                  onChange={handleInputChange}
-                  placeholder="Avenida Marginal, 123, Bairro do Farol"
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="locality">Localidade / Cidade *</Label>
-                <Input
-                  id="locality"
-                  name="locality"
-                  value={formData.locality}
-                  onChange={handleInputChange}
-                  placeholder="Tofo / Maputo / Beira"
-                  required
-                  disabled={loading}
-                />
-              </div>
+            {/* Endereço */}
+            <div>
+              <Label htmlFor="address">Endereço Completo *</Label>
+              <Input
+                id="address"
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                placeholder="Avenida Marginal, 123, Bairro do Farol"
+                required
+                disabled={loading}
+              />
             </div>
 
-            {/* Província e Telefone */}
-            <div className="grid md:grid-cols-2 gap-6">
+            {/* ✅ NOVO: Localização com Autocomplete (substitui locality e province) */}
+            <div className="space-y-4">
               <div>
-                <Label htmlFor="province">Província</Label>
-                <Input
-                  id="province"
-                  name="province"
-                  value={formData.province}
-                  onChange={handleInputChange}
-                  placeholder="Inhambane / Maputo / Sofala"
-                  disabled={loading}
+                <Label htmlFor="hotel-location">Localização do Hotel *</Label>
+                <p className="text-sm text-gray-500 mb-2">
+                  Selecione uma localização real de Moçambique para permitir buscas por proximidade
+                </p>
+                <LocationAutocomplete
+                  id="hotel-location"
+                  placeholder="Busque por cidade, distrito ou província..."
+                  value={selectedLocation?.label || formData.locality || ''}
+                  onChange={handleLocationInputChange}
+                  onLocationSelect={handleLocationSelect}
                 />
               </div>
+              
+              {/* Campos ocultos para armazenar dados da localização */}
+              <input type="hidden" name="location_id" value={formData.location_id || ''} />
+              <input type="hidden" name="lat" value={formData.lat || ''} />
+              <input type="hidden" name="lng" value={formData.lng || ''} />
+              
+              {/* Feedback visual */}
+              {selectedLocation && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <div className="text-green-600">✅</div>
+                    <div>
+                      <p className="font-medium text-green-800">Localização válida selecionada</p>
+                      <p className="text-sm text-green-700">
+                        {selectedLocation.label}
+                        {selectedLocation.lat && selectedLocation.lng && (
+                          <span className="ml-2 text-xs">
+                            (Coordenadas: {selectedLocation.lat.toFixed(4)}, {selectedLocation.lng.toFixed(4)})
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {!selectedLocation && formData.locality && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <div className="text-yellow-600">⚠️</div>
+                    <div>
+                      <p className="font-medium text-yellow-800">Localização não validada</p>
+                      <p className="text-sm text-yellow-700">
+                        Para melhores resultados de busca, selecione uma localização da lista
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
-              <div>
-                <Label htmlFor="contact_phone">Telefone de Contato</Label>
-                <Input
-                  id="contact_phone"
-                  name="contact_phone"
-                  value={formData.contact_phone}
-                  onChange={handleInputChange}
-                  placeholder="+258 84 123 4567"
-                  disabled={loading}
-                />
-              </div>
+            {/* Telefone */}
+            <div>
+              <Label htmlFor="contact_phone">Telefone de Contato</Label>
+              <Input
+                id="contact_phone"
+                name="contact_phone"
+                value={formData.contact_phone}
+                onChange={handleInputChange}
+                placeholder="+258 84 123 4567"
+                disabled={loading}
+              />
             </div>
 
             {/* Check-in e Check-out */}

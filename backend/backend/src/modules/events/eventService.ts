@@ -1,11 +1,12 @@
-// src/modules/events/eventService.ts - VERSÃO CORRIGIDA COM DISPONIBILIDADE INFINITA E DETECÇÃO DE CONFLITOS
+// src/modules/events/eventService.ts - VERSÃO CORRIGIDA COM BUSCA POR PROXIMIDADE
 
 import { db } from "../../../db";
 import {
   eventSpaces,
   eventAvailability,
   eventBookings,
-  hotels
+  hotels,
+  mozambiqueLocations
 } from "../../../shared/schema";
 import { eq, and, sql, ilike, or, desc, gte, lte, inArray, asc } from "drizzle-orm";
 
@@ -55,7 +56,251 @@ export const getEventSpacesByHotel = async (
   }
 };
 
-// ==================== BUSCA DE ESPAÇOS ====================
+// ==================== BUSCA POR PROXIMIDADE (NOVA FUNÇÃO) ====================
+
+/**
+ * Busca espaços de eventos por proximidade a um ponto geográfico
+ */
+export const searchEventSpacesNearby = async (
+  lat: number,
+  lng: number,
+  radiusKm: number = 50,
+  additionalFilters?: {
+    startDate?: string;
+    endDate?: string;
+    capacity?: number;
+    eventType?: string;
+    maxPricePerDay?: number;
+    amenities?: string[];
+    minRating?: number; // ✅ REFERE-SE AO averageRating (campo correto)
+  }
+) => {
+  try {
+    // Calcular a fórmula de Haversine
+    const haversineFormula = sql`
+      (6371 * acos(
+        cos(radians(${lat})) * 
+        cos(radians(CAST(${hotels.lat} AS numeric))) * 
+        cos(radians(CAST(${hotels.lng} AS numeric)) - radians(${lng})) + 
+        sin(radians(${lat})) * 
+        sin(radians(CAST(${hotels.lat} AS numeric)))
+      ))
+    `;
+
+    // Construir condições iniciais
+    const conditions = [
+      eq(eventSpaces.isActive, true),
+      eq(hotels.is_active, true),
+      sql`${hotels.lat} IS NOT NULL`,
+      sql`${hotels.lng} IS NOT NULL`,
+      sql`${haversineFormula} <= ${radiusKm}`
+    ];
+
+    // Aplicar filtros adicionais
+    if (additionalFilters?.capacity) {
+      conditions.push(gte(eventSpaces.capacityMax, additionalFilters.capacity));
+    }
+    
+    if (additionalFilters?.eventType) {
+      conditions.push(sql`${additionalFilters.eventType} = ANY(${eventSpaces.allowedEventTypes})`);
+    }
+    
+    if (additionalFilters?.maxPricePerDay) {
+      // Converter para string para comparar com campo numeric
+      conditions.push(lte(eventSpaces.basePricePerDay, additionalFilters.maxPricePerDay.toString()));
+    }
+    
+    // ✅ CORRIGIDO: Filtro por averageRating mínimo usando sql
+    if (additionalFilters?.minRating !== undefined) {
+      conditions.push(sql`${eventSpaces.averageRating}::numeric >= ${additionalFilters.minRating}`);
+    }
+    
+    if (additionalFilters?.amenities && additionalFilters.amenities.length > 0) {
+      const amenitiesArray = additionalFilters.amenities.filter(a => a && a.trim() !== '');
+      if (amenitiesArray.length > 0) {
+        conditions.push(
+          sql`${eventSpaces.amenities} @> ARRAY[${amenitiesArray.join(', ')}]::text[]`
+        );
+      }
+    }
+    
+    // Executar query
+    const results = await db
+      .select({
+        space: eventSpaces,
+        hotel: hotels,
+        distance_km: haversineFormula.as('distance_km')
+      })
+      .from(eventSpaces)
+      .innerJoin(hotels, eq(hotels.id, eventSpaces.hotelId))
+      .where(and(...conditions))
+      .orderBy(sql`distance_km ASC`);
+    
+    // Filtrar por disponibilidade se tiver datas
+    if (additionalFilters?.startDate && additionalFilters?.endDate && results.length > 0) {
+      const availableSpaces = [];
+      
+      for (const result of results) {
+        const availability = await checkEventSpaceAvailability(
+          result.space.id,
+          additionalFilters.startDate!,
+          additionalFilters.endDate!
+        );
+        
+        if (availability.isAvailable) {
+          availableSpaces.push(result);
+        }
+      }
+      
+      return availableSpaces;
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Erro na busca por proximidade de event spaces:', error);
+    return [];
+  }
+};
+
+/**
+ * Versão melhorada que prioriza location_id (como hotels)
+ */
+export const searchEventSpacesNearbyEnhanced = async (
+  lat: number,
+  lng: number,
+  radiusKm: number = 50,
+  additionalFilters?: {
+    startDate?: string;
+    endDate?: string;
+    capacity?: number;
+    eventType?: string;
+    maxPricePerDay?: number;
+    amenities?: string[];
+    minRating?: number; // ✅ REFERE-SE AO averageRating (campo correto)
+  },
+  useExactLocations: boolean = false
+) => {
+  try {
+    if (useExactLocations) {
+      // Fórmulas de distância
+      const distanceFromExactLocation = sql`
+        (6371 * acos(
+          cos(radians(${lat})) * 
+          cos(radians(${mozambiqueLocations.lat}::numeric)) * 
+          cos(radians(${mozambiqueLocations.lng}::numeric) - radians(${lng})) + 
+          sin(radians(${lat})) * 
+          sin(radians(${mozambiqueLocations.lat}::numeric))
+        ))
+      `;
+
+      const distanceFromHotel = sql`
+        (6371 * acos(
+          cos(radians(${lat})) * 
+          cos(radians(CAST(${hotels.lat} AS numeric))) * 
+          cos(radians(CAST(${hotels.lng} AS numeric)) - radians(${lng})) + 
+          sin(radians(${lat})) * 
+          sin(radians(CAST(${hotels.lat} AS numeric)))
+        ))
+      `;
+
+      // Construir a query manualmente com condições
+      const conditions = [
+        eq(eventSpaces.isActive, true),
+        eq(hotels.is_active, true),
+        or(
+          and(
+            sql`${hotels.location_id} IS NOT NULL`,
+            sql`${distanceFromExactLocation} <= ${radiusKm}`
+          ),
+          and(
+            sql`${hotels.location_id} IS NULL`,
+            sql`${hotels.lat} IS NOT NULL`,
+            sql`${hotels.lng} IS NOT NULL`,
+            sql`${distanceFromHotel} <= ${radiusKm}`
+          )
+        )
+      ];
+
+      // Aplicar filtros adicionais
+      if (additionalFilters?.capacity) {
+        conditions.push(gte(eventSpaces.capacityMax, additionalFilters.capacity));
+      }
+      
+      if (additionalFilters?.eventType) {
+        conditions.push(sql`${additionalFilters.eventType} = ANY(${eventSpaces.allowedEventTypes})`);
+      }
+      
+      if (additionalFilters?.maxPricePerDay) {
+        conditions.push(lte(eventSpaces.basePricePerDay, additionalFilters.maxPricePerDay.toString()));
+      }
+      
+      // ✅ CORRIGIDO: Filtro por averageRating mínimo usando sql
+      if (additionalFilters?.minRating !== undefined) {
+        conditions.push(sql`${eventSpaces.averageRating}::numeric >= ${additionalFilters.minRating}`);
+      }
+      
+      if (additionalFilters?.amenities && additionalFilters.amenities.length > 0) {
+        const amenitiesArray = additionalFilters.amenities.filter(a => a && a.trim() !== '');
+        if (amenitiesArray.length > 0) {
+          conditions.push(
+            sql`${eventSpaces.amenities} @> ARRAY[${amenitiesArray.join(', ')}]::text[]`
+          );
+        }
+      }
+
+      // Executar query
+      const results = await db
+        .select({
+          space: eventSpaces,
+          hotel: hotels,
+          location: mozambiqueLocations,
+          distance_from_exact_location_km: distanceFromExactLocation.as('distance_from_exact_location_km'),
+          distance_from_hotel_km: distanceFromHotel.as('distance_from_hotel_km'),
+          priority: sql<number>`
+            CASE 
+              WHEN ${hotels.location_id} IS NOT NULL THEN 1
+              ELSE 2
+            END
+          `.as('priority')
+        })
+        .from(eventSpaces)
+        .innerJoin(hotels, eq(hotels.id, eventSpaces.hotelId))
+        .leftJoin(mozambiqueLocations, eq(hotels.location_id, mozambiqueLocations.id))
+        .where(and(...conditions))
+        .orderBy(asc(sql`priority`), asc(sql`COALESCE(distance_from_exact_location_km, distance_from_hotel_km)`))
+        .limit(50);
+      
+      // Filtrar por disponibilidade se tiver datas
+      if (additionalFilters?.startDate && additionalFilters?.endDate && results.length > 0) {
+        const availableSpaces = [];
+        
+        for (const result of results) {
+          const availability = await checkEventSpaceAvailability(
+            result.space.id,
+            additionalFilters.startDate!,
+            additionalFilters.endDate!
+          );
+          
+          if (availability.isAvailable) {
+            availableSpaces.push(result);
+          }
+        }
+        
+        return availableSpaces;
+      }
+      
+      return results;
+    } else {
+      // Usar a função básica de busca por proximidade
+      return await searchEventSpacesNearby(lat, lng, radiusKm, additionalFilters);
+    }
+  } catch (error) {
+    console.error('Erro na busca por proximidade melhorada de event spaces:', error);
+    return [];
+  }
+};
+
+// ==================== BUSCA DE ESPAÇOS (ATUALIZADA COM PROXIMIDADE E AVERAGE RATING) ====================
 
 export async function searchEventSpaces(filters: {
   query?: string;
@@ -68,6 +313,13 @@ export async function searchEventSpaces(filters: {
   maxPricePerDay?: number;
   amenities?: string[];
   hotelId?: string;
+  minRating?: number; // ✅ REFERE-SE AO averageRating (campo correto)
+  // ✅ NOVO: Parâmetros de proximidade
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+  sortBy?: 'distance' | 'price' | 'capacity' | 'rating'; // ✅ 'rating' ordena por averageRating
+  useExactLocations?: boolean;
 }) {
   const {
     query,
@@ -80,8 +332,34 @@ export async function searchEventSpaces(filters: {
     maxPricePerDay,
     amenities,
     hotelId,
+    minRating, // ✅ Isto é o campo averageRating da tabela
+    lat,
+    lng,
+    radiusKm = 50,
+    sortBy = 'distance',
+    useExactLocations = false,
   } = filters;
-
+  
+  // ✅ SE tiver lat/lng, usar busca por proximidade
+  if (lat !== undefined && lng !== undefined) {
+    return await searchEventSpacesNearbyEnhanced(
+      lat,
+      lng,
+      radiusKm,
+      {
+        startDate,
+        endDate,
+        capacity,
+        eventType,
+        maxPricePerDay,
+        amenities,
+        minRating // ✅ Passando como minRating (averageRating)
+      },
+      useExactLocations
+    );
+  }
+  
+  // ✅ SENÃO, usar busca tradicional (código existente) COM averageRating
   const conditions: any[] = [
     eq(eventSpaces.isActive, true),
     eq(hotels.is_active, true)
@@ -117,6 +395,11 @@ export async function searchEventSpaces(filters: {
     conditions.push(sql`${eventType} = ANY(${eventSpaces.allowedEventTypes})`);
   }
 
+  // ✅ CORREÇÃO: Filtro por averageRating mínimo usando sql (não gte direto)
+  if (minRating !== undefined) {
+    conditions.push(sql`${eventSpaces.averageRating}::numeric >= ${minRating}`);
+  }
+
   if (amenities && amenities.length > 0) {
     const amenitiesArray = amenities.filter(a => a && a.trim() !== '');
     if (amenitiesArray.length > 0) {
@@ -127,7 +410,7 @@ export async function searchEventSpaces(filters: {
   }
 
   // Buscar espaços que atendem aos critérios básicos
-  let spaces = await db
+  const spacesQuery = db
     .select({
       space: eventSpaces,
       hotel: hotels,
@@ -136,8 +419,30 @@ export async function searchEventSpaces(filters: {
     })
     .from(eventSpaces)
     .innerJoin(hotels, eq(hotels.id, eventSpaces.hotelId))
-    .where(and(...conditions))
-    .orderBy(desc(eventSpaces.capacityMax), eventSpaces.name);
+    .where(and(...conditions));
+
+  // Aplicar ordenação baseada no sortBy - AGORA COM averageRating CORRETO
+  let orderedSpaces;
+  switch (sortBy) {
+    case 'price':
+      orderedSpaces = await spacesQuery.orderBy(asc(eventSpaces.basePricePerDay));
+      break;
+    case 'capacity':
+      orderedSpaces = await spacesQuery.orderBy(desc(eventSpaces.capacityMax));
+      break;
+    case 'rating':
+      // ✅ CORREÇÃO: Ordenação por averageRating (campo correto)
+      orderedSpaces = await spacesQuery.orderBy(desc(sql`${eventSpaces.averageRating}::numeric`));
+      break;
+    case 'distance':
+      // Para ordenação por distância, precisamos de lat/lng
+      orderedSpaces = await spacesQuery.orderBy(desc(eventSpaces.capacityMax));
+      break;
+    default:
+      orderedSpaces = await spacesQuery.orderBy(desc(eventSpaces.capacityMax));
+  }
+
+  let spaces = orderedSpaces;
 
   // Filtro por disponibilidade no período (sistema de diárias)
   if (startDate && endDate && spaces.length > 0) {
@@ -217,6 +522,17 @@ export async function searchEventSpaces(filters: {
 
   return spaces;
 }
+
+// ==================== RESTANTE DO CÓDIGO (MANTIDO IGUAL) ====================
+// ... (todo o resto do código permanece igual a partir daqui, incluindo:
+// getEventDashboardSummary, getUpcomingEventsForHotel, getEventSpacesOverview,
+// getEventSpaceDetails, checkEventSpaceAvailability, hasActiveEventBookings,
+// calculateEventBasePrice, getFutureEventsBySpace, getEventStatsForHotel,
+// checkBookingConflicts, getEventsByOrganizer, incrementEventSpaceViewCount,
+// calculateEventDeposit, isEventSpaceAvailableForImmediateBooking,
+// getFeaturedEventSpaces, getEventBookingSecurityDeposit, offersCatering,
+// getCateringDiscountPercent, getCateringMenuUrls, isAlcoholAllowed,
+// getSpaceMaxCapacity, getSpaceMinCapacity, canBookEventSpace)
 
 // ==================== DASHBOARD ====================
 

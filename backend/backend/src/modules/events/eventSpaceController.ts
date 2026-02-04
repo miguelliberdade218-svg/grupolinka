@@ -1,4 +1,4 @@
-// src/modules/events/eventController.ts - VERSÃO CORRIGIDA (SISTEMA DE DIÁRIAS) - COMPLETO E OTIMIZADO
+// src/modules/events/eventController.ts - VERSÃO CORRIGIDA (COM BUSCA POR PROXIMIDADE) - COMPLETO E OTIMIZADO
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -17,6 +17,8 @@ import { verifyFirebaseToken } from "../../shared/firebaseAuth";
 // Importações dos serviços (APENAS FUNÇÕES DIÁRIAS)
 import {
   searchEventSpaces,
+  searchEventSpacesNearby,
+  searchEventSpacesNearbyEnhanced,
   getEventSpaceDetails,
   getEventSpacesByHotel,
   getEventDashboardSummary,
@@ -466,6 +468,21 @@ const checkCapacitySchema = z.object({
   expected_attendees: z.number().int().positive(),
 });
 
+// ✅ NOVO: Schema para busca por proximidade
+const nearbySearchSchema = z.object({
+  lat: z.union([z.string(), z.number()]).transform(val => parseFloat(val.toString())),
+  lng: z.union([z.string(), z.number()]).transform(val => parseFloat(val.toString())),
+  radius: z.union([z.string(), z.number()]).transform(val => parseFloat(val.toString())).default(50),
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional(),
+  capacity: z.union([z.string(), z.number()]).transform(val => parseInt(val.toString())).optional(),
+  eventType: z.string().optional(),
+  maxPricePerDay: z.union([z.string(), z.number()]).transform(val => parseFloat(val.toString())).optional(),
+  amenities: z.string().optional(),
+  minRating: z.union([z.string(), z.number()]).transform(val => parseFloat(val.toString())).optional(),
+  useExactLocations: z.enum(['true', 'false', '0', '1']).transform(val => val === 'true' || val === '1').optional(),
+});
+
 // ==================== SCHEMAS PARA REVIEWS ====================
 const submitEventReviewSchema = z.object({
   bookingId: z.string().uuid(),
@@ -623,6 +640,124 @@ const isEventSpaceOwnerOrPublic = async (req: Request, res: Response, next: Next
 // ==================== ROUTER PRINCIPAL ====================
 const router = Router();
 const eventSpaceReviewsService = new EventSpaceReviewsService();
+
+// ======================= NOVA ROTA: BUSCA POR PROXIMIDADE =======================
+/**
+ * @route GET /spaces/search/nearby
+ * @description Busca espaços de eventos por proximidade (similar aos hotéis)
+ * @query lat, lng - Coordenadas do centro da busca
+ * @query radius - Raio em km (default: 50)
+ * @query startDate, endDate - Filtro por datas
+ * @query capacity - Filtro por capacidade mínima
+ * @query eventType - Filtro por tipo de evento
+ * @query maxPricePerDay - Filtro por preço máximo
+ * @query amenities - Filtro por amenities (separados por vírgula)
+ * @query minRating - Filtro por rating mínimo (averageRating)
+ * @query useExactLocations - Priorizar locations exatas (true/false)
+ * @access Public
+ */
+router.get('/spaces/search/nearby', async (req: Request, res: Response) => {
+  try {
+    // Validar parâmetros
+    const validated = nearbySearchSchema.parse(req.query);
+    
+    const {
+      lat,
+      lng,
+      radius = 50,
+      startDate,
+      endDate,
+      capacity,
+      eventType,
+      maxPricePerDay,
+      amenities,
+      minRating,
+      useExactLocations = false
+    } = validated;
+    
+    // Buscar espaços por proximidade
+    const spaces = await searchEventSpacesNearbyEnhanced(
+      lat,
+      lng,
+      radius,
+      {
+        startDate,
+        endDate,
+        capacity,
+        eventType,
+        maxPricePerDay,
+        amenities: amenities ? amenities.split(',').filter(a => a.trim() !== '') : undefined,
+        minRating
+      },
+      useExactLocations
+    );
+    
+    // Formatar resposta
+    const formattedSpaces = spaces.map(item => {
+      const result: any = {
+        space: adaptToSnakeCase(item.space),
+        hotel: adaptToSnakeCase(item.hotel),
+      };
+      
+      // Adicionar campos de distância se existirem
+      if ('distance_km' in item) {
+        result.distance_km = item.distance_km;
+      }
+      if ('distance_from_exact_location_km' in item) {
+        result.distance_from_exact_location_km = item.distance_from_exact_location_km;
+      }
+      if ('distance_from_hotel_km' in item) {
+        result.distance_from_hotel_km = item.distance_from_hotel_km;
+      }
+      if ('location' in item && item.location) {
+        result.location = adaptToSnakeCase(item.location);
+      }
+      if ('priority' in item) {
+        result.priority = item.priority;
+      }
+      
+      return result;
+    });
+    
+    res.json({
+      success: true,
+      data: formattedSpaces,
+      count: formattedSpaces.length,
+      center: { lat, lng },
+      radius_km: radius,
+      search_params: {
+        lat,
+        lng,
+        radius,
+        startDate,
+        endDate,
+        capacity,
+        eventType,
+        maxPricePerDay,
+        amenities: amenities ? amenities.split(',').filter(a => a.trim() !== '') : undefined,
+        minRating,
+        useExactLocations
+      }
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parâmetros inválidos para busca por proximidade',
+        errors: error.errors.map(err => ({
+          path: err.path.join('.'),
+          message: err.message
+        }))
+      });
+    }
+    
+    console.error('Erro na busca por proximidade de event spaces:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno na busca por proximidade'
+    });
+  }
+});
 
 // ======================= DEBUG =======================
 router.post('/spaces/debug', async (req: Request, res: Response) => {
@@ -909,6 +1044,7 @@ router.get('/spaces/:id/bookings/filtered', verifyFirebaseToken, requireHotelOwn
 // ======================= ESPAÇOS =======================
 router.get('/spaces', async (req: Request, res: Response) => {
   try {
+    // ✅ ATUALIZADO: Adicionar parâmetros de proximidade
     const filters = {
       query: req.query.query as string | undefined,
       locality: req.query.locality as string | undefined,
@@ -920,26 +1056,59 @@ router.get('/spaces', async (req: Request, res: Response) => {
       maxPricePerDay: req.query.maxPricePerDay ? Number(req.query.maxPricePerDay) : undefined,
       amenities: req.query.amenities ? (req.query.amenities as string).split(',') : undefined,
       hotelId: req.query.hotelId as string | undefined,
+      minRating: req.query.minRating ? Number(req.query.minRating) : undefined, // ✅ averageRating
+      // ✅ NOVO: Parâmetros de proximidade
+      lat: req.query.lat ? Number(req.query.lat) : undefined,
+      lng: req.query.lng ? Number(req.query.lng) : undefined,
+      radiusKm: req.query.radiusKm ? Number(req.query.radiusKm) : 50,
+      sortBy: (req.query.sortBy as 'distance' | 'price' | 'capacity' | 'rating') || 'distance',
+      useExactLocations: req.query.useExactLocations === 'true' || req.query.useExactLocations === '1'
     };
     
     const result = await searchEventSpaces(filters);
     
     // ✅ CORREÇÃO: Response melhorado com mais campos úteis
-    const formattedResult = result.map(item => ({
-      space: adaptToSnakeCase(item.space),
-      hotel: adaptToSnakeCase(item.hotel),
-      base_price_per_day: item.space.basePricePerDay || "0",
-      weekend_surcharge_percent: item.space.weekendSurchargePercent || 0,
-      offers_catering: item.space.offersCatering || false,
-      max_capacity: item.space.capacityMax,
-      allowed_event_types: item.space.allowedEventTypes || [],
-    }));
+    const formattedResult = result.map(item => {
+      const baseResult = {
+        space: adaptToSnakeCase(item.space),
+        hotel: adaptToSnakeCase(item.hotel),
+        base_price_per_day: item.space.basePricePerDay || "0",
+        weekend_surcharge_percent: item.space.weekendSurchargePercent || 0,
+        offers_catering: item.space.offersCatering || false,
+        max_capacity: item.space.capacityMax,
+        allowed_event_types: item.space.allowedEventTypes || [],
+      };
+      
+      // Adicionar campos de distância se existirem (busca por proximidade)
+      if ('distance_km' in item) {
+        (baseResult as any).distance_km = item.distance_km;
+      }
+      if ('distance_from_exact_location_km' in item) {
+        (baseResult as any).distance_from_exact_location_km = item.distance_from_exact_location_km;
+      }
+      if ('distance_from_hotel_km' in item) {
+        (baseResult as any).distance_from_hotel_km = item.distance_from_hotel_km;
+      }
+      
+      return baseResult;
+    });
     
-    res.json({ 
+    // ✅ ATUALIZADO: Incluir informações da busca no response
+    const response: any = {
       success: true, 
       data: formattedResult, 
-      count: formattedResult.length 
-    });
+      count: formattedResult.length,
+      search_type: filters.lat !== undefined && filters.lng !== undefined ? 'nearby' : 'traditional'
+    };
+    
+    // Se for busca por proximidade, incluir dados do centro
+    if (filters.lat !== undefined && filters.lng !== undefined) {
+      response.center = { lat: filters.lat, lng: filters.lng };
+      response.radius_km = filters.radiusKm;
+      response.use_exact_locations = filters.useExactLocations;
+    }
+    
+    res.json(response);
   } catch (error) {
     console.error('Erro ao buscar espaços:', error);
     res.status(500).json({ success: false, message: 'Erro ao buscar espaços' });
@@ -2351,9 +2520,15 @@ router.get('/health', async (req: Request, res: Response) => {
         event_booking_service: true,
         event_payment_service: true,
       },
-      version: '1.1.0',
+      version: '1.2.0', // ✅ Atualizado para versão 1.2.0 com busca por proximidade
       environment: process.env.NODE_ENV || 'development',
       pricing_model: 'daily_rate',
+      features: {
+        nearby_search: true, // ✅ Nova feature
+        exact_locations: true,
+        distance_calculation: true,
+        haversine_formula: true
+      }
     });
   } catch (error) {
     console.error('Health check failed:', error);

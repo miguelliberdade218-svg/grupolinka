@@ -6,6 +6,7 @@
 // CORRIGIDO: eventSpaces - removidos campos obsoletos de hora e adicionados novos campos
 // CORRIGIDO: Removido método .refine() que não existe no Drizzle
 // CORRIGIDO: Adicionado campo cateringRequired em eventBookings
+// ✅ ADICIONADO: Campo location_id na tabela hotels para referência a mozambique_locations
 
 import { sql } from "drizzle-orm";
 import {
@@ -311,6 +312,7 @@ export const hotels = pgTable("hotels", {
   lat: numeric("lat", { precision: 10, scale: 7 }),
   lng: numeric("lng", { precision: 10, scale: 7 }),
   location_geom: text("location_geom"), // Usando text em vez de geometry do PostGIS
+  location_id: uuid("location_id").references(() => mozambiqueLocations.id, { onDelete: "set null" }), // ✅ NOVO: Referência à localização real
   images: text("images").array().default(sql`ARRAY[]::text[]`),
   amenities: text("amenities").array().default(sql`ARRAY[]::text[]`),
   contact_email: text("contact_email").notNull(),
@@ -333,6 +335,7 @@ export const hotels = pgTable("hotels", {
   activeIdx: index("hotels_active_idx").on(table.is_active).where(sql`is_active = true`),
   hostIdx: index("hotels_host_idx").on(table.host_id),
   ratingIdx: index("hotels_rating_idx").on(table.rating),
+  locationIdIdx: index("hotels_location_id_idx").on(table.location_id).where(sql`location_id IS NOT NULL`), // ✅ NOVO: Índice para location_id
 }));
 
 // ==================== TIPOS DE QUARTO ====================
@@ -1462,6 +1465,7 @@ export const insertHotelSchema = createInsertSchema(hotels, {
   contact_phone: z.string().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
+  location_id: z.string().uuid().optional(), // ✅ ADICIONADO: Campo location_id
   is_active: z.boolean().default(true),
 }).omit({
   id: true,
@@ -1832,6 +1836,43 @@ export interface CreateHotelPaymentRequest {
   paidAt?: Date;
   metadata?: Record<string, any>;
   isManual?: boolean;
+}
+
+// Interface para Hotel com location_id e informações de localização
+export interface HotelWithLocation extends Hotel {
+  mozambiqueLocation?: MozambiqueLocation | null;
+}
+
+// Interface para criar/atualizar hotel com location_id
+export interface CreateHotelRequest {
+  name: string;
+  slug: string;
+  description?: string;
+  address: string;
+  locality: string;
+  province: string;
+  country?: string;
+  lat?: number;
+  lng?: number;
+  location_id?: string; // ✅ ADICIONADO: Referência à localização real
+  contact_email: string;
+  contact_phone?: string;
+  // ... outros campos
+}
+
+export interface UpdateHotelRequest {
+  name?: string;
+  description?: string;
+  address?: string;
+  locality?: string;
+  province?: string;
+  country?: string;
+  lat?: number;
+  lng?: number;
+  location_id?: string; // ✅ ADICIONADO: Referência à localização real
+  contact_email?: string;
+  contact_phone?: string;
+  // ... outros campos
 }
 
 export interface HotelSearchParams {

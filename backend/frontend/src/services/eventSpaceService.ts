@@ -1,5 +1,7 @@
 // src/services/eventSpaceService.ts
-// VERSÃO CORRIGIDA - 26/01/2026 - COM TODAS AS MELHORIAS E COMPATIBILIDADE APLICADAS
+// VERSÃO CORRIGIDA - 28/01/2026 - COM SUPORTE A CAMPOS DE LOCALIZAÇÃO
+// ✅ ADICIONADO: Suporte para location_id, lat, lng, inherits_hotel_location
+// ✅ ATUALIZADO: Funções auxiliares preparam dados de localização corretamente
 
 import { apiService } from './api';
 import type {
@@ -34,6 +36,12 @@ export interface ServiceResponse<T = any> {
   details?: any;
 }
 
+// ==================== FUNÇÕES AUXILIARES ====================
+
+/**
+ * Converte objeto camelCase para snake_case para envio ao backend
+ * ✅ ATUALIZADO: Preserva campos de localização especiais
+ */
 const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<string, any> => {
   if (depth > 5 || obj === null || typeof obj !== 'object') {
     return obj;
@@ -46,11 +54,20 @@ const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<
       return;
     }
     
+    // ✅ EXCEÇÃO: Campos de localização especiais - preservar como estão
+    const locationFields = [
+      'location_id', 'lat', 'lng', 'locality', 'province',
+      'inherits_hotel_location'
+    ];
+    
     let snakeKey = key;
-    if (/[A-Z]/.test(key)) {
+    
+    // Se não for um campo de localização especial, converter camelCase para snake_case
+    if (!locationFields.includes(key) && /[A-Z]/.test(key)) {
       snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
     }
     
+    // ✅ Campos que devem ser mantidos como objetos sem conversão
     if (['equipment', 'additionalServices', 'equipmentValue'].includes(key) && 
         typeof value === 'object' && value !== null) {
       result[snakeKey] = value;
@@ -78,6 +95,9 @@ const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<
   return result;
 };
 
+/**
+ * Processa o campo equipment para garantir formato correto
+ */
 const processEquipmentField = (equipment: any): any => {
   if (!equipment) return {};
   
@@ -128,6 +148,38 @@ const processEquipmentField = (equipment: any): any => {
   return {};
 };
 
+/**
+ * ✅ NOVA FUNÇÃO: Prepara dados de localização para envio à API
+ */
+const prepareLocationData = (data: any): any => {
+  const prepared = { ...data };
+  
+  // ✅ Converte números para strings se necessário (para lat/lng)
+  if (prepared.lat !== undefined && prepared.lat !== null) {
+    prepared.lat = String(prepared.lat);
+  }
+  if (prepared.lng !== undefined && prepared.lng !== null) {
+    prepared.lng = String(prepared.lng);
+  }
+  
+  // ✅ Remove campos vazios (string vazia)
+  if (prepared.lat === '') delete prepared.lat;
+  if (prepared.lng === '') delete prepared.lng;
+  if (prepared.location_id === '') delete prepared.location_id;
+  if (prepared.locality === '') delete prepared.locality;
+  if (prepared.province === '') delete prepared.province;
+  
+  // ✅ Garante que inherits_hotel_location seja booleano
+  if (prepared.inherits_hotel_location !== undefined) {
+    prepared.inherits_hotel_location = Boolean(prepared.inherits_hotel_location);
+  }
+  
+  return prepared;
+};
+
+/**
+ * Extrai EventSpace dos dados da resposta
+ */
 const extractEventSpace = (data: any): EventSpace | null => {
   if (!data) return null;
   
@@ -142,7 +194,10 @@ const extractEventSpace = (data: any): EventSpace | null => {
   return null;
 };
 
-// ✅ CORREÇÃO: normalizeEventBooking atualizado para garantir balanceDue correto
+/**
+ * Normaliza EventBooking para formato do frontend
+ * ✅ ATUALIZADO: Garante balanceDue correto
+ */
 const normalizeEventBooking = (data: any): EventBooking => {
   if (!data) return data as EventBooking;
   
@@ -245,10 +300,17 @@ interface EventBookingWithPayments extends EventBooking {
 }
 
 class EventSpaceService {
+  /**
+   * Criar novo espaço de eventos
+   * ✅ ATUALIZADO: Inclui preparação de dados de localização
+   */
   async createEventSpace(data: CreateEventSpaceRequest): Promise<ServiceResponse<EventSpace>> {
     try {
+      // ✅ CORREÇÃO: Prepara dados de localização
+      const locationPreparedData = prepareLocationData(data);
+      
       const preparedData = {
-        ...data,
+        ...locationPreparedData,
         equipment: processEquipmentField(data.equipment),
         setupOptions: Array.isArray(data.setupOptions) ? data.setupOptions : [],
         allowedEventTypes: Array.isArray(data.allowedEventTypes) ? data.allowedEventTypes : [],
@@ -257,7 +319,17 @@ class EventSpaceService {
         images: Array.isArray(data.images) ? data.images : [],
       };
       
+      // ✅ Aplicar conversão para snake_case (exceto campos de localização já tratados)
       const backendData = toSnakeCaseForEventSpaces(preparedData);
+      
+      console.log('📤 Criando espaço com dados:', {
+        locality: backendData.locality,
+        province: backendData.province,
+        lat: backendData.lat,
+        lng: backendData.lng,
+        location_id: backendData.location_id,
+        inherits_hotel_location: backendData.inherits_hotel_location
+      });
       
       const res = await apiService.post<any>('/api/events/spaces', backendData);
       
@@ -290,9 +362,16 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Atualizar espaço de eventos
+   * ✅ ATUALIZADO: Inclui preparação de dados de localização
+   */
   async updateEventSpace(spaceId: string, data: UpdateEventSpaceRequest): Promise<ServiceResponse<EventSpace>> {
     try {
-      const preparedData: any = { ...data };
+      // ✅ CORREÇÃO: Prepara dados de localização
+      const locationPreparedData = prepareLocationData(data);
+      
+      const preparedData: any = { ...locationPreparedData };
       
       if (data.equipment !== undefined) {
         preparedData.equipment = processEquipmentField(data.equipment);
@@ -325,7 +404,18 @@ class EventSpaceService {
         }
       });
       
+      // ✅ Aplicar conversão para snake_case
       const backendData = toSnakeCaseForEventSpaces(cleanData);
+      
+      console.log('📤 Atualizando espaço com dados de localização:', {
+        spaceId,
+        locality: backendData.locality,
+        province: backendData.province,
+        lat: backendData.lat,
+        lng: backendData.lng,
+        location_id: backendData.location_id,
+        inherits_hotel_location: backendData.inherits_hotel_location
+      });
       
       const res = await apiService.put<any>(`/api/events/spaces/${spaceId}`, backendData);
       
@@ -358,6 +448,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter espaço por ID
+   */
   async getEventSpaceById(spaceId: string): Promise<ServiceResponse<EventSpace>> {
     try {
       const res = await apiService.getEventSpaceDetails(spaceId);
@@ -377,6 +470,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter espaços por hotel
+   */
   async getEventSpacesByHotel(hotelId: string, includeInactive = false): Promise<ServiceResponse<EventSpace[]>> {
     try {
       const res = await apiService.getEventSpacesByHotel(hotelId, includeInactive);
@@ -395,6 +491,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Pesquisar espaços
+   */
   async searchEventSpaces(filters: EventSpaceSearchParams): Promise<ServiceResponse<EventSpace[]>> {
     try {
       const res = await apiService.searchEventSpaces(filters);
@@ -413,6 +512,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter espaços em destaque
+   */
   async getFeaturedEventSpaces(limit = 10): Promise<ServiceResponse<EventSpace[]>> {
     try {
       const res = await apiService.getFeaturedEventSpaces(limit);
@@ -431,6 +533,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Deletar espaço
+   */
   async deleteEventSpace(spaceId: string): Promise<ServiceResponse<{ message: string }>> {
     try {
       const res = await apiService.delete<any>(`/api/events/spaces/${spaceId}`);
@@ -453,6 +558,10 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Criar reserva
+   * ✅ CORREÇÃO: Preparar dados para garantir compatibilidade
+   */
   async createBooking(bookingData: EventBookingRequest): Promise<ServiceResponse<EventBooking>> {
     try {
       // ✅ CORREÇÃO: Preparar dados para garantir compatibilidade
@@ -481,6 +590,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter detalhes da reserva
+   */
   async getBookingDetails(bookingId: string): Promise<ServiceResponse<EventBookingWithPayments>> {
     try {
       const res = await apiService.getEventBookingDetails(bookingId);
@@ -497,7 +609,10 @@ class EventSpaceService {
     }
   }
 
-  // ✅ CORREÇÃO CRÍTICA: Método confirmBooking atualizado com logs de debug
+  /**
+   * Confirmar reserva
+   * ✅ CORREÇÃO CRÍTICA: Método confirmBooking atualizado com logs de debug
+   */
   async confirmBooking(bookingId: string): Promise<ServiceResponse<EventBooking>> {
     try {
       console.log('🔍 [eventSpaceService.confirmBooking] Chamado com bookingId:', bookingId);
@@ -534,7 +649,10 @@ class EventSpaceService {
     }
   }
 
-  // ✅ CORREÇÃO: Função cancelBooking atualizada para enviar apenas reason
+  /**
+   * Cancelar reserva
+   * ✅ CORREÇÃO: Função cancelBooking atualizada para enviar apenas reason
+   */
   async cancelBooking(
     bookingId: string, 
     reason?: string
@@ -558,6 +676,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter minhas reservas
+   */
   async getMyBookings(email?: string): Promise<ServiceResponse<EventBooking[]>> {
     try {
       const res = await apiService.getMyEventBookings(email);
@@ -577,6 +698,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter reservas por espaço
+   */
   async getBookings(
     spaceId: string,
     params?: { status?: string; startDate?: string; endDate?: string; limit?: number }
@@ -599,6 +723,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Verificar disponibilidade
+   */
   async checkAvailability(
     spaceId: string,
     startDate: string,
@@ -616,6 +743,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Calcular preço
+   */
   async calculatePrice(
     spaceId: string,
     startDate: string,
@@ -634,6 +764,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter calendário
+   */
   async getCalendar(
     spaceId: string,
     startDate: string,
@@ -651,6 +784,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Atualizar disponibilidade de um dia
+   */
   async updateDayAvailability(
     spaceId: string,
     data: { date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number }
@@ -674,6 +810,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Atualização em massa de disponibilidade
+   */
   async bulkUpdateAvailability(
     spaceId: string,
     updates: Array<{ date: string; isAvailable?: boolean; stopSell?: boolean; priceOverride?: number }>
@@ -704,6 +843,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter avaliações
+   */
   async getReviews(
     spaceId: string,
     limit = 10,
@@ -721,6 +863,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter resumo do dashboard
+   */
   async getDashboardSummary(hotelId: string): Promise<ServiceResponse<EventDashboardSummary>> {
     try {
       const res = await apiService.getEventDashboardSummary(hotelId);
@@ -734,6 +879,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter pagamentos da reserva
+   */
   async getBookingPayments(bookingId: string): Promise<ServiceResponse<BookingPayment[]>> {
     try {
       const res = await apiService.get<ApiResponse<PaymentDetailsResponse>>(`/api/events/bookings/${bookingId}/payment`);
@@ -755,6 +903,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Rejeitar reserva
+   */
   async rejectBooking(
     bookingId: string,
     reason: string
@@ -774,7 +925,10 @@ class EventSpaceService {
     }
   }
 
-  // ✅ CORREÇÃO: Método updateBookingStatus atualizado para todos os status
+  /**
+   * Atualizar status da reserva
+   * ✅ CORREÇÃO: Método updateBookingStatus atualizado para todos os status
+   */
   async updateBookingStatus(
     bookingId: string,
     status: 'pending_approval' | 'confirmed' | 'in_progress' | 'cancelled' | 'completed' | 'rejected',
@@ -798,6 +952,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Registrar pagamento manual
+   */
   async registerManualPayment(
     bookingId: string,
     payload: {
@@ -831,6 +988,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Atualizar status de pagamento
+   */
   async updatePaymentStatus(
     bookingId: string,
     paymentStatus: PaymentStatusType,
@@ -854,6 +1014,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter detalhes completos da reserva
+   */
   async getFullBookingDetails(bookingId: string): Promise<ServiceResponse<{
     booking: EventBookingWithPayments;
     payments: BookingPayment[];
@@ -913,6 +1076,9 @@ class EventSpaceService {
     }
   }
 
+  /**
+   * Obter resumo financeiro do hotel
+   */
   async getHotelFinancialSummary(
     hotelId: string, 
     startDate?: string, 

@@ -1,7 +1,10 @@
 /**
  * src/apps/hotels-app/components/event-spaces/EventSpacesManagementModern.tsx
  * Gerenciamento moderno de espaços de eventos - VERSÃO FINAL CORRIGIDA 28/01/2026
- * ✅ ATUALIZADO: Inclui EventSpaceSelector para gestão de espaço ativo
+ * ✅ ATUALIZADO: Inclui suporte para hotelLocation nos formulários
+ * ✅ CORRIGIDO: Passa hotelLocation para CreateEventSpaceFormModern e EditEventSpaceFormModern
+ * ✅ MELHORADO: Integração com tipos corrigidos de event-spaces.ts
+ * ✅ NOVO: Inclui EventSpaceSelector para gestão de espaço ativo
  * ✅ NOVO: Adicionado botão Dashboard no Espaço Ativo com feedback de loading
  * ✅ MELHORADO: Feedback visual ao navegar para dashboard
  * Alinhado com eventSpaceService e shared/types/event-spaces.ts
@@ -46,9 +49,19 @@ import { useActiveEventSpace } from '@/contexts/ActiveEventSpaceContext';
 
 interface EventSpacesManagementProps {
   hotelId: string;
+  hotel?: {
+    locality?: string | null;
+    province?: string | null;
+    lat?: string | null;
+    lng?: string | null;
+    location_id?: string | null;
+  };
 }
 
-export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> = ({ hotelId }) => {
+export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> = ({ 
+  hotelId,
+  hotel 
+}) => {
   const [location, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState('list');
   const [spaces, setSpaces] = useState<EventSpace[]>([]);
@@ -72,6 +85,15 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
   const [showBookingsModal, setShowBookingsModal] = useState(false);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
+
+  // ✅ Preparar localização do hotel para passar aos formulários
+  const hotelLocation = useMemo(() => ({
+    locality: hotel?.locality || '',
+    province: hotel?.province || '',
+    lat: hotel?.lat || null,
+    lng: hotel?.lng || null,
+    location_id: hotel?.location_id || null,
+  }), [hotel]);
 
   // ✅ DEBOUNCE NA BUSCA
   useEffect(() => {
@@ -232,6 +254,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     return (
       <CreateEventSpaceFormModern
         hotelId={hotelId}
+        hotelLocation={hotelLocation} // ✅ CORREÇÃO: Passando hotelLocation
         onSuccess={handleCreateSuccess}
         onCancel={() => setShowCreateForm(false)}
       />
@@ -244,6 +267,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         hotelId={hotelId}
         spaceId={editingSpace.id}
         initialData={editingSpace}
+        hotelLocation={hotelLocation} // ✅ CORREÇÃO: Passando hotelLocation
         onSuccess={handleEditSuccess}
         onCancel={() => setEditingSpace(null)}
       />

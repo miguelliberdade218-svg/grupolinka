@@ -1,11 +1,64 @@
 // src/services/hotelService.ts
 // Serviço para gerenciamento de hotéis - Integração com API real
 // VERSÃO ATUALIZADA COM getMyHotels() E getActiveHotel()
+// ✅ CORRIGIDO: Inclui suporte para novos campos de localização (location_id, lat, lng)
 // ✅ CORRIGIDO: Todas as rotas ajustadas para backend existente (sem /api/v2 prefix)
 // ✅ ATUALIZADO: Suporte completo a lazy loading com options (chunkSize, forceReload)
 // ✅ ADICIONADO: Função de conversão para tipo compatível
+// ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
+
 import { apiService } from './api';
 import moment from 'moment';
+import { auth } from '@/shared/lib/firebaseConfig';
+
+// ==================== SISTEMA DE CACHE ====================
+const requestCache = new Map<string, { data: any; timestamp: number }>();
+// 🔧 AUMENTADO: 30 segundos para reduzir chamadas à API
+const CACHE_DURATION = 30000; // 30 segundos
+
+/**
+ * Obtém dados do cache se ainda forem válidos
+ */
+function getCached<T>(key: string): T | null {
+  const cached = requestCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log(`🔄 [Cache] Retornando do cache: ${key}`);
+    return cached.data;
+  }
+  return null;
+}
+
+/**
+ * Armazena dados no cache
+ */
+function setCached(key: string, data: any): void {
+  requestCache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
+/**
+ * Limpa o cache para uma chave específica
+ */
+function clearCache(key: string): void {
+  requestCache.delete(key);
+}
+
+// 🔧 ADICIONADO: Limpa todos os caches relacionados a hotéis
+function clearAllHotelCaches(): void {
+  const keysToDelete: string[] = [];
+  requestCache.forEach((_, key) => {
+    if (key.includes('Hotel') || key.includes('hotel')) {
+      keysToDelete.push(key);
+    }
+  });
+  
+  keysToDelete.forEach(key => {
+    requestCache.delete(key);
+  });
+  console.log(`🧹 [Cache] Limpos ${keysToDelete.length} caches de hotel`);
+}
 
 // ==================== TIPOS ====================
 export interface Hotel {
@@ -17,8 +70,9 @@ export interface Hotel {
   locality: string;
   province: string;
   country: string;
-  lat?: string;
-  lng?: string;
+  lat?: string | null;           // ✅ ADICIONADO: Suporte para null
+  lng?: string | null;           // ✅ ADICIONADO: Suporte para null
+  location_id?: string | null;   // ✅ NOVO CAMPO: ID da localização no banco
   contact_email: string;
   contact_phone?: string;
   host_id: string;
@@ -38,11 +92,12 @@ export interface HotelCreateRequest {
   name: string;
   description?: string;
   address: string;
-  locality: string;
-  province: string;
+  locality: string;               // OBRIGATÓRIO - Localidade/Cidade
+  province: string;               // OBRIGATÓRIO - Província
   country?: string;
-  lat?: string;
-  lng?: string;
+  lat?: string | number | null;   // ✅ ATUALIZADO: Aceita number e null
+  lng?: string | number | null;   // ✅ ATUALIZADO: Aceita number e null
+  location_id?: string;           // ✅ NOVO: ID opcional da localização
   contact_email: string;
   contact_phone?: string;
   policies?: string;
@@ -58,8 +113,10 @@ export interface HotelUpdateRequest {
   address?: string;
   locality?: string;
   province?: string;
-  lat?: string;
-  lng?: string;
+  country?: string;
+  lat?: string | number | null;   // ✅ ATUALIZADO: Aceita number e null
+  lng?: string | number | null;   // ✅ ATUALIZADO: Aceita number e null
+  location_id?: string | null;    // ✅ NOVO: ID opcional da localização
   contact_email?: string;
   contact_phone?: string;
   policies?: string;
@@ -195,6 +252,7 @@ export interface CalendarOptions {
 /**
  * Converte um Hotel do serviço (com campos opcionais) para o tipo compartilhado
  * (com campos obrigatórios como images e amenities)
+ * ✅ ATUALIZADO: Inclui os novos campos de localização
  */
 export function convertServiceHotelToSharedHotel(serviceHotel: any): any {
   // Importante: Esta função deve retornar o tipo Hotel de src/shared/types/hotels.ts
@@ -210,6 +268,7 @@ export function convertServiceHotelToSharedHotel(serviceHotel: any): any {
     country: serviceHotel.country || 'Moçambique',
     lat: serviceHotel.lat || null,
     lng: serviceHotel.lng || null,
+    location_id: serviceHotel.location_id || null,  // ✅ ADICIONADO
     contact_email: serviceHotel.contact_email,
     contact_phone: serviceHotel.contact_phone || null,
     policies: serviceHotel.policies || null,
@@ -225,6 +284,30 @@ export function convertServiceHotelToSharedHotel(serviceHotel: any): any {
     created_at: serviceHotel.created_at,
     updated_at: serviceHotel.updated_at,
   };
+}
+
+// ==================== FUNÇÕES AUXILIARES ====================
+/**
+ * Prepara os dados de localização para envio à API
+ * ✅ NOVA FUNÇÃO: Garante formatação correta dos campos de localização
+ */
+function prepareLocationData(data: any): any {
+  const prepared = { ...data };
+  
+  // Converte números para strings se necessário
+  if (prepared.lat !== undefined && prepared.lat !== null) {
+    prepared.lat = String(prepared.lat);
+  }
+  if (prepared.lng !== undefined && prepared.lng !== null) {
+    prepared.lng = String(prepared.lng);
+  }
+  
+  // Remove campos vazios (string vazia)
+  if (prepared.lat === '') delete prepared.lat;
+  if (prepared.lng === '') delete prepared.lng;
+  if (prepared.location_id === '') delete prepared.location_id;
+  
+  return prepared;
 }
 
 class HotelService {
@@ -269,8 +352,16 @@ class HotelService {
    * Obter hotel por ID
    */
   async getHotelById(hotelId: string): Promise<ApiResponse<Hotel>> {
+    const cacheKey = `getHotelById_${hotelId}`;
+    const cached = getCached<ApiResponse<Hotel>>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
     try {
-      return await apiService.get<ApiResponse<Hotel>>(`/api/hotels/${hotelId}`);
+      const response = await apiService.get<ApiResponse<Hotel>>(`/api/hotels/${hotelId}`);
+      setCached(cacheKey, response);
+      return response;
     } catch (error) {
       console.error('Erro ao buscar hotel:', error);
       return {
@@ -282,10 +373,22 @@ class HotelService {
 
   /**
    * Criar novo hotel
+   * ✅ ATUALIZADO: Inclui suporte para campos de localização
    */
   async createHotel(data: HotelCreateRequest): Promise<ApiResponse<Hotel>> {
     try {
-      return await apiService.post<ApiResponse<Hotel>>('/api/hotels', data);
+      // ✅ CORREÇÃO: Prepara dados de localização
+      const preparedData = prepareLocationData(data);
+      
+      // ✅ GARANTE: Campos obrigatórios
+      if (!preparedData.locality || !preparedData.province) {
+        return {
+          success: false,
+          error: 'Localidade e província são obrigatórias'
+        };
+      }
+      
+      return await apiService.post<ApiResponse<Hotel>>('/api/hotels', preparedData);
     } catch (error) {
       console.error('Erro ao criar hotel:', error);
       return {
@@ -297,10 +400,14 @@ class HotelService {
 
   /**
    * Atualizar hotel
+   * ✅ ATUALIZADO: Inclui suporte para campos de localização
    */
   async updateHotel(hotelId: string, data: HotelUpdateRequest): Promise<ApiResponse<Hotel>> {
     try {
-      return await apiService.put<ApiResponse<Hotel>>(`/api/hotels/${hotelId}`, data);
+      // ✅ CORREÇÃO: Prepara dados de localização
+      const preparedData = prepareLocationData(data);
+      
+      return await apiService.put<ApiResponse<Hotel>>(`/api/hotels/${hotelId}`, preparedData);
     } catch (error) {
       console.error('Erro ao atualizar hotel:', error);
       return {
@@ -802,19 +909,32 @@ class HotelService {
   /**
    * Lista todos os hotéis do usuário autenticado atual (host logado)
    * Usa a rota /host/me que infere o host_id automaticamente do token
+   * ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
    */
   async getMyHotels(): Promise<ListResponse<Hotel>> {
+    const userId = auth.currentUser?.uid || 'anonymous';
+    const cacheKey = `getMyHotels_${userId}`;
+    const cached = getCached<ListResponse<Hotel>>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
     try {
       const response = await apiService.get<any>('/api/hotels/host/me');
 
       // Normaliza resposta (caso o backend retorne { success: true, data: [...] })
       const hotels = response.data?.data || response.data || [];
 
-      return {
+      const result = {
         success: true,
         data: hotels,
         count: hotels.length,
       };
+
+      // Armazena no cache
+      setCached(cacheKey, result);
+      
+      return result;
     } catch (error) {
       console.error('Erro ao buscar meus hotéis:', error);
       return {
@@ -827,10 +947,30 @@ class HotelService {
   }
 
   /**
+   * Limpa o cache de getMyHotels (útil após criar/atualizar/deletar hotel)
+   */
+  clearMyHotelsCache(): void {
+    const userId = auth.currentUser?.uid || 'anonymous';
+    clearCache(`getMyHotels_${userId}`);
+    // 🔧 ADICIONADO: Limpa também caches relacionados
+    clearCache(`getActiveHotel_${userId}`);
+    clearCache(`getActiveHotelConverted_${userId}`);
+    console.log('🧹 [Cache] Caches de hotéis limpos');
+  }
+
+  /**
    * Pega o hotel atualmente ativo (salvo no localStorage ou fallback para o primeiro)
    * IMPORTANTE: Este método retorna o Hotel do tipo do serviço (com campos opcionais)
+   * ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
    */
   async getActiveHotel(): Promise<Hotel | null> {
+    const userId = auth.currentUser?.uid || 'anonymous';
+    const cacheKey = `getActiveHotel_${userId}`;
+    const cached = getCached<Hotel | null>(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+    
     const savedId = localStorage.getItem('activeHotelId');
     
     // Tenta carregar o hotel salvo
@@ -838,6 +978,7 @@ class HotelService {
       try {
         const result = await this.getHotelById(savedId);
         if (result.success && result.data) {
+          setCached(cacheKey, result.data);
           return result.data; // Retorna o Hotel do tipo do serviço
         }
       } catch (err) {
@@ -851,20 +992,59 @@ class HotelService {
     if (myHotels.success && myHotels.data.length > 0) {
       const first = myHotels.data[0];
       localStorage.setItem('activeHotelId', first.id);
+      setCached(cacheKey, first);
       return first; // Retorna o Hotel do tipo do serviço
     }
 
+    setCached(cacheKey, null);
     return null;
+  }
+
+  /**
+   * Limpa o cache de getActiveHotel (útil após mudar hotel ativo)
+   */
+  clearActiveHotelCache(): void {
+    const userId = auth.currentUser?.uid || 'anonymous';
+    clearCache(`getActiveHotel_${userId}`);
+    clearCache(`getActiveHotelConverted_${userId}`);
+    console.log('🧹 [Cache] Cache de hotel ativo limpo');
   }
 
   /**
    * Obtém o hotel ativo já convertido para o tipo compartilhado
    * (com images: string[] e amenities: string[] obrigatórios)
+   * ✅ ATUALIZADO: Inclui campos de localização
+   * ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
    */
   async getActiveHotelConverted(): Promise<any> {
+    const userId = auth.currentUser?.uid || 'anonymous';
+    const cacheKey = `getActiveHotelConverted_${userId}`;
+    const cached = getCached<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    
     const hotel = await this.getActiveHotel();
-    if (!hotel) return null;
-    return convertServiceHotelToSharedHotel(hotel);
+    if (!hotel) {
+      setCached(cacheKey, null);
+      return null;
+    }
+    
+    const converted = convertServiceHotelToSharedHotel(hotel);
+    setCached(cacheKey, converted);
+    return converted;
+  }
+
+  /**
+   * Limpa TODOS os caches relacionados a hotéis
+   */
+  clearAllHotelCaches(): void {
+    const userId = auth.currentUser?.uid || 'anonymous';
+    clearCache(`getMyHotels_${userId}`);
+    clearCache(`getActiveHotel_${userId}`);
+    clearCache(`getActiveHotelConverted_${userId}`);
+    clearCache(`getHotelById_*`);
+    console.log('🧹 [Cache] Todos os caches de hotel limpos');
   }
 
   // ==================== MÉTODOS AUXILIARES ====================
@@ -938,6 +1118,7 @@ class HotelService {
 
   /**
    * Buscar hotéis próximos (por localização)
+   * ✅ ATUALIZADO: Inclui suporte para novos campos de localização
    */
   async getNearbyHotels(lat: number, lng: number, radius: number = 60): Promise<ListResponse<Hotel>> {
     try {
