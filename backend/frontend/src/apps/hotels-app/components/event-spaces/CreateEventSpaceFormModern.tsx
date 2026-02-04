@@ -1,8 +1,9 @@
 /**
  * src/apps/hotels-app/components/event-spaces/CreateEventSpaceFormModern.tsx
- * VERSÃO FINAL CORRIGIDA - 28/01/2026
- * ✅ CORREÇÃO: Adicionado controle de interação do usuário para evitar sobrescrita automática
- * ✅ MELHORADO: Preserva dados já preenchidos pelo usuário
+ * VERSÃO FINAL CORRIGIDA - 04/02/2026
+ * ✅ MODIFICAÇÃO: Espaços de eventos SEMPRE herdam localização do hotel
+ * ✅ REMOVIDO: Opção para escolher localização diferente
+ * ✅ CORREÇÃO: Removida validação de localização (não é mais necessária)
  * Replicando o comportamento dos RoomTypes: sem upload real, apenas preview + URLs manuais
  */
 
@@ -19,12 +20,9 @@ import { useToast } from '@/shared/hooks/use-toast';
 import { eventSpaceService } from '@/services/eventSpaceService';
 import type { CreateEventSpaceRequest } from '@/shared/types/event-spaces';
 
-// ✅ NOVO: Importar LocationAutocomplete
-import LocationAutocomplete, { LocationOption } from '@/shared/components/LocationAutocomplete';
-
 interface CreateEventSpaceFormModernProps {
   hotelId: string;
-  // ✅ NOVO: Receber localização do hotel
+  // ✅ OBRIGATÓRIO: Receber localização do hotel
   hotelLocation?: {
     locality?: string;
     province?: string;
@@ -80,7 +78,7 @@ const NOISE_RESTRICTIONS = [
 
 const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
   hotelId,
-  hotelLocation, // ✅ NOVO: Receber localização do hotel
+  hotelLocation, // ✅ OBRIGATÓRIO: Receber localização do hotel
   onSuccess,
   onCancel,
 }) => {
@@ -93,11 +91,6 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
   const [manualImageUrls, setManualImageUrls] = useState<string>(''); // NOVO: campo para URLs manuais
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-
-  // ✅ CORREÇÃO: Estados para herança de localização COM CONTROLE DE INTERAÇÃO
-  const [inheritsHotelLocation, setInheritsHotelLocation] = useState(true);
-  const [selectedLocation, setSelectedLocation] = useState<LocationOption | null>(null);
-  const [userHasInteracted, setUserHasInteracted] = useState(false); // ✅ NOVO: Controle de interação
 
   // FormData corrigido - campos JSON como objetos/arrays vazios
   const [formData, setFormData] = useState<Partial<CreateEventSpaceRequest>>({
@@ -131,20 +124,19 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     virtualTourUrl: null,
     isActive: true,
     isFeatured: false,
-    // ✅ NOVO: Campos de localização
+    // ✅ CAMPOS DE LOCALIZAÇÃO (serão preenchidos com dados do hotel)
     locality: '',
     province: '',
     lat: null,
     lng: null,
     location_id: null,
-    inherits_hotel_location: true,
+    inherits_hotel_location: true, // ✅ SEMPRE true
   });
 
-  // ✅ CORREÇÃO: useEffect otimizado para preencher com localização do hotel
+  // ✅ SIMPLIFICADO: useEffect para SEMPRE preencher com localização do hotel
   useEffect(() => {
-    // ✅ SÓ PREENCHER AUTOMATICAMENTE SE O USUÁRIO NÃO INTERAGIU
-    if (hotelLocation && inheritsHotelLocation && !userHasInteracted) {
-      // Preencher com localização do hotel
+    if (hotelLocation) {
+      // ✅ SEMPRE preencher com localização do hotel
       setFormData(prev => ({
         ...prev,
         locality: hotelLocation.locality || '',
@@ -152,34 +144,10 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
         lat: hotelLocation.lat || '',
         lng: hotelLocation.lng || '',
         location_id: hotelLocation.location_id || '',
-        inherits_hotel_location: true,
+        inherits_hotel_location: true, // ✅ SEMPRE true
       }));
-      
-      // Criar LocationOption para display
-      if (hotelLocation.locality && hotelLocation.province) {
-        setSelectedLocation({
-          label: `${hotelLocation.locality}, ${hotelLocation.province}`,
-          city: hotelLocation.locality,
-          province: hotelLocation.province,
-          lat: hotelLocation.lat ? parseFloat(hotelLocation.lat) : undefined,
-          lng: hotelLocation.lng ? parseFloat(hotelLocation.lng) : undefined,
-          id: hotelLocation.location_id || '',
-        });
-      }
-    } else if (!inheritsHotelLocation && !userHasInteracted) {
-      // Limpar localização se não herda e usuário não interagiu
-      setFormData(prev => ({
-        ...prev,
-        locality: '',
-        province: '',
-        lat: '',
-        lng: '',
-        location_id: '',
-        inherits_hotel_location: false,
-      }));
-      setSelectedLocation(null);
     }
-  }, [hotelLocation, inheritsHotelLocation, userHasInteracted]);
+  }, [hotelLocation]);
 
   // Estado separado para amenities (input do usuário)
   const [amenitiesInput, setAmenitiesInput] = useState<string>('');
@@ -270,85 +238,6 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
     setPreviewImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // ✅ CORREÇÃO: Função para lidar com seleção de localização
-  const handleLocationSelect = (locationOption: LocationOption) => {
-    setUserHasInteracted(true); // ✅ MARCA INTERAÇÃO
-    setSelectedLocation(locationOption);
-    setFormData(prev => ({
-      ...prev,
-      locality: locationOption.city || locationOption.label.split(',')[0] || '',
-      province: locationOption.province || '',
-      lat: locationOption.lat?.toString() || '',
-      lng: locationOption.lng?.toString() || '',
-      location_id: locationOption.id || '',
-      inherits_hotel_location: false, // Quando seleciona localização própria, não herda
-    }));
-  };
-
-  // ✅ CORREÇÃO: Função para lidar com digitação livre no autocomplete
-  const handleLocationInputChange = (locationOption: LocationOption) => {
-    setUserHasInteracted(true); // ✅ MARCA INTERAÇÃO
-    
-    // Se o usuário está digitando (não selecionou da lista)
-    if (!locationOption.id) {
-      setSelectedLocation(null);
-      setFormData(prev => ({
-        ...prev,
-        locality: locationOption.label, // Usar o que foi digitado
-        province: '', // Limpar província
-        lat: '', // Limpar coordenadas
-        lng: '',
-        location_id: '', // Limpar ID
-        inherits_hotel_location: false,
-      }));
-    }
-  };
-
-  // ✅ NOVO: Handler para toggle de herança de localização
-  const handleInheritanceToggle = (checked: boolean) => {
-    setUserHasInteracted(true); // ✅ MARCA INTERAÇÃO
-    setInheritsHotelLocation(checked);
-    
-    if (checked) {
-      // Quando ativa herança, preencher com dados do hotel
-      if (hotelLocation?.locality && hotelLocation?.province) {
-        setFormData(prev => ({
-          ...prev,
-          locality: hotelLocation.locality || '',
-          province: hotelLocation.province || '',
-          lat: hotelLocation.lat || '',
-          lng: hotelLocation.lng || '',
-          location_id: hotelLocation.location_id || '',
-          inherits_hotel_location: true,
-        }));
-        
-        setSelectedLocation({
-          label: `${hotelLocation.locality}, ${hotelLocation.province}`,
-          city: hotelLocation.locality,
-          province: hotelLocation.province,
-          lat: hotelLocation.lat ? parseFloat(hotelLocation.lat) : undefined,
-          lng: hotelLocation.lng ? parseFloat(hotelLocation.lng) : undefined,
-          id: hotelLocation.location_id || '',
-        });
-      }
-    } else {
-      // Quando desativa herança, limpar mas manter dados se já foram preenchidos
-      // Só limpa se o usuário não tiver interagido
-      if (!userHasInteracted) {
-        setFormData(prev => ({
-          ...prev,
-          locality: '',
-          province: '',
-          lat: '',
-          lng: '',
-          location_id: '',
-          inherits_hotel_location: false,
-        }));
-        setSelectedLocation(null);
-      }
-    }
-  };
-
   const validateStep = (): boolean => {
     setError(null);
 
@@ -395,11 +284,8 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
         return false;
       }
 
-      // ✅ NOVO: Validação de localização
-      if (!formData.locality?.trim()) {
-        setError('A localização é obrigatória');
-        return false;
-      }
+      // ❌ REMOVIDO: Validação de localização (não é mais necessária)
+      // A localização é sempre herdada do hotel, o backend fará a validação
     }
 
     if (currentStep === 2) {
@@ -475,7 +361,7 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
         .map(url => url.trim())
         .filter(url => url.startsWith('http') && url.length > 10);
 
-      // Payload corrigido - campos JSON como objetos/arrays válidos
+      // ✅ PAYLOAD CORRIGIDO: SEMPRE usa localização do hotel
       const payload: CreateEventSpaceRequest = {
         hotelId,
         name: formData.name!.trim(),
@@ -507,13 +393,13 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
         virtualTourUrl: formData.virtualTourUrl?.trim() || null,
         isActive: formData.isActive ?? true,
         isFeatured: formData.isFeatured ?? false,
-        // ✅ NOVO: Campos de localização
-        locality: formData.locality || null,
-        province: formData.province || null,
-        lat: formData.lat || null,
-        lng: formData.lng || null,
-        location_id: formData.location_id || null,
-        inherits_hotel_location: formData.inherits_hotel_location ?? true,
+        // ✅ LOCALIZAÇÃO: SEMPRE do hotel
+        locality: hotelLocation?.locality || formData.locality || null,
+        province: hotelLocation?.province || formData.province || null,
+        lat: hotelLocation?.lat || formData.lat || null,
+        lng: hotelLocation?.lng || formData.lng || null,
+        location_id: hotelLocation?.location_id || formData.location_id || null,
+        inherits_hotel_location: true, // ✅ SEMPRE true
       };
 
       // ✅ IMPORTANTE: Log para debug
@@ -746,75 +632,31 @@ const CreateEventSpaceFormModern: React.FC<CreateEventSpaceFormModernProps> = ({
                 />
               </div>
 
-              {/* ✅ NOVO: Seção de Localização */}
+              {/* ✅ MODIFICADO: Seção de Localização FIXA (sempre herda do hotel) */}
               <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Hotel className="w-5 h-5 text-blue-600" />
-                    <span className="font-medium text-blue-800">Localização do Espaço</span>
-                  </div>
-                  <Switch
-                    checked={inheritsHotelLocation}
-                    onCheckedChange={handleInheritanceToggle} // ✅ USAR HANDLER CORRIGIDO
-                  />
+                <div className="flex items-center gap-2 mb-3">
+                  <Hotel className="w-5 h-5 text-blue-600" />
+                  <span className="font-medium text-blue-800">Localização do Espaço</span>
                 </div>
                 
-                {inheritsHotelLocation ? (
-                  <div className="text-sm text-blue-700">
-                    <p>✅ Este espaço de eventos usará a mesma localização do hotel:</p>
-                    <p className="font-medium mt-1">
-                      {hotelLocation?.locality || 'Hotel'}, {hotelLocation?.province || 'Província'}
-                      {hotelLocation?.lat && hotelLocation?.lng && (
-                        <span className="text-xs ml-2">
-                          ({hotelLocation.lat}, {hotelLocation.lng})
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-blue-600 mt-1">
-                      Isso garante consistência nas buscas e facilita clientes encontrarem ambos.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="text-sm text-amber-700">
-                    <p>⚠️ Você está definindo uma localização diferente do hotel.</p>
-                    <p className="text-xs text-amber-600 mt-1">
-                      Use isso apenas se o espaço estiver em local físico diferente do hotel.
-                    </p>
-                  </div>
-                )}
+                <div className="text-sm text-blue-700">
+                  <p>✅ Este espaço de eventos usará a mesma localização do hotel:</p>
+                  <p className="font-medium mt-1">
+                    {hotelLocation?.locality || formData.locality || 'Hotel'}, {hotelLocation?.province || formData.province || 'Província'}
+                    {hotelLocation?.lat && hotelLocation?.lng && (
+                      <span className="text-xs ml-2">
+                        ({hotelLocation.lat}, {hotelLocation.lng})
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Os espaços de eventos sempre herdam a localização do hotel para garantir consistência nas buscas.
+                  </p>
+                </div>
               </div>
 
-              {/* ✅ NOVO: Autocomplete próprio (se não herda do hotel) */}
-              {!inheritsHotelLocation && (
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="event-space-location">Localização do Espaço *</Label>
-                    <p className="text-sm text-gray-500 mb-2">
-                      Selecione a localização física do espaço de eventos
-                    </p>
-                    <LocationAutocomplete
-                      id="event-space-location"
-                      placeholder="Busque por cidade, distrito ou província..."
-                      value={selectedLocation?.label || formData.locality || ''}
-                      onChange={handleLocationInputChange}
-                      onLocationSelect={handleLocationSelect}
-                    />
-                  </div>
-                  
-                  {/* Feedback visual */}
-                  {selectedLocation && (
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <div className="flex items-start gap-2">
-                        <div className="text-green-600">✅</div>
-                        <div>
-                          <p className="font-medium text-green-800">Localização válida selecionada</p>
-                          <p className="text-sm text-green-700">{selectedLocation.label}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* ✅ REMOVIDO: Autocomplete próprio (não é mais permitido) */}
+              {/* ✅ REMOVIDO: Switch de herança (sempre herda) */}
 
               {/* Campos ocultos para armazenar dados da localização */}
               <input type="hidden" name="location_id" value={formData.location_id || ''} />
@@ -1307,9 +1149,13 @@ https://exemplo.com/foto2.jpg"
                               <div className="flex">
                                 <dt className="text-gray-600 w-36">Localização:</dt>
                                 <dd className="font-medium">
-                                  {inheritsHotelLocation ? 'Herdada do Hotel' : 'Própria'}
-                                  {formData.locality && ` (${formData.locality})`}
+                                  {formData.locality || hotelLocation?.locality || 'Hotel'}
+                                  {formData.province && `, ${formData.province}`}
                                 </dd>
+                              </div>
+                              <div className="flex">
+                                <dt className="text-gray-600 w-36">Herdada do Hotel:</dt>
+                                <dd className="font-medium text-green-600">✅ Sim</dd>
                               </div>
                             </dl>
                           </div>
@@ -1453,7 +1299,7 @@ https://exemplo.com/foto2.jpg"
                           <li>• Após criação, poderá editar qualquer informação</li>
                           <li>• As imagens podem ser adicionadas depois usando URLs</li>
                           <li>• Todas as reservas necessitarão de aprovação manual</li>
-                          <li>• Localização: {inheritsHotelLocation ? 'Herdada do hotel' : 'Definida separadamente'}</li>
+                          <li>• ✅ Localização: Herdada do hotel ({formData.locality || hotelLocation?.locality || 'Hotel'})</li>
                         </ul>
                       </div>
                     </div>
