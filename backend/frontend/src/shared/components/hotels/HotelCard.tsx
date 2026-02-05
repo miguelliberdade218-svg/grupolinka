@@ -3,10 +3,10 @@ import { Link } from 'wouter';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import { Star, MapPin, Heart } from 'lucide-react';
-import type { Hotel } from '@/shared/types/hotels';
+import type { Hotel as ServiceHotel } from '@/services/hotelService';
 
 interface HotelCardProps {
-  hotel: Hotel;
+  hotel: ServiceHotel & { base_price?: string };
   showPrice?: boolean;
   minPrice?: number;
   onViewDetails?: (hotelId: string) => void;
@@ -42,7 +42,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
 
         {/* Rating Badge */}
-        {hotel.rating > 0 && (
+        {hotel.rating && hotel.rating > 0 && (
           <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/95 px-2 py-1 rounded-lg shadow-sm">
             <Star className="w-4 h-4 fill-primary text-primary" />
             <span className="text-sm font-semibold text-dark">{hotel.rating.toFixed(1)}</span>
@@ -50,17 +50,19 @@ export const HotelCard: React.FC<HotelCardProps> = ({
         )}
 
         {/* Favorite Button */}
-        <button
-          onClick={() => onToggleFavorite?.(hotel.id)}
-          className="absolute top-3 right-3 p-2 bg-white/95 rounded-full hover:bg-white transition-colors"
-        >
-          <Heart
-            className={`w-5 h-5 ${isFavorite ? 'fill-alert text-alert' : 'text-gray-400'}`}
-          />
-        </button>
+        {onToggleFavorite && (
+          <button
+            onClick={() => onToggleFavorite(hotel.id)}
+            className="absolute top-3 right-3 p-2 bg-white/95 rounded-full hover:bg-white transition-colors"
+          >
+            <Heart
+              className={`w-5 h-5 ${isFavorite ? 'fill-alert text-alert' : 'text-gray-400'}`}
+            />
+          </button>
+        )}
 
         {/* Badges adicionais */}
-        {hotel.isFeatured && (
+        {(hotel as any).is_featured && (
           <div className="absolute bottom-3 left-3">
             <Badge className="bg-alert text-white">Mais reservado</Badge>
           </div>
@@ -78,13 +80,15 @@ export const HotelCard: React.FC<HotelCardProps> = ({
           </div>
         </div>
 
-                {/* Reviews count */}
-        {hotel.totalReviews && hotel.totalReviews > 0 && (
-          <p className="text-xs text-muted-foreground mb-3">{hotel.totalReviews} avaliações</p>
+        {/* Reviews count */}
+        {hotel.total_reviews && hotel.total_reviews > 0 && (
+          <p className="text-xs text-muted-foreground mb-3">{hotel.total_reviews} avaliações</p>
         )}
 
         {/* Descrição curta */}
-        <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{hotel.description}</p>
+        {hotel.description && (
+          <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{hotel.description}</p>
+        )}
 
         {/* Preço */}
         {showPrice && minPrice && (

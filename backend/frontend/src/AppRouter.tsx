@@ -19,6 +19,16 @@ function AppRouter() {
       {/* Rota de busca de viagens */}
       <Route path="/rides/search" component={SearchRides} />
       
+      {/* 🏨 BUSCA PÚBLICA DE HOTÉIS - PARA CLIENTES */}
+      <Route path="/hotels/search">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* 🎪 BUSCA PÚBLICA DE ESPAÇOS DE EVENTOS - PARA CLIENTES */}
+      <Route path="/event-spaces/search">
+        {(params) => <MainApp />}
+      </Route>
+      
       {/* Apps - IMPORTANTE: Ordem importa! Mais específicas primeiro */}
       
       {/* 🏨 HOTELS APP - Para gerentes de hotéis gerenciar suas propriedades */}

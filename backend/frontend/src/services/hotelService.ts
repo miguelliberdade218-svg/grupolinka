@@ -6,6 +6,7 @@
 // ✅ ATUALIZADO: Suporte completo a lazy loading com options (chunkSize, forceReload)
 // ✅ ADICIONADO: Função de conversão para tipo compatível
 // ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
+// ✅ CORREÇÃO APLICADA: Suporte para localização com vírgula (locality, province)
 
 import { apiService } from './api';
 import moment from 'moment';
@@ -310,11 +311,34 @@ function prepareLocationData(data: any): any {
   return prepared;
 }
 
+/**
+ * Processa uma string de localização que pode conter vírgula
+ * ✅ NOVA FUNÇÃO: Separa "Costa do Sol, Cidade de Maputo" em locality e province
+ * @returns Objeto com locality e province separados
+ */
+function parseLocationString(location: string): { locality: string; province?: string } {
+  if (!location) return { locality: '' };
+  
+  const parts = location.split(',').map(part => part.trim());
+  
+  if (parts.length > 1) {
+    // Ex: "Costa do Sol, Cidade de Maputo"
+    return {
+      locality: parts[0],
+      province: parts[1]
+    };
+  }
+  
+  // Se não há vírgula, assume que é apenas a localidade
+  return { locality: parts[0] };
+}
+
 class HotelService {
   // ==================== HOTÉIS ====================
 
   /**
    * Buscar hotéis com filtros
+   * ✅ ATUALIZADO: Suporte para localização com vírgula
    */
   async searchHotels(filters?: {
     query?: string;
@@ -326,9 +350,23 @@ class HotelService {
   }): Promise<ListResponse<Hotel>> {
     try {
       const params = new URLSearchParams();
+      
+      // ✅ CORREÇÃO: Se locality contém vírgula, separar em locality e province
+      if (filters?.locality) {
+        const parsedLocation = parseLocationString(filters.locality);
+        if (parsedLocation.locality) {
+          params.append('locality', parsedLocation.locality);
+        }
+        if (parsedLocation.province) {
+          params.append('province', parsedLocation.province);
+        }
+      }
+      
+      // Adicionar outros filtros
+      if (filters?.province && !filters.locality?.includes(filters.province)) {
+        params.append('province', filters.province);
+      }
       if (filters?.query) params.append('query', filters.query);
-      if (filters?.locality) params.append('locality', filters.locality);
-      if (filters?.province) params.append('province', filters.province);
       if (filters?.checkIn) params.append('checkIn', filters.checkIn);
       if (filters?.checkOut) params.append('checkOut', filters.checkOut);
       if (filters?.guests) params.append('guests', filters.guests.toString());
@@ -336,6 +374,7 @@ class HotelService {
       const queryString = params.toString();
       const url = `/api/hotels${queryString ? '?' + queryString : ''}`;
       
+      console.log('🔍 Buscando hotéis com URL:', url);
       return await apiService.get<ListResponse<Hotel>>(url);
     } catch (error) {
       console.error('Erro ao buscar hotéis:', error);

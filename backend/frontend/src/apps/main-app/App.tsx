@@ -16,13 +16,13 @@ import RideSearchPage from './pages/Rides/search'; // ✅ IMPORT ADICIONADO
 import ProtectedRoute from '@/shared/components/ProtectedRoute';
 import NotFound from './pages/not-found';
 
-// Import das páginas de hotéis
-import HotelsSearchPage from './features/hotels/pages/HotelsSearchPage';
-import HotelDetailPage from './features/hotels/pages/HotelDetailPage';
+// Import das NOVAS páginas de hotéis (corrigido para o caminho correto)
+import HotelsSearchPage from './pages/HotelsSearchPage';
+// Import das NOVAS páginas de event spaces (corrigido para o caminho correto)
+import EventSpacesSearchPage from './pages/EventSpacesSearchPage';
 
-// Import das páginas de event spaces
-import EventSpacesSearchPage from './features/event-spaces/pages/EventSpacesSearchPage';
-import EventSpaceDetailPage from './features/event-spaces/pages/EventSpaceDetailPage';
+// NOTA: HotelDetailPage e EventSpaceDetailPage podem ser mantidos se existirem
+// ou podem ser substituídos pelos modais que criamos
 
 function MainApp() {
   return (
@@ -37,26 +37,41 @@ function MainApp() {
                 <RideSearchPage />
               </Route>
               
-              {/* Rotas de Hotéis */}
+              {/* ✅ ROTAS CORRIGIDAS - Apenas /search mantidas */}
+              <Route path="/hotels/search">
+                <HotelsSearchPage />
+              </Route>
+              
+              <Route path="/event-spaces/search">
+                <EventSpacesSearchPage />
+              </Route>
+              
+              {/* ✅ REMOVIDAS rotas conflitantes */}
+              {/*
               <Route path="/hotels">
                 <HotelsSearchPage />
               </Route>
               
-              <Route path="/hotels/:id">
-                {(params) => <HotelDetailPage />}
-              </Route>
-              
-              {/* Rotas de Event Spaces */}
               <Route path="/event-spaces">
                 <EventSpacesSearchPage />
+              </Route>
+              */}
+              
+              {/* Rotas de detalhes (podem ser mantidas ou substituídas pelos modais) */}
+              {/* Se você quiser manter as páginas de detalhes separadas, descomente: */}
+              {/*
+              <Route path="/hotels/:id">
+                {(params) => <HotelDetailPage />}
               </Route>
               
               <Route path="/event-spaces/:id">
                 {(params) => <EventSpaceDetailPage />}
               </Route>
+              */}
               
               <Route path="/" component={Home} />
               <Route path="/eventos" component={Events} />
+              
               {/* Rotas URL antigas removidas - agora usamos modais */}
               <Route path="/reservas">
                 <ProtectedRoute>

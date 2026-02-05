@@ -2,6 +2,7 @@
 // VERSÃO CORRIGIDA - 28/01/2026 - COM SUPORTE A CAMPOS DE LOCALIZAÇÃO
 // ✅ ADICIONADO: Suporte para location_id, lat, lng, inherits_hotel_location
 // ✅ ATUALIZADO: Funções auxiliares preparam dados de localização corretamente
+// ✅ CORREÇÃO APLICADA: Filtrar parâmetros undefined na busca
 
 import { apiService } from './api';
 import type {
@@ -175,6 +176,27 @@ const prepareLocationData = (data: any): any => {
   }
   
   return prepared;
+};
+
+/**
+ * Processa string de localização que pode conter vírgula
+ * ✅ NOVA FUNÇÃO: Separa "Costa do Sol, Cidade de Maputo" em locality e province
+ */
+const parseLocationString = (location: string): { locality: string; province?: string } => {
+  if (!location) return { locality: '' };
+  
+  const parts = location.split(',').map(part => part.trim());
+  
+  if (parts.length > 1) {
+    // Ex: "Costa do Sol, Cidade de Maputo"
+    return {
+      locality: parts[0],
+      province: parts[1]
+    };
+  }
+  
+  // Se não há vírgula, assume que é apenas a localidade
+  return { locality: parts[0] };
 };
 
 /**
@@ -493,10 +515,40 @@ class EventSpaceService {
 
   /**
    * Pesquisar espaços
+   * ✅ CORREÇÃO APLICADA: Filtrar parâmetros undefined
    */
   async searchEventSpaces(filters: EventSpaceSearchParams): Promise<ServiceResponse<EventSpace[]>> {
     try {
-      const res = await apiService.searchEventSpaces(filters);
+      // ✅ CORREÇÃO: Criar objeto limpo sem undefined e tratar localização com vírgula
+      const cleanFilters: Record<string, any> = {};
+      
+      // ✅ Tratar localização (locality) que pode conter vírgula
+      if (filters.locality) {
+        const parsedLocation = parseLocationString(filters.locality);
+        if (parsedLocation.locality) {
+          cleanFilters.locality = parsedLocation.locality;
+        }
+        if (parsedLocation.province) {
+          cleanFilters.province = parsedLocation.province;
+        }
+      }
+      
+      // ✅ Adicionar outros filtros se não forem undefined
+      if (filters.province && !filters.locality?.includes(filters.province)) {
+        cleanFilters.province = filters.province;
+      }
+      if (filters.query) cleanFilters.query = filters.query;
+      if (filters.startDate) cleanFilters.startDate = filters.startDate;
+      if (filters.endDate) cleanFilters.endDate = filters.endDate;
+      if (filters.capacity) cleanFilters.capacity = filters.capacity;
+      if (filters.eventType) cleanFilters.eventType = filters.eventType;
+      if (filters.maxPricePerDay) cleanFilters.maxPricePerDay = filters.maxPricePerDay;
+      if (filters.hotelId) cleanFilters.hotelId = filters.hotelId;
+      if (filters.amenities?.length) cleanFilters.amenities = filters.amenities;
+      
+      console.log('🔍 Buscando espaços com filtros:', cleanFilters);
+      const res = await apiService.searchEventSpaces(cleanFilters);
+      
       if (!res.success) {
         return { success: false, error: res.error || 'Erro na busca de espaços' };
       }

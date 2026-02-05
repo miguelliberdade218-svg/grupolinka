@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { Input } from "@/shared/components/ui/input";
 import { Badge } from "@/shared/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
-import { Star, Car, Hotel, Calendar, Search, TrendingUp, Menu, UserCircle, LogOut, Shield, Settings, Sparkles, ArrowRight, Users, MapPin, BookOpen, Map, Clock, Zap, Award } from "lucide-react";
+import { Star, Car, Hotel, Calendar, Search, TrendingUp, Menu, UserCircle, LogOut, Shield, Settings, Sparkles, ArrowRight, Users, MapPin, BookOpen, Map, Clock, Zap, Award, Building } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useModalState } from "@/shared/hooks/useModalState";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -33,7 +33,7 @@ interface HotelHighlight {
   image: string;
 }
 
-interface EventHighlight {
+interface EventSpaceHighlight {
   name: string;
   location: string;
   date: string;
@@ -44,7 +44,7 @@ interface EventHighlight {
 interface ApiHighlights {
   topRides: RideHighlight[];
   topHotels: HotelHighlight[];
-  featuredEvents: EventHighlight[];
+  featuredEventSpaces: EventSpaceHighlight[];
 }
 
 // ✅ CORREÇÃO: Interface estendida para searchQuery com LocationOption
@@ -163,38 +163,38 @@ const StaysList = ({ stays, user }: { stays: HotelHighlight[], user: any }) => (
   </>
 );
 
-const EventsList = ({ events, user }: { events: EventHighlight[], user: any }) => (
+const EventSpacesList = ({ eventSpaces, user }: { eventSpaces: EventSpaceHighlight[], user: any }) => (
   <>
-    {events.map((event, index) => (
+    {eventSpaces.map((eventSpace, index) => (
       <Card key={index} className="border-l-4 border-l-purple-500 overflow-hidden">
         <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center border-b">
           <div className="text-center">
-            <span className="text-4xl mb-2 block">{event.image}</span>
-            <span className="text-sm text-gray-600">Foto do evento</span>
+            <span className="text-4xl mb-2 block">{eventSpace.image}</span>
+            <span className="text-sm text-gray-600">Foto do espaço</span>
           </div>
         </div>
         <CardContent className="pt-4">
           <div className="mb-2">
-            <h3 className="font-semibold text-lg">{event.name}</h3>
+            <h3 className="font-semibold text-lg">{eventSpace.name}</h3>
             <p className="text-sm text-gray-600 flex items-center gap-1">
               <MapPin className="w-3 h-3" />
-              {event.location}
+              {eventSpace.location}
             </p>
           </div>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-2xl font-bold text-green-600">{event.price} MZN</p>
+            <p className="text-2xl font-bold text-green-600">{eventSpace.price} MZN/dia</p>
             <p className="text-sm text-gray-600 flex items-center gap-1">
               <Calendar className="w-3 h-3" />
-              <span>{event.date ? format(parseISO(event.date), 'dd/MM/yyyy') : '-'}</span>
+              <span>{eventSpace.date ? format(parseISO(eventSpace.date), 'dd/MM/yyyy') : '-'}</span>
             </p>
           </div>
           {user ? (
-            <Button className="w-full" size="sm" data-testid={`button-book-event-${index}`}>
-              Reservar Ingresso
+            <Button className="w-full" size="sm" data-testid={`button-book-eventspace-${index}`}>
+              Reservar Espaço
             </Button>
           ) : (
             <Link href="/signup" className="block w-full">
-              <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-event-${index}`}>
+              <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-signup-eventspace-${index}`}>
                 Registar para Reservar
               </Button>
             </Link>
@@ -376,8 +376,8 @@ export default function Home() {
       if (searchType === "rides") {
         // ✅ Só criar query params e navegar - SEM BUSCAR
         const queryParams = new URLSearchParams({
-          from: searchQuery.from,
-          to: searchQuery.to,
+          from: encodeURIComponent(searchQuery.from),
+          to: encodeURIComponent(searchQuery.to),
           date: searchQuery.date,
           passengers: '1',
           fromId: searchQuery.fromOption?.id || '',
@@ -388,25 +388,31 @@ export default function Home() {
         setLocation(`/rides/search?${queryParams}`);
         
       } else if (searchType === "hotels") {
-        // ✅ REMOVIDO: Referência ao HotelSearchModal
-        // Em vez disso, navegar para a página de hotéis com os parâmetros
+        // ✅✅✅ CORREÇÃO APLICADA: Atualizado conforme solicitado - com encodeURIComponent
         const queryParams = new URLSearchParams({
-          location: searchQuery.from,
+          location: encodeURIComponent(searchQuery.from),
           locationId: searchQuery.fromOption?.id || '',
           checkIn: searchQuery.date,
           checkOut: calculateCheckOut(searchQuery.date),
-          guests: '2'
+          guests: '2',
+          radius: '50'
         }).toString();
         
+        console.log('🏨 Navegando para hotels/search com params:', queryParams);
         setLocation(`/hotels/search?${queryParams}`);
         
       } else if (searchType === "event-spaces") {
-        const searchParams = new URLSearchParams({
-          location: searchQuery.from,
+        // ✅✅✅ CORREÇÃO APLICADA: Atualizado conforme solicitado - com encodeURIComponent
+        const queryParams = new URLSearchParams({
+          location: encodeURIComponent(searchQuery.from),
+          locationId: searchQuery.fromOption?.id || '',
           date: searchQuery.date,
-          type: 'event-space'
+          capacity: '50',
+          radius: '50'
         }).toString();
-        setLocation(`/event-spaces/search?${searchParams}`);
+        
+        console.log('🎪 Navegando para event-spaces/search com params:', queryParams);
+        setLocation(`/event-spaces/search?${queryParams}`);
       }
     } catch (error) {
       console.error('Erro na navegação:', error);
@@ -433,17 +439,19 @@ export default function Home() {
 
     // Usar query params para navegação
     const queryParams = new URLSearchParams({
-      from: searchParams.from || searchQuery.from || "",
-      to: searchParams.to || searchQuery.to || "",
+      from: encodeURIComponent(searchParams.from || searchQuery.from || ""),
+      to: encodeURIComponent(searchParams.to || searchQuery.to || ""),
       date: searchParams.date || searchQuery.date || "",
       passengers: (searchParams.passengers || 1).toString(),
-      source: 'home_highlights'
+      source: 'home_highlights',
+      fromId: searchQuery.fromOption?.id || '',
+      toId: searchQuery.toOption?.id || ''
     }).toString();
 
     setLocation(`/rides/search?${queryParams}`);
   };
 
-  // ✅ Dados mock para evitar erros 404
+  // ✅ Dados mock para evitar erros 404 - ATUALIZADO
   const weeklyHighlights: ApiHighlights = {
     topRides: [
       { from: "Maputo", to: "Beira", price: 1500, date: "2024-01-15", driver: "João M.", rating: 4.8 },
@@ -457,10 +465,10 @@ export default function Home() {
       { name: "Pensão Oceano", location: "Beira", price: 2200, rating: 4.4, image: "🏖️" },
       { name: "Lodge Safari", location: "Gorongosa", price: 4800, rating: 4.9, image: "🦁" }
     ],
-    featuredEvents: [
-      { name: "Festival de Marrabenta", location: "Maputo", date: "2024-02-10", price: 500, image: "🎵" },
-      { name: "Feira Artesanal", location: "Beira", date: "2024-02-15", price: 200, image: "🎨" },
-      { name: "Concerto de Música", location: "Nampula", date: "2024-02-20", price: 750, image: "🎤" }
+    featuredEventSpaces: [
+      { name: "Centro de Conferências", location: "Maputo", date: "2024-02-10", price: 12000, image: "🏛️" },
+      { name: "Salão de Festas", location: "Beira", date: "2024-02-15", price: 8000, image: "🎉" },
+      { name: "Espaço para Eventos", location: "Nampula", date: "2024-02-20", price: 10000, image: "🎪" }
     ]
   };
 
@@ -576,7 +584,7 @@ export default function Home() {
               Bem-vindo ao Futuro do Turismo em Moçambique
             </h2>
             <p className="text-xl mb-8 max-w-3xl mx-auto opacity-90">
-              Encontre boleias, alojamentos e eventos incríveis. Conecte-se com motoristas e anfitriões verificados. 
+              Encontre boleias, alojamentos e espaços para eventos incríveis. Conecte-se com motoristas e anfitriões verificados. 
               Desfrute de descontos exclusivos e uma experiência única de viagem.
             </p>
             
@@ -612,10 +620,10 @@ export default function Home() {
               </div>
               <div className="flex flex-col items-center">
                 <div className="bg-white bg-opacity-20 rounded-full p-4 mb-4">
-                  <Calendar className="w-8 h-8" />
+                  <Building className="w-8 h-8" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Eventos Exclusivos</h3>
-                <p className="opacity-90">Festivais, feiras e eventos culturais moçambicanos</p>
+                <h3 className="text-lg font-semibold mb-2">Espaços para Eventos</h3>
+                <p className="opacity-90">Salões, centros de conferências e espaços para celebrações</p>
               </div>
             </div>
           </div>
@@ -666,7 +674,7 @@ export default function Home() {
                       data-testid="button-search-event-spaces"
                       className={`font-semibold ${searchType === "event-spaces" ? "bg-purple-600 hover:bg-purple-700 text-white" : "border-purple-300 text-purple-700 hover:bg-purple-50"}`}
                     >
-                      <Calendar className="w-4 h-4 mr-2" />
+                      <Building className="w-4 h-4 mr-2" />
                       Espaços para Eventos
                     </Button>
                   </div>
@@ -674,14 +682,14 @@ export default function Home() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-2">
-                        {searchType === "rides" ? "De onde" : searchType === "hotels" ? "Destino" : "Localização do Evento"}
+                        {searchType === "rides" ? "De onde" : searchType === "hotels" ? "Destino" : "Localização do Espaço"}
                       </label>
                       <LocationAutocomplete
                         id="search-from"
                         value={searchQuery.from}
                         onChange={(locationOption) => handleInputChange(locationOption, 'from')}
                         onLocationSelect={(locationOption) => handleLocationSelect(locationOption, 'from')}
-                        placeholder={searchType === "rides" ? "Cidade de origem (Moçambique)" : searchType === "hotels" ? "Onde quer ficar (Moçambique)" : "Local do evento (Moçambique)"}
+                        placeholder={searchType === "rides" ? "Cidade de origem (Moçambique)" : searchType === "hotels" ? "Onde quer ficar (Moçambique)" : "Local do espaço (Moçambique)"}
                       />
                     </div>
                     {searchType === "rides" && (
@@ -697,7 +705,9 @@ export default function Home() {
                       </div>
                     )}
                     <div>
-                      <label className="block text-sm font-medium mb-2">Data</label>
+                      <label className="block text-sm font-medium mb-2">
+                        {searchType === "rides" ? "Data da Viagem" : searchType === "hotels" ? "Data de Check-in" : "Data do Evento"}
+                      </label>
                       <Input
                         type="date"
                         value={searchQuery.date}
@@ -845,7 +855,7 @@ export default function Home() {
               )}
 
               {searchType === "event-spaces" && (
-                <EventsList events={weeklyHighlights.featuredEvents} user={user} />
+                <EventSpacesList eventSpaces={weeklyHighlights.featuredEventSpaces} user={user} />
               )}
             </div>
             
@@ -897,7 +907,7 @@ export default function Home() {
                 <div className="p-4">
                   <div className="text-orange-600 mb-2">📱</div>
                   <h4 className="font-semibold text-orange-800">Tudo num Sítio</h4>
-                  <p className="text-sm text-orange-700">Boleias, hotéis e eventos numa só plataforma</p>
+                  <p className="text-sm text-orange-700">Boleias, hotéis e espaços para eventos numa só plataforma</p>
                 </div>
               </div>
               
