@@ -58,6 +58,11 @@ const HotelManagerDashboard: React.FC = () => {
   const storageDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const dashboardLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 🔧 NOVO: Timeout de segurança
 
+  // ✅ NOVA FUNÇÃO: Navegação para gestão de reservas do hotel
+  const handleNavigateToHotelBookings = () => {
+    navigate('/hotels/bookings');
+  };
+
   // Carrega número de hotéis do usuário
   const loadMyHotelsCount = useCallback(async () => {
     try {
@@ -342,15 +347,6 @@ const HotelManagerDashboard: React.FC = () => {
       loadMyHotelsCount();
       loadDashboardData();
     }, 800);
-  };
-
-  // ✅ NOVAS FUNÇÕES DE NAVEGAÇÃO
-  const handleNavigateToBookings = () => {
-    navigate('/hotels/events/bookings');
-  };
-
-  const handleNavigateToEventsDashboard = () => {
-    navigate('/hotels/events/dashboard');
   };
 
   // ✅ FUNÇÃO PARA RECARREGAR DASHBOARD MANUALMENTE
@@ -647,12 +643,12 @@ const HotelManagerDashboard: React.FC = () => {
           </Button>
           
           <Button
-            onClick={handleNavigateToBookings}
+            onClick={handleNavigateToHotelBookings}
             variant="outline"
             className="border-gray-300"
           >
             <FileText className="w-4 h-4 mr-2" />
-            Ver Reservas
+            Gerir Reservas
           </Button>
         </div>
       </Card>
@@ -698,26 +694,11 @@ const HotelManagerDashboard: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                 <Card 
                   className="p-4 border border-green-200 hover:border-green-400 hover:shadow-sm transition-all cursor-pointer" 
-                  onClick={handleNavigateToEventsDashboard}
+                  onClick={handleNavigateToHotelBookings}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                      <Calendar className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">Dashboard de Eventos</h4>
-                      <p className="text-sm text-gray-600">Veja estatísticas e reservas de eventos</p>
-                    </div>
-                  </div>
-                </Card>
-                
-                <Card 
-                  className="p-4 border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all cursor-pointer" 
-                  onClick={handleNavigateToBookings}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-amber-600" />
+                      <FileText className="w-5 h-5 text-green-600" />
                     </div>
                     <div>
                       <h4 className="font-medium text-gray-900">Gestão de Reservas</h4>

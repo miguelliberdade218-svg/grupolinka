@@ -884,11 +884,129 @@ class HotelService {
   }
 
   /**
+   * Calcular preço da reserva
+   */
+  async calculateBookingPrice(hotelId: string, data: any): Promise<ApiResponse<any>> {
+    try {
+      return await apiService.post<ApiResponse<any>>(`/api/hotels/${hotelId}/bookings/calculate-price`, data);
+    } catch (error) {
+      console.error('Erro ao calcular preço:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao calcular preço'
+      };
+    }
+  }
+
+  // ==================== MÉTODOS DE BOOKINGS ====================
+
+  /**
+   * Buscar reservas do hotel
+   * ✅ Endpoint existente: GET /api/hotels/:id/bookings
+   */
+  async getHotelBookings(
+    hotelId: string, 
+    filters?: {
+      status?: string | string[];
+      payment_status?: string;
+    }
+  ): Promise<ListResponse<Booking>> {
+    try {
+      // Construir query string
+      const params = new URLSearchParams();
+      
+      if (filters?.status) {
+        if (Array.isArray(filters.status)) {
+          params.append('status', filters.status.join(','));
+        } else {
+          params.append('status', filters.status);
+        }
+      }
+      
+      if (filters?.payment_status) {
+        params.append('paymentStatus', filters.payment_status);
+      }
+      
+      const queryString = params.toString();
+      const url = `/api/hotels/${hotelId}/bookings${queryString ? '?' + queryString : ''}`;
+      
+      console.log('📅 Buscando reservas do hotel:', url);
+      
+      const response = await apiService.get<ListResponse<Booking>>(url);
+      
+      if (!response.success) {
+        console.error('Erro na resposta:', response.error);
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Erro ao buscar reservas do hotel:', error);
+      return {
+        success: false,
+        data: [],
+        count: 0,
+        error: error instanceof Error ? error.message : 'Erro ao buscar reservas'
+      };
+    }
+  }
+
+  /**
+   * Registrar pagamento manual
+   * ✅ Endpoint existente: POST /api/hotels/:id/bookings/:bookingId/payments
+   */
+  async registerManualPayment(
+    hotelId: string,
+    bookingId: string,
+    paymentData: {
+      amount: number;
+      paymentMethod: 'mpesa' | 'bank_transfer' | 'card' | 'cash' | 'mobile_money';
+      reference: string;
+      notes?: string;
+      paymentType?: 'partial' | 'full';
+    }
+  ): Promise<ApiResponse<any>> {
+    try {
+      console.log('💰 Registrando pagamento manual:', {
+        hotelId,
+        bookingId,
+        paymentData
+      });
+      
+      const response = await apiService.post<ApiResponse<any>>(
+        `/api/hotels/${hotelId}/bookings/${bookingId}/payments`,
+        paymentData
+      );
+      
+      if (response.success) {
+        console.log('✅ Pagamento registrado com sucesso');
+      } else {
+        console.error('❌ Erro ao registrar pagamento:', response.error);
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Erro ao registrar pagamento:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao registrar pagamento'
+      };
+    }
+  }
+
+  /**
    * Fazer check-in
+   * ✅ Endpoint existente: POST /api/hotels/bookings/:bookingId/check-in
    */
   async checkInBooking(bookingId: string): Promise<ApiResponse<Booking>> {
     try {
-      return await apiService.post<ApiResponse<Booking>>(`/api/hotels/bookings/${bookingId}/check-in`, {});
+      console.log('🏨 Fazendo check-in da reserva:', bookingId);
+      
+      const response = await apiService.post<ApiResponse<Booking>>(
+        `/api/hotels/bookings/${bookingId}/check-in`,
+        {}
+      );
+      
+      return response;
     } catch (error) {
       console.error('Erro ao fazer check-in:', error);
       return {
@@ -900,10 +1018,18 @@ class HotelService {
 
   /**
    * Fazer check-out
+   * ✅ Endpoint existente: POST /api/hotels/bookings/:bookingId/check-out
    */
   async checkOutBooking(bookingId: string): Promise<ApiResponse<Booking>> {
     try {
-      return await apiService.post<ApiResponse<Booking>>(`/api/hotels/bookings/${bookingId}/check-out`, {});
+      console.log('🏨 Fazendo check-out da reserva:', bookingId);
+      
+      const response = await apiService.post<ApiResponse<Booking>>(
+        `/api/hotels/bookings/${bookingId}/check-out`,
+        {}
+      );
+      
+      return response;
     } catch (error) {
       console.error('Erro ao fazer check-out:', error);
       return {
@@ -915,10 +1041,21 @@ class HotelService {
 
   /**
    * Cancelar reserva
+   * ✅ Endpoint existente: POST /api/hotels/bookings/:bookingId/cancel
    */
-  async cancelBooking(bookingId: string, reason: string): Promise<ApiResponse<Booking>> {
+  async cancelBooking(
+    bookingId: string, 
+    reason?: string
+  ): Promise<ApiResponse<Booking>> {
     try {
-      return await apiService.post<ApiResponse<Booking>>(`/api/hotels/bookings/${bookingId}/cancel`, { reason });
+      console.log('❌ Cancelando reserva:', { bookingId, reason });
+      
+      const response = await apiService.post<ApiResponse<Booking>>(
+        `/api/hotels/bookings/${bookingId}/cancel`,
+        { reason: reason || 'Cancelado pelo host' }
+      );
+      
+      return response;
     } catch (error) {
       console.error('Erro ao cancelar reserva:', error);
       return {
@@ -929,16 +1066,27 @@ class HotelService {
   }
 
   /**
-   * Calcular preço da reserva
+   * Rejeitar reserva
+   * ✅ Endpoint existente: POST /api/hotels/bookings/:bookingId/reject
    */
-  async calculateBookingPrice(hotelId: string, data: any): Promise<ApiResponse<any>> {
+  async rejectBooking(
+    bookingId: string, 
+    reason?: string
+  ): Promise<ApiResponse<Booking>> {
     try {
-      return await apiService.post<ApiResponse<any>>(`/api/hotels/${hotelId}/bookings/calculate-price`, data);
+      console.log('❌ Rejeitando reserva:', { bookingId, reason });
+      
+      const response = await apiService.post<ApiResponse<Booking>>(
+        `/api/hotels/bookings/${bookingId}/reject`,
+        { reason: reason || 'Rejeitado pelo host' }
+      );
+      
+      return response;
     } catch (error) {
-      console.error('Erro ao calcular preço:', error);
+      console.error('Erro ao rejeitar reserva:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Erro ao calcular preço'
+        error: error instanceof Error ? error.message : 'Erro ao rejeitar reserva'
       };
     }
   }
@@ -1170,21 +1318,6 @@ class HotelService {
         data: [],
         count: 0,
         error: error instanceof Error ? error.message : 'Erro ao buscar hotéis'
-      };
-    }
-  }
-
-  /**
-   * Rejeitar reserva
-   */
-  async rejectBooking(bookingId: string, reason: string): Promise<ApiResponse<Booking>> {
-    try {
-      return await apiService.post<ApiResponse<Booking>>(`/api/hotels/bookings/${bookingId}/reject`, { reason });
-    } catch (error) {
-      console.error('Erro ao rejeitar reserva:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao rejeitar reserva'
       };
     }
   }

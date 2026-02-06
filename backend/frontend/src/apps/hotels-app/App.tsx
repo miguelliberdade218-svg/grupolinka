@@ -1,10 +1,7 @@
 /**
  * src/apps/hotels-app/App.tsx
- * Entry point principal da app Hotels - VERSÃO FINAL INTEGRADA E CORRIGIDA 28/01/2026
- * ATUALIZADO: Inclui ActiveEventSpaceProvider e páginas de espaços de eventos
- * ✅ INCLUÍDO: Rota para dashboard específico do espaço COM WRAPPER
- * ✅ CORRIGIDO: Substituído HotelCreationPage por CreateHotelForm
- * ✅ CORRIGIDO: Adicionado navigate para redirecionamento pós-criação
+ * Entry point principal da app Hotels - VERSÃO ATUALIZADA COM GESTÃO DE RESERVAS
+ * ✅ ADICIONADO: Página de gestão de reservas de hotéis
  */
 
 import React from 'react';
@@ -16,20 +13,17 @@ import { ActiveEventSpaceProvider } from '@/contexts/ActiveEventSpaceContext';
 import { Button } from '@/shared/components/ui/button';
 import HotelsHeader from './components/HotelsHeader';
 import HotelManagerDashboard from './pages/hotel-management/HotelManagerDashboard';
-// ❌ REMOVIDO: import HotelCreationPage from './pages/HotelCreationPage';
-// ✅ ADICIONADO: Import do CreateHotelForm moderno
 import CreateHotelForm from './components/CreateHotelForm';
 import EventSpacesManagementModern from './components/event-spaces/EventSpacesManagementModern';
 import EventBookingsPage from './pages/EventBookingsPage';
 import EventDashboardPage from './pages/events/EventDashboardPage';
 import EventSpaceBookingsList from './components/event-spaces/EventSpaceBookingsList';
-
-// ✅ IMPORTAR AS PÁGINAS CRIADAS
 import EventSpaceCreatePage from './pages/events/EventSpaceCreatePage';
 import EventSpaceEditPage from './pages/events/EventSpaceEditPage';
-
-// ✅ NOVO IMPORT: Wrapper para dashboard com espaço
 import EventDashboardWithSpace from './components/event-spaces/EventDashboardWithSpace';
+
+// ✅ ADICIONADO: Import da página de gestão de reservas
+import HotelBookingsPage from './pages/bookings/HotelBookingsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,8 +40,6 @@ function AppContent() {
   const activeHotelId = activeHotel?.id || '';
   const [, setLocation] = useLocation();
   const location = useLocation()[0];
-  
-  // ✅ ADICIONADO: Hook useLocation para navigation
   const [_, navigate] = useLocation();
 
   // Redirecionamentos automáticos
@@ -57,6 +49,9 @@ function AppContent() {
     }
     if (location === '/hotels/events' || location === '/hotels/events/') {
       setLocation('/hotels/events/dashboard');
+    }
+    if (location === '/hotels/bookings' || location === '/hotels/bookings/') {
+      setLocation('/hotels/bookings');
     }
   }, [location, setLocation]);
 
@@ -68,13 +63,35 @@ function AppContent() {
           {/* Gestão de hotéis */}
           <Route path="/hotels/manage" component={HotelManagerDashboard} />
           
-          {/* ✅ CORRIGIDO: Substituído HotelCreationPage por CreateHotelForm */}
+          {/* ✅ ADICIONADO: Gestão de reservas de hotéis */}
+          <Route path="/hotels/bookings" component={HotelBookingsPage} />
+          
+          {/* Detalhes de reserva específica */}
+          <Route path="/hotels/bookings/:bookingId">
+            {(params) => (
+              <div className="container mx-auto p-6">
+                <div className="text-center p-10 bg-white rounded-lg shadow">
+                  <h2 className="text-2xl font-bold mb-4">Detalhes da Reserva</h2>
+                  <p className="text-gray-600 mb-4">ID: {params.bookingId}</p>
+                  <p className="text-gray-600 mb-6">
+                    Para ver detalhes completos, use a página de gestão de reservas.
+                  </p>
+                  <div className="flex gap-4 justify-center">
+                    <Button onClick={() => navigate('/hotels/bookings')}>
+                      Voltar para Gestão de Reservas
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Route>
+
+          {/* Criação de hotel */}
           <Route path="/hotels/create">
             {() => (
               <CreateHotelForm 
                 onSuccess={(hotelId) => {
                   console.log('✅ Hotel criado com sucesso, redirecionando...');
-                  // Redireciona para o dashboard após criar hotel
                   setTimeout(() => {
                     navigate('/hotels/manage');
                   }, 1500);
@@ -92,7 +109,7 @@ function AppContent() {
             <EventDashboardPage hotelId={activeHotelId} />
           </Route>
 
-          {/* ✅ ATUALIZADO: Dashboard específico do espaço de eventos COM WRAPPER */}
+          {/* Dashboard específico do espaço de eventos */}
           <Route path="/hotels/events/spaces/:spaceId/dashboard">
             {(params) => {
               const spaceId = params.spaceId || '';
@@ -132,7 +149,7 @@ function AppContent() {
             )}
           </Route>
 
-          {/* Calendário do espaço de eventos (opcional - manter fallback) */}
+          {/* Calendário do espaço de eventos */}
           <Route path="/hotels/events/spaces/:spaceId/calendar">
             {(params) => (
               <div className="container mx-auto p-6">
@@ -150,7 +167,7 @@ function AppContent() {
             )}
           </Route>
 
-          {/* Detalhes do espaço de eventos (opcional - manter fallback) */}
+          {/* Detalhes do espaço de eventos */}
           <Route path="/hotels/events/spaces/:spaceId">
             {(params) => (
               <div className="container mx-auto p-6">
@@ -171,7 +188,7 @@ function AppContent() {
             )}
           </Route>
 
-          {/* Gestão de espaços de eventos (página principal) */}
+          {/* Gestão de espaços de eventos */}
           <Route path="/hotels/events/spaces">
             <EventSpacesManagementModern hotelId={activeHotelId} />
           </Route>
