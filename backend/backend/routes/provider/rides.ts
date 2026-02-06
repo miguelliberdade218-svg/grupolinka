@@ -79,7 +79,7 @@ async function normalizeLocation(locationName: string): Promise<string> {
   }
 }
 
-// ✅✅✅ CORREÇÃO: Função para chamar RPC do PostgreSQL (CORRIGIDA)
+// ✅✅✅ CORREÇÃO: Função para chamar RPC do PostgreSQL (CORRIGIDA COM URL DECODING)
 async function callPostgresFunction(functionName: string, params: any[] = []): Promise<any[]> {
   try {
     console.log('🧠 [RPC] Chamando função PostgreSQL:', {
@@ -100,12 +100,38 @@ async function callPostgresFunction(functionName: string, params: any[] = []): P
       throw new Error(`Função não permitida: ${functionName}`);
     }
 
-    // ✅✅✅ CORREÇÃO CRÍTICA: Construir query com parâmetros usando template string
+    // ✅✅✅ CORREÇÃO CRÍTICA: DECODIFICAR PARÂMETROS URL ENCODED
+    const decodedParams = params.map(param => {
+      if (typeof param === 'string') {
+        try {
+          // Decodificar URL encoding
+          const decoded = decodeURIComponent(param);
+          console.log('🔤 [RPC-DECODING] URL decoding:', {
+            original: param,
+            decoded: decoded,
+            wasEncoded: param !== decoded
+          });
+          return decoded;
+        } catch (error) {
+          console.warn('⚠️ [RPC-DECODING] Falha ao decodificar:', { param, error });
+          return param;
+        }
+      }
+      return param;
+    });
+
+    console.log('✅ [RPC] Parâmetros decodificados:', {
+      original: params,
+      decoded: decodedParams,
+      changed: JSON.stringify(params) !== JSON.stringify(decodedParams)
+    });
+
+    // ✅✅✅ CORREÇÃO CRÍTICA: Construir query com parâmetros DECODIFICADOS
     let query: string;
     let queryParams: any[] = [];
 
     if (functionName === 'get_rides_smart_final') {
-      const [search_from, search_to, radius_km, max_results] = params;
+      const [search_from, search_to, radius_km, max_results] = decodedParams;
       
       query = `SELECT * FROM get_rides_smart_final($1, $2, $3, $4)`;
       queryParams = [
@@ -116,14 +142,15 @@ async function callPostgresFunction(functionName: string, params: any[] = []): P
       ];
     } else {
       // ✅ FUNÇÃO GENÉRICA PARA OUTRAS FUNÇÕES
-      const placeholders = params.map((_, index) => `$${index + 1}`).join(', ');
+      const placeholders = decodedParams.map((_, index) => `$${index + 1}`).join(', ');
       query = `SELECT * FROM ${functionName}(${placeholders})`;
-      queryParams = params;
+      queryParams = decodedParams;
     }
 
     console.log('🔍 [RPC] Executando query:', {
       query,
-      params: queryParams
+      params: queryParams,
+      paramsOriginalForDebug: params
     });
 
     // ✅✅✅ CORREÇÃO CRÍTICA: Usar sql.raw corretamente sem parâmetros extras
@@ -221,10 +248,30 @@ const normalizeLocationField = (value: unknown): string => {
   return safeString(value).toLowerCase();
 };
 
-// ✅ CORREÇÃO: Funções específicas para query parameters
+// ✅✅✅ CORREÇÃO: Função para decodificar URL encoded strings
+const decodeIfEncoded = (str: string): string => {
+  if (!str || typeof str !== 'string') return str;
+  
+  try {
+    // Verificar se está URL encoded
+    if (str.includes('%') || str.includes('+')) {
+      const decoded = decodeURIComponent(str.replace(/\+/g, ' '));
+      console.log('🔤 [URL-DECODING] Decodificado:', { original: str, decoded });
+      return decoded;
+    }
+    return str;
+  } catch (error) {
+    console.warn('⚠️ [URL-DECODING] Falha ao decodificar:', { str, error });
+    return str;
+  }
+};
+
+// ✅ CORREÇÃO: Funções específicas para query parameters COM DECODING
 const getQueryString = (query: any, key: string, defaultValue: string = ''): string => {
   const value = query[key];
-  return safeString(value, defaultValue);
+  const strValue = safeString(value, defaultValue);
+  // ✅✅✅ CORREÇÃO: Aplicar decodificação URL
+  return decodeIfEncoded(strValue);
 };
 
 const getQueryNumber = (query: any, key: string, defaultValue: number = 0): number => {
@@ -505,7 +552,13 @@ router.post('/',
 
     console.log('✅ Dados validados com Zod, criando ride no banco...');
 
-    const newRide = await rideService.createRide(validatedData as any);
+    // ✅✅✅ CORREÇÃO CRÍTICA: Passar driverId explicitamente para o RideService
+    const rideData = {
+      ...validatedData,
+      driverId, // ← CORREÇÃO ADICIONADA AQUI
+    };
+
+    const newRide = await rideService.createRide(rideData as any);
     
     console.log('🎉 Ride criada com sucesso no banco:', { 
       rideId: newRide.id,
@@ -571,15 +624,24 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
     // ✅✅✅ CORREÇÃO CRÍTICA: NORMALIZAR LOCALIZAÇÕES ANTES DA BUSCA
     const originalFrom = getQueryString(req.query, 'from');
     const originalTo = getQueryString(req.query, 'to');
+    
+    // ✅✅✅ CORREÇÃO: getQueryString já aplica decodeIfEncoded, mas vamos logar
+    console.log('🔤 [SMART-SEARCH] Localizações após getQueryString:', {
+      originalFrom,
+      originalTo,
+      fromLength: originalFrom.length,
+      toLength: originalTo.length
+    });
+
     const date = getQueryString(req.query, 'date');
     const radiusKm = getQueryNumber(req.query, 'radiusKm', 100);
-    const maxResults = getQueryNumber(req.query, 'maxResults', 50); // ✅ Aumentado para 50
+    const maxResults = getQueryNumber(req.query, 'maxResults', 50);
 
     // ✅ APLICAR NORMALIZAÇÃO DO POSTGRESQL
     const normalizedFrom = await normalizeLocation(originalFrom);
     const normalizedTo = await normalizeLocation(originalTo);
 
-    logger.info('🧠 PROVIDER: Busca inteligente NORMALIZADA', {
+    logger.info('🧠 PROVIDER: Busca inteligente NORMALIZADA e DECODIFICADA', {
       driverId,
       original: { from: originalFrom, to: originalTo },
       normalized: { from: normalizedFrom, to: normalizedTo },
@@ -594,6 +656,7 @@ router.get('/smart/search', verifyFirebaseToken, requireDriverRole, async (req: 
 
     try {
       // ✅✅✅ CORREÇÃO CRÍTICA: Usar RPC para busca SMART FINAL com nomes NORMALIZADOS
+      // A função callPostgresFunction agora aplica decodeURIComponent automaticamente
       matchingRides = await callPostgresFunction('get_rides_smart_final', [
         normalizedFrom,
         normalizedTo,

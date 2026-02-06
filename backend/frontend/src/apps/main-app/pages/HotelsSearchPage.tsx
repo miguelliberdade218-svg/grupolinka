@@ -32,7 +32,7 @@ import {
   Shield
 } from 'lucide-react';
 import { hotelService, Hotel } from '@/services/hotelService';
-import { locationsService } from '@/services/locationsService';
+import { locationsService, LocationSuggestion as ServiceLocationSuggestion } from '@/services/locationsService';
 import HotelCard from '@/shared/components/hotels/HotelCard';
 import HotelDetailModal from '@/shared/components/HotelDetailModal';
 import { useToast } from '@/shared/hooks/use-toast';
@@ -41,6 +41,10 @@ import { debounce } from 'lodash';
 interface HotelSearchParams {
   location?: string;
   locationId?: string;
+  province?: string;
+  locality?: string;
+  lat?: number;
+  lng?: number;
   checkIn?: string;
   checkOut?: string;
   guests?: number;
@@ -53,21 +57,49 @@ interface HotelSearchParams {
   page?: number;
 }
 
+// ✅ OPÇÃO B: Interface local atualizada para corresponder ao serviço
 interface LocationSuggestion {
   id: string;
   name: string;
   province?: string;
   district?: string;
-  lat?: number;
-  lng?: number;
+  locality?: string;          // ✅ ADICIONADO: Campo locality
+  lat?: number | null;        // ✅ CORREÇÃO: number → number | null
+  lng?: number | null;        // ✅ CORREÇÃO: number → number | null
   type?: string;
+  relevance_rank?: number;    // ✅ ADICIONADO: Campo relevance_rank
 }
 
 interface HotelWithDetails extends Hotel {
-  base_price?: string; // Para compatibilidade com HotelCard - marcado como opcional
+  base_price?: string;
   images: string[];
   amenities: string[];
+  distance?: number | null;
 }
+
+/**
+ * Calcula a distância entre dois pontos em km usando a fórmula de Haversine
+ */
+const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const R = 6371; // Raio da Terra em km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distância em km
+};
+
+/**
+ * Converte uma coordenada string para number, lidando com casos null/undefined
+ */
+const parseCoordinate = (coord: string | null | undefined): number | null => {
+  if (!coord || coord.trim() === '') return null;
+  const num = parseFloat(coord);
+  return isNaN(num) ? null : num;
+};
 
 export default function HotelsSearchPage() {
   const [, setLocation] = useLocation();
@@ -83,7 +115,7 @@ export default function HotelsSearchPage() {
   const [totalPages, setTotalPages] = useState(1);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Obter parâmetros da URL
+  // ✅ CORREÇÃO: Obter parâmetros da URL incluindo novos campos
   useEffect(() => {
     const params = new URLSearchParams(search);
     const today = new Date();
@@ -95,6 +127,10 @@ export default function HotelsSearchPage() {
     const paramsObj: HotelSearchParams = {
       location: params.get('location') || '',
       locationId: params.get('locationId') || '',
+      province: params.get('province') || '',
+      locality: params.get('locality') || '',
+      lat: parseFloat(params.get('lat') || '') || undefined,
+      lng: parseFloat(params.get('lng') || '') || undefined,
       checkIn: params.get('checkIn') || formatDate(today),
       checkOut: params.get('checkOut') || formatDate(tomorrow),
       guests: parseInt(params.get('guests') || '2'),
@@ -130,7 +166,20 @@ export default function HotelsSearchPage() {
       setIsLoadingSuggestions(true);
       try {
         const suggestions = await locationsService.searchSuggestions(query, 5);
-        setLocationSuggestions(suggestions);
+        // ✅ Agora é compatível: converter ServiceLocationSuggestion para LocationSuggestion
+        const convertedSuggestions: LocationSuggestion[] = suggestions.map(suggestion => ({
+          id: suggestion.id,
+          name: suggestion.name,
+          province: suggestion.province,
+          district: suggestion.district,
+          locality: suggestion.locality,
+          lat: suggestion.lat ?? null,        // ✅ Converter undefined para null
+          lng: suggestion.lng ?? null,        // ✅ Converter undefined para null
+          type: suggestion.type,
+          relevance_rank: suggestion.relevance_rank
+        }));
+        
+        setLocationSuggestions(convertedSuggestions);
       } catch (error) {
         console.error('Erro ao buscar sugestões:', error);
         toast({
@@ -172,29 +221,59 @@ export default function HotelsSearchPage() {
     queryKey: ['hotelsSearch', searchParams],
     queryFn: async () => {
       try {
-        // Se temos locationId, buscar hotéis próximos por localização
-        if (searchParams.locationId) {
-          const location = await locationsService.getById(searchParams.locationId);
-          if (location?.lat && location?.lng) {
-            const response = await hotelService.getNearbyHotels(
-              location.lat,
-              location.lng,
-              searchParams.radius || 50
-            );
+        // ✅ SE temos locationId E coordenadas, buscar por PROXIMIDADE
+        if (searchParams.locationId && searchParams.lat && searchParams.lng) {
+          console.log('📍 Buscando hotéis por proximidade:', {
+            lat: searchParams.lat,
+            lng: searchParams.lng,
+            radius: searchParams.radius || 50,
+            location: searchParams.location,
+            province: searchParams.province
+          });
+          
+          const response = await hotelService.getNearbyHotels(
+            searchParams.lat,
+            searchParams.lng,
+            searchParams.radius || 50
+          );
+          
+          // ✅ Calcular distâncias REAIS para hotéis com coordenadas válidas
+          if (response.success && response.data) {
+            const hotelsWithDistance = response.data.map(hotel => {
+              const hotelLat = parseCoordinate(hotel.lat);
+              const hotelLng = parseCoordinate(hotel.lng);
+              
+              const distance = (hotelLat !== null && hotelLng !== null)
+                ? calculateDistance(searchParams.lat!, searchParams.lng!, hotelLat, hotelLng)
+                : null;
+              
+              return {
+                ...hotel,
+                distance
+              };
+            });
             
             if (response) {
               setTotalPages(Math.ceil((response.count || 0) / 9));
             }
-            return response;
+            return {
+              ...response,
+              data: hotelsWithDistance
+            };
           }
+          return response;
         }
         
-        // Busca tradicional por filtros - usando apenas parâmetros suportados
+        // ✅ Fallback: busca tradicional usando locality/province
+        console.log('📍 Buscando hotéis por localização exata:', {
+          locality: searchParams.locality || searchParams.location,
+          province: searchParams.province,
+          location: searchParams.location
+        });
+        
         const response = await hotelService.searchHotels({
-          locality: searchParams.location,
-          province: searchParams.location?.includes(',') 
-            ? searchParams.location.split(',')[1]?.trim() 
-            : undefined,
+          locality: searchParams.locality || searchParams.location,
+          province: searchParams.province,
           checkIn: searchParams.checkIn,
           checkOut: searchParams.checkOut,
           guests: searchParams.guests,
@@ -218,22 +297,35 @@ export default function HotelsSearchPage() {
     retry: 2,
   });
 
-  const hotels: HotelWithDetails[] = hotelsData?.data?.map((hotel: Hotel) => ({
+  const hotels: HotelWithDetails[] = hotelsData?.data?.map((hotel: Hotel & { distance?: number | null }) => ({
     ...hotel,
-    base_price: '0', // Valor padrão para compatibilidade
+    base_price: '0',
     images: hotel.images || [],
     amenities: hotel.amenities || [],
+    distance: hotel.distance !== undefined ? hotel.distance : null
   })) || [];
   
   const totalResults = hotelsData?.count || 0;
 
   // Calcular distância para cada hotel
-  const calculateDistance = useCallback((hotelLat: string | null, hotelLng: string | null): number => {
-    if (!hotelLat || !hotelLng || !searchParams.locationId) return 0;
+  const calculateHotelDistance = useCallback((hotel: HotelWithDetails): number | null => {
+    if (hotel.distance !== undefined && hotel.distance !== null) {
+      return hotel.distance;
+    }
     
-    // Mock: retorna distância aleatória entre 0.5 e 30 km
-    return Math.random() * 30 + 0.5;
-  }, [searchParams.locationId]);
+    if (!searchParams.locationId || !searchParams.lat || !searchParams.lng) {
+      return null;
+    }
+    
+    const hotelLat = parseCoordinate(hotel.lat);
+    const hotelLng = parseCoordinate(hotel.lng);
+    
+    if (hotelLat !== null && hotelLng !== null) {
+      return calculateDistance(searchParams.lat!, searchParams.lng!, hotelLat, hotelLng);
+    }
+    
+    return null;
+  }, [searchParams.locationId, searchParams.lat, searchParams.lng]);
 
   // Ordenar hotéis
   const sortedHotels = useCallback(() => {
@@ -255,28 +347,51 @@ export default function HotelsSearchPage() {
       case 'distance':
       default:
         return hotelsCopy.sort((a, b) => {
-          const distA = calculateDistance(a.lat || null, a.lng || null);
-          const distB = calculateDistance(b.lat || null, b.lng || null);
+          const distA = calculateHotelDistance(a);
+          const distB = calculateHotelDistance(b);
+          
+          if (distA === null && distB === null) return 0;
+          if (distA === null) return 1;
+          if (distB === null) return -1;
+          
           return distA - distB;
         });
     }
-  }, [hotels, searchParams.sortBy, calculateDistance]);
+  }, [hotels, searchParams.sortBy, calculateHotelDistance]);
 
-  // Manipuladores
+  // ✅ CORREÇÃO: Manipulador de seleção de localização
   const handleLocationSelect = (suggestion: LocationSuggestion) => {
+    console.log('📍 [HotelsPage] Localização selecionada:', {
+      name: suggestion.name,
+      province: suggestion.province,
+      locality: suggestion.locality || suggestion.name,
+      lat: suggestion.lat,
+      lng: suggestion.lng,
+      hasCoords: !!(suggestion.lat && suggestion.lng)
+    });
+    
     setLocationQuery(suggestion.name);
     setSearchParams(prev => ({
       ...prev,
       location: suggestion.name,
-      locationId: suggestion.id
+      province: suggestion.province || '',
+      locality: suggestion.locality || suggestion.name,
+      locationId: suggestion.id,
+      lat: suggestion.lat ?? undefined,
+      lng: suggestion.lng ?? undefined
     }));
     setLocationSuggestions([]);
   };
 
+  // ✅ CORREÇÃO: Handle search com todos os parâmetros
   const handleSearch = () => {
     const params = new URLSearchParams();
     if (searchParams.location) params.set('location', searchParams.location);
     if (searchParams.locationId) params.set('locationId', searchParams.locationId);
+    if (searchParams.province) params.set('province', searchParams.province);
+    if (searchParams.locality) params.set('locality', searchParams.locality);
+    if (searchParams.lat) params.set('lat', searchParams.lat.toString());
+    if (searchParams.lng) params.set('lng', searchParams.lng.toString());
     if (searchParams.checkIn) params.set('checkIn', searchParams.checkIn);
     if (searchParams.checkOut) params.set('checkOut', searchParams.checkOut);
     if (searchParams.guests) params.set('guests', searchParams.guests.toString());
@@ -304,6 +419,10 @@ export default function HotelsSearchPage() {
     setSearchParams({
       location: searchParams.location,
       locationId: searchParams.locationId,
+      province: searchParams.province,
+      locality: searchParams.locality,
+      lat: searchParams.lat,
+      lng: searchParams.lng,
       checkIn: formatDate(today),
       checkOut: formatDate(tomorrow),
       guests: 2,
@@ -367,6 +486,12 @@ export default function HotelsSearchPage() {
     
     return pages;
   };
+
+  // Paginar hotéis
+  const paginatedHotels = React.useMemo(() => {
+    const startIndex = (currentPage - 1) * 9;
+    return sortedHotels().slice(startIndex, startIndex + 9);
+  }, [sortedHotels, currentPage]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
@@ -432,6 +557,9 @@ export default function HotelsSearchPage() {
                             <div className="font-medium text-gray-900">{suggestion.name}</div>
                             <div className="text-sm text-gray-500">
                               {suggestion.district || suggestion.province || 'Moçambique'}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              {suggestion.lat !== null && suggestion.lng !== null ? '✅ Tem coordenadas' : 'ℹ️ Busca por nome'}
                             </div>
                           </div>
                         </button>
@@ -700,9 +828,19 @@ export default function HotelsSearchPage() {
                     {isLoading ? 'Buscando hotéis...' : `Hotéis encontrados (${totalResults})`}
                   </h2>
                   {searchParams.location && (
-                    <p className="text-gray-600 mt-1">
-                      em {searchParams.location}
-                    </p>
+                    <div className="text-gray-600 mt-1">
+                      <p>em {searchParams.location}</p>
+                      {searchParams.lat && searchParams.lng && (
+                        <p className="text-sm text-blue-600">
+                          ✅ Buscando por proximidade (raio: {searchParams.radius || 50}km)
+                        </p>
+                      )}
+                      {!searchParams.lat && !searchParams.lng && searchParams.locationId && (
+                        <p className="text-sm text-amber-600">
+                          ℹ️ Buscando por nome (sem coordenadas disponíveis)
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-4">
@@ -790,7 +928,9 @@ export default function HotelsSearchPage() {
                         <MapPin className="w-5 h-5 text-orange-600" />
                         <div>
                           <span className="font-medium text-orange-800">
-                            Buscando em: {searchParams.location || 'Moçambique'}
+                            {searchParams.lat && searchParams.lng 
+                              ? `Buscando por proximidade em raio de ${searchParams.radius || 50}km` 
+                              : `Buscando em: ${searchParams.location || 'Moçambique'}`}
                           </span>
                           {searchParams.checkIn && searchParams.checkOut && (
                             <div className="text-sm text-orange-700 mt-1">
@@ -809,6 +949,11 @@ export default function HotelsSearchPage() {
                         {searchParams.rating && searchParams.rating > 0 && (
                           <Badge variant="outline" className="border-amber-300 text-amber-700">
                             {searchParams.rating}+ estrelas
+                          </Badge>
+                        )}
+                        {searchParams.lat && searchParams.lng && (
+                          <Badge className="bg-green-100 text-green-800 border-green-300">
+                            ✅ Busca por proximidade
                           </Badge>
                         )}
                       </div>
@@ -835,18 +980,31 @@ export default function HotelsSearchPage() {
 
                   {/* Lista de hotéis */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {sortedHotels().map((hotel) => {
-                      const distance = calculateDistance(hotel.lat || null, hotel.lng || null);
-                      const distanceColor = distance <= 10 ? 'bg-green-100 text-green-800 border-green-300' : 
-                                          distance <= 30 ? 'bg-yellow-100 text-yellow-800 border-yellow-300' : 
-                                          'bg-red-100 text-red-800 border-red-300';
+                    {paginatedHotels.map((hotel) => {
+                      const distance = calculateHotelDistance(hotel);
+                      
+                      let distanceColor = 'bg-gray-100 text-gray-800 border-gray-300';
+                      let distanceText = 'Localização não disponível';
+                      
+                      if (distance !== null) {
+                        if (distance <= 10) {
+                          distanceColor = 'bg-green-100 text-green-800 border-green-300';
+                          distanceText = `${distance.toFixed(1)} km`;
+                        } else if (distance <= 30) {
+                          distanceColor = 'bg-yellow-100 text-yellow-800 border-yellow-300';
+                          distanceText = `${distance.toFixed(1)} km`;
+                        } else {
+                          distanceColor = 'bg-red-100 text-red-800 border-red-300';
+                          distanceText = `${distance.toFixed(1)} km`;
+                        }
+                      }
                       
                       return (
                         <div key={hotel.id} className="group relative animate-in fade-in slide-in-from-bottom-2 duration-300">
                           {/* Badge de distância */}
                           <div className="absolute top-3 right-3 z-10">
                             <Badge className={`${distanceColor}`}>
-                              {distance.toFixed(1)} km
+                              {distanceText}
                             </Badge>
                           </div>
 
@@ -889,7 +1047,8 @@ export default function HotelsSearchPage() {
                   {totalResults > 9 && totalPages > 1 && (
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t">
                       <div className="text-sm text-gray-600">
-                        Mostrando {Math.min(9, hotels.length)} de {totalResults} hotéis
+                        Mostrando {Math.min(9, paginatedHotels.length)} de {totalResults} hotéis
+                        {currentPage > 1 && ` (Página ${currentPage} de ${totalPages})`}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -932,9 +1091,13 @@ export default function HotelsSearchPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="p-4 rounded-lg bg-white/50">
                     <div className="text-2xl mb-3">📍</div>
-                    <h4 className="font-semibold text-orange-800 mb-2">Localização precisa</h4>
+                    <h4 className="font-semibold text-orange-800 mb-2">
+                      {searchParams.lat && searchParams.lng ? 'Busca por proximidade' : 'Localização precisa'}
+                    </h4>
                     <p className="text-sm text-orange-700">
-                      Selecione uma localização específica da lista para resultados mais precisos e veja a distância exata de cada hotel.
+                      {searchParams.lat && searchParams.lng 
+                        ? 'Encontramos hotéis próximos à localização selecionada. A distância é calculada em linha reta e pode variar de acordo com a rota.'
+                        : 'Selecione uma localização específica da lista para resultados mais precisos e veja a distância exata de cada hotel.'}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg bg-white/50">
@@ -958,7 +1121,7 @@ export default function HotelsSearchPage() {
                   <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-2 text-sm text-orange-700">
                       <Shield className="w-4 h-4" />
-                      <span>Cancelamento gratuito em muitos hotéis</span>
+                      <span>Cancelamento gratuitas em muitos hotéis</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-orange-700">
                       <span>⭐</span>

@@ -8,11 +8,11 @@ const FALLBACK_TIMEOUT = 5000; // 5 segundos
 export interface LocationSuggestion {
   id: string;
   name: string;
-  province?: string; // ✅ CORREÇÃO: Tornado opcional
-  district?: string; // ✅ CORREÇÃO: Tornado opcional
-  locality?: string; // ✅ CORREÇÃO ADICIONADA: Campo locality
-  lat: number;
-  lng: number;
+  province?: string;
+  district?: string;
+  locality?: string;
+  lat?: number | null;      // ✅ CORREÇÃO: number → number | null | undefined
+  lng?: number | null;      // ✅ CORREÇÃO: number → number | null | undefined
   type: string;
   relevance_rank?: number;
 }
@@ -27,16 +27,16 @@ export interface AutocompleteResult {
   total: number;
 }
 
-// ✅ NOVA INTERFACE: Para Accommodation Location
+// ✅ INTERFACE: Para Accommodation Location
 export interface AccommodationLocation {
   id: string;
   name: string;
   province?: string;
   district?: string;
-  locality?: string; // ✅ CORREÇÃO ADICIONADA: Campo locality
+  locality?: string;
   type: string;
-  lat: number;
-  lng: number;
+  lat?: number | null;      // ✅ CORREÇÃO: number → number | null | undefined
+  lng?: number | null;      // ✅ CORREÇÃO: number → number | null | undefined
   relevance_rank?: number;
 }
 
@@ -87,16 +87,19 @@ class LocationsService {
     }
   }
 
-  // ✅ CORREÇÃO: Normalizar dados da API mantendo undefined quando apropriado
+  // ✅ CORREÇÃO CRÍTICA: Normalizar dados da API mantendo null/undefined quando apropriado
   private normalizeLocationSuggestion(location: any): LocationSuggestion {
     return {
       id: location.id || '',
       name: location.name || '',
-      province: location.province || undefined, // ✅ CORREÇÃO: Manter undefined em vez de string vazia
-      district: location.district || undefined, // ✅ CORREÇÃO: Manter undefined em vez de string vazia
-      locality: location.locality || undefined, // ✅ CORREÇÃO ADICIONADA: Campo locality
-      lat: location.lat || 0,
-      lng: location.lng || 0,
+      province: location.province || undefined,
+      district: location.district || undefined,
+      locality: location.locality || undefined,
+      
+      // ✅ CORREÇÃO CRÍTICA: Não transformar null em 0, manter como undefined
+      lat: location.lat !== undefined ? location.lat : undefined,
+      lng: location.lng !== undefined ? location.lng : undefined,
+      
       type: location.type || 'unknown',
       relevance_rank: location.relevance_rank
     };
@@ -204,7 +207,7 @@ class LocationsService {
     if (location.district && location.district !== location.name) {
       parts.push(location.district);
     }
-    // ✅ CORREÇÃO ADICIONADA: Incluir locality se disponível
+    // ✅ CORREÇÃO: Incluir locality se disponível
     if (location.locality && location.locality !== location.name && location.locality !== location.district) {
       parts.push(location.locality);
     }
@@ -230,7 +233,7 @@ class LocationsService {
     if (cached) return cached;
 
     try {
-      // ✅ CORREÇÃO MELHOR: Tentar endpoint específico primeiro
+      // ✅ CORREÇÃO: Tentar endpoint específico primeiro
       try {
         const response = await this.fetchWithTimeout(`${LOCATIONS_API_BASE}/${id}`, DEFAULT_TIMEOUT);
         if (response.ok) {
@@ -244,7 +247,7 @@ class LocationsService {
       }
 
       // ✅ CORREÇÃO: Fallback para busca geral com limite menor
-      const url = `${LOCATIONS_API_BASE}/search?q=&limit=100`; // Reduzido para melhor performance
+      const url = `${LOCATIONS_API_BASE}/search?q=&limit=100`;
       const response = await this.fetchWithTimeout(url, DEFAULT_TIMEOUT);
       
       const data: LocationSearchResult = await response.json();
@@ -282,22 +285,25 @@ class LocationsService {
     }
   }
 
-  // ✅ CORREÇÃO: Converter LocationSuggestion para AccommodationLocation com tipagem correta
+  // ✅ CORREÇÃO: Converter LocationSuggestion para AccommodationLocation preservando lat/lng
   convertToAccommodationLocation(location: LocationSuggestion): AccommodationLocation {
     return {
       id: location.id,
       name: location.name,
       province: location.province,
       district: location.district,
-      locality: location.locality, // ✅ CORREÇÃO ADICIONADA: Campo locality
+      locality: location.locality,
       type: location.type,
+      
+      // ✅ CORREÇÃO: Preservar lat/lng como estão (pode ser null/undefined)
       lat: location.lat,
       lng: location.lng,
+      
       relevance_rank: location.relevance_rank
     };
   }
 
-  // ✅ CORREÇÃO: Converter array de LocationSuggestion com tipagem correta
+  // ✅ CORREÇÃO: Converter array de LocationSuggestion
   convertToAccommodationLocations(locations: LocationSuggestion[]): AccommodationLocation[] {
     return locations.map(loc => this.convertToAccommodationLocation(loc));
   }
@@ -317,7 +323,7 @@ class LocationsService {
     };
   }
 
-  // ✅ NOVO MÉTODO: Buscar localidades populares
+  // ✅ MÉTODO: Buscar localidades populares
   async getPopularLocations(limit: number = 10): Promise<LocationSuggestion[]> {
     const cacheKey = `popular:${limit}`;
     const cached = this.getFromCache<LocationSuggestion[]>(cacheKey);

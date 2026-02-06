@@ -29,23 +29,71 @@ export const HotelCard: React.FC<HotelCardProps> = ({
   isFavorite = false,
   onToggleFavorite,
 }) => {
+  // ✅ CORREÇÃO: Funções auxiliares para dados seguros
+  const getSafeRating = (): number => {
+    if (typeof hotel.rating === 'number') return hotel.rating;
+    if (typeof hotel.rating === 'string') return parseFloat(hotel.rating) || 0;
+    return 0;
+  };
+
+  const getSafeTotalReviews = (): number => {
+    if (typeof hotel.total_reviews === 'number') return hotel.total_reviews;
+    if (typeof hotel.total_reviews === 'string') return parseInt(hotel.total_reviews) || 0;
+    return 0;
+  };
+
+  const getSafeImages = (): string[] => {
+    if (!hotel.images) return [];
+    if (Array.isArray(hotel.images)) return hotel.images;
+    return [];
+  };
+
+  const getSafeDescription = (): string => {
+    return hotel.description || 'Descrição não disponível';
+  };
+
+  const getSafeLocality = (): string => {
+    return hotel.locality || hotel.province || 'Localização não disponível';
+  };
+
+  // ✅ CORREÇÃO: Dados seguros
+  const safeRating = getSafeRating();
+  const safeTotalReviews = getSafeTotalReviews();
+  const safeImages = getSafeImages();
+  const safeDescription = getSafeDescription();
+  const safeLocality = getSafeLocality();
+  
+  // ✅ CORREÇÃO: Imagem padrão se não houver
+  const imageUrl = safeImages[0] || 'https://via.placeholder.com/400x300?text=Hotel';
+  
+  // ✅ CORREÇÃO: MinPrice seguro
+  const safeMinPrice = minPrice || parseInt(hotel.base_price || '0') || 0;
+
   return (
     <div className="group relative bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300">
       {/* Imagem Hero com Gradient Overlay */}
       <div className="relative h-48 overflow-hidden bg-gray-100">
         <img
-          src={hotel.images?.[0] || 'https://via.placeholder.com/400x300'}
-          alt={hotel.name}
+          src={imageUrl}
+          alt={hotel.name || 'Hotel'}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          onError={(e) => {
+            // ✅ CORREÇÃO: Fallback para imagem placeholder em caso de erro
+            e.currentTarget.src = 'https://via.placeholder.com/400x300?text=Hotel';
+            e.currentTarget.className = 'w-full h-full object-cover bg-gray-200';
+          }}
         />
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
 
-        {/* Rating Badge */}
-        {hotel.rating && hotel.rating > 0 && (
+        {/* Rating Badge - ✅ CORREÇÃO: Só mostrar se rating > 0 */}
+        {safeRating > 0 && (
           <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/95 px-2 py-1 rounded-lg shadow-sm">
             <Star className="w-4 h-4 fill-primary text-primary" />
-            <span className="text-sm font-semibold text-dark">{hotel.rating.toFixed(1)}</span>
+            <span className="text-sm font-semibold text-dark">
+              {/* ✅ CORREÇÃO CRÍTICA: Usar toFixed apenas em número */}
+              {safeRating.toFixed(1)}
+            </span>
           </div>
         )}
 
@@ -54,6 +102,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
           <button
             onClick={() => onToggleFavorite(hotel.id)}
             className="absolute top-3 right-3 p-2 bg-white/95 rounded-full hover:bg-white transition-colors"
+            aria-label={isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
           >
             <Heart
               className={`w-5 h-5 ${isFavorite ? 'fill-alert text-alert' : 'text-gray-400'}`}
@@ -73,29 +122,35 @@ export const HotelCard: React.FC<HotelCardProps> = ({
       <div className="p-4">
         {/* Nome e localização */}
         <div className="mb-3">
-          <h3 className="text-lg font-semibold text-dark line-clamp-2 mb-1">{hotel.name}</h3>
+          <h3 className="text-lg font-semibold text-dark line-clamp-2 mb-1">
+            {hotel.name || 'Hotel sem nome'}
+          </h3>
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <MapPin className="w-4 h-4" />
-            <span>{hotel.locality}</span>
+            <span className="line-clamp-1">{safeLocality}</span>
           </div>
         </div>
 
-        {/* Reviews count */}
-        {hotel.total_reviews && hotel.total_reviews > 0 && (
-          <p className="text-xs text-muted-foreground mb-3">{hotel.total_reviews} avaliações</p>
+        {/* Reviews count - ✅ CORREÇÃO: Só mostrar se > 0 */}
+        {safeTotalReviews > 0 && (
+          <p className="text-xs text-muted-foreground mb-3">
+            {safeTotalReviews.toLocaleString()} {safeTotalReviews === 1 ? 'avaliação' : 'avaliações'}
+          </p>
         )}
 
         {/* Descrição curta */}
-        {hotel.description && (
-          <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{hotel.description}</p>
-        )}
+        <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+          {safeDescription}
+        </p>
 
-        {/* Preço */}
-        {showPrice && minPrice && (
+        {/* Preço - ✅ CORREÇÃO: Mostrar apenas se showPrice for true */}
+        {showPrice && safeMinPrice > 0 && (
           <div className="mb-4 pb-4 border-t border-gray-100">
             <p className="text-xs text-muted-foreground">A partir de</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-primary">{minPrice.toLocaleString()}</span>
+              <span className="text-2xl font-bold text-primary">
+                {safeMinPrice.toLocaleString('pt-MZ')}
+              </span>
               <span className="text-sm text-muted-foreground">MZN/noite</span>
             </div>
           </div>

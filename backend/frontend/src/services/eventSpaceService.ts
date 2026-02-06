@@ -1,8 +1,10 @@
 // src/services/eventSpaceService.ts
-// VERSÃO CORRIGIDA - 28/01/2026 - COM SUPORTE A CAMPOS DE LOCALIZAÇÃO
+// VERSÃO CORRIGIDA - COM SUPORTE A BUSCA POR PROXIMIDADE
+// ✅ ADICIONADO: Função searchNearbyEventSpaces para busca por coordenadas
 // ✅ ADICIONADO: Suporte para location_id, lat, lng, inherits_hotel_location
 // ✅ ATUALIZADO: Funções auxiliares preparam dados de localização corretamente
 // ✅ CORREÇÃO APLICADA: Filtrar parâmetros undefined na busca
+// ✅ CORREÇÃO APLICADA: Tipagem do parâmetro 'item' na função searchNearbyEventSpaces
 
 import { apiService } from './api';
 import type {
@@ -321,6 +323,64 @@ interface EventBookingWithPayments extends EventBooking {
   logs?: any[];
 }
 
+/**
+ * Buscar espaços de eventos por proximidade
+ * ✅ NOVA FUNÇÃO: Similar ao getNearbyHotels
+ */
+async function searchNearbyEventSpaces(
+  lat: number, 
+  lng: number, 
+  radius: number = 50,
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+    capacity?: number;
+    eventType?: string;
+    maxPricePerDay?: number;
+    amenities?: string[];
+    minRating?: number;
+    useExactLocations?: boolean;
+  }
+): Promise<ServiceResponse<EventSpace[]>> {
+  try {
+    // Construir parâmetros
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lng: lng.toString(),
+      radius: radius.toString(),
+    });
+    
+    // Adicionar filtros opcionais
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.capacity) params.append('capacity', filters.capacity.toString());
+    if (filters?.eventType) params.append('eventType', filters.eventType);
+    if (filters?.maxPricePerDay) params.append('maxPricePerDay', filters.maxPricePerDay.toString());
+    if (filters?.amenities?.length) params.append('amenities', filters.amenities.join(','));
+    if (filters?.minRating) params.append('minRating', filters.minRating.toString());
+    if (filters?.useExactLocations) params.append('useExactLocations', 'true');
+    
+    const url = `/api/events/spaces/search/nearby?${params.toString()}`;
+    console.log('📍 Buscando espaços por proximidade:', url);
+    
+    const res = await apiService.get<any>(url);
+    
+    if (!res.success) {
+      return { success: false, error: res.error || 'Erro na busca por proximidade' };
+    }
+    
+    // Extrair espaços da resposta
+    const eventSpaces = Array.isArray(res.data) 
+      ? res.data.map((item: any) => extractEventSpace(item.space) || item.space || item)
+      : [];
+    
+    return { success: true, data: eventSpaces };
+  } catch (err: any) {
+    console.error('[searchNearbyEventSpaces]', err);
+    return { success: false, error: err.message || 'Falha na busca por proximidade' };
+  }
+}
+
 class EventSpaceService {
   /**
    * Criar novo espaço de eventos
@@ -562,6 +622,28 @@ class EventSpaceService {
       console.error('[searchEventSpaces]', err);
       return { success: false, error: err.message || 'Falha na busca de espaços' };
     }
+  }
+
+  /**
+   * Buscar espaços por proximidade
+   * ✅ ADICIONADO: Nova função de busca por proximidade (similar à dos hotéis)
+   */
+  async searchNearbyEventSpaces(
+    lat: number, 
+    lng: number, 
+    radius: number = 50,
+    filters?: {
+      startDate?: string;
+      endDate?: string;
+      capacity?: number;
+      eventType?: string;
+      maxPricePerDay?: number;
+      amenities?: string[];
+      minRating?: number;
+      useExactLocations?: boolean;
+    }
+  ): Promise<ServiceResponse<EventSpace[]>> {
+    return await searchNearbyEventSpaces(lat, lng, radius, filters);
   }
 
   /**

@@ -2,23 +2,23 @@ import { useState, useRef, useEffect } from "react";
 import { Input } from "@/shared/components/ui/input";
 import { locationsService, LocationSuggestion } from "../../services/locationsService";
 
-// ✅ INTERFACE CORRIGIDA: Adicionados province e locality
+// ✅ INTERFACE CORRIGIDA: lat e lng podem ser number | null
 export interface LocationOption {
   label: string;
   city?: string;
   district?: string;
-  province?: string;    // ✅ ADICIONADO
-  locality?: string;    // ✅ ADICIONADO
+  province?: string;
+  locality?: string;
   id?: string;
-  lat?: number;
-  lng?: number;
+  lat?: number | null;    // ✅ CORREÇÃO: number → number | null
+  lng?: number | null;    // ✅ CORREÇÃO: number → number | null
   type?: string;
 }
 
 interface LocationAutocompleteProps {
   id: string;
   placeholder: string;
-  value: string | LocationOption; // ✅ CORREÇÃO: string | LocationOption
+  value: string | LocationOption;
   onChange: (location: LocationOption) => void;
   onLocationSelect?: (location: LocationOption) => void;
   className?: string;
@@ -28,7 +28,6 @@ interface LocationAutocompleteProps {
   "aria-describedby"?: string;
 }
 
-// ✅ CORREÇÃO CRÍTICA: Usar React.FC para preservar a tipagem das props
 const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   id,
   placeholder,
@@ -46,10 +45,8 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // ✅ CORREÇÃO: Obter o valor do input como string
   const inputValue = typeof value === "string" ? value : value.label;
 
-  // ✅ USAR SUGESTÕES EXTERNAS SE FORNECIDAS
   useEffect(() => {
     if (suggestions.length > 0) {
       setFilteredLocations(suggestions);
@@ -59,10 +56,8 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
   }, [suggestions, inputValue]);
 
-  // ✅ BUSCAR SUGESTÕES APENAS SE NÃO FORNECIDAS EXTERNAMENTE
   useEffect(() => {
     const fetchSuggestions = async () => {
-      // Se suggestions são fornecidas externamente, não buscar
       if (suggestions.length > 0) return;
 
       if (inputValue.length < 2) {
@@ -74,6 +69,12 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       setIsLoading(true);
       try {
         const results = await locationsService.searchSuggestions(inputValue, 15);
+        console.log('📍 [Component1] Sugestões recebidas:', results.map(r => ({
+          name: r.name,
+          lat: r.lat,
+          lng: r.lng,
+          hasCoords: !!(r.lat && r.lng)
+        })));
         setFilteredLocations(results);
         setIsOpen(results.length > 0);
       } catch (error) {
@@ -97,15 +98,15 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       label: displayName,
       city: suggestion.name,
       district: suggestion.district,
-      province: suggestion.province, // ✅ ADICIONADO
-      locality: suggestion.locality, // ✅ ADICIONADO
-      lat: suggestion.lat,
-      lng: suggestion.lng,
+      province: suggestion.province,
+      locality: suggestion.locality,
+      // ✅ CORREÇÃO: Converter null para undefined
+      lat: suggestion.lat ?? undefined,
+      lng: suggestion.lng ?? undefined,
       type: suggestion.type
     };
   };
 
-  // Get location icon based on type
   const getLocationIcon = (type: string) => {
     switch (type) {
       case 'city': return 'fas fa-city';
@@ -119,7 +120,6 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
   };
 
-  // Get location type label in Portuguese
   const getLocationTypeLabel = (type: string) => {
     switch (type) {
       case 'city': return 'Cidade';
@@ -133,7 +133,6 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
   };
 
-  // Get type color for styling
   const getTypeColor = (type: string): string => {
     const colorMap: { [key: string]: string } = {
       'city': 'text-green-500',
@@ -147,7 +146,6 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     return colorMap[type] || 'text-gray-400';
   };
 
-  // ✅ CORREÇÃO: Fechar dropdown quando clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -159,14 +157,19 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ✅ CORREÇÃO CRÍTICA: Handle location selection - AGORA SEMPRE RETORNA LocationOption
+  // ✅ CORREÇÃO: Handle location selection
   const handleLocationClick = (location: LocationSuggestion) => {
     const locationOption = mapSuggestionToOption(location);
     
-    // ✅ AGORA onChange recebe LocationOption
+    console.log('📍 [Component1] Localização selecionada:', {
+      name: location.name,
+      lat: location.lat,
+      lng: location.lng,
+      option: locationOption
+    });
+    
     onChange(locationOption);
     
-    // ✅ AGORA onLocationSelect também recebe LocationOption
     if (onLocationSelect) {
       onLocationSelect(locationOption);
     }
@@ -174,17 +177,15 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     setIsOpen(false);
   };
 
-  // ✅ CORREÇÃO: Handle input change - AGORA CRIA LocationOption mínimo
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     
-    // ✅ Criar um LocationOption básico para digitação livre
     const minimalLocation: LocationOption = {
       label: newValue,
       city: "",
       district: "",
-      province: "", // ✅ ADICIONADO
-      locality: ""  // ✅ ADICIONADO
+      province: "",
+      locality: ""
     };
     
     onChange(minimalLocation);
@@ -196,14 +197,12 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
   };
 
-  // ✅ CORREÇÃO: Handle input focus
   const handleInputFocus = () => {
     if ((suggestions.length > 0 || filteredLocations.length > 0) && inputValue.length >= 2) {
       setIsOpen(true);
     }
   };
 
-  // ✅ CORREÇÃO: Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!isOpen || filteredLocations.length === 0) return;
 
@@ -219,7 +218,6 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     }
   };
 
-  // ✅ USAR LOADING EXTERNO SE FORNECIDO
   const showLoading = loading || isLoading;
 
   return (
@@ -227,11 +225,10 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
       <div className="relative">
         <i className="fas fa-map-marker-alt absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
         
-        {/* ✅ CORREÇÃO CRÍTICA: Input com value tratado corretamente */}
         <Input
           id={id}
           placeholder={placeholder}
-          value={typeof value === "string" ? value : value.label} // ✅ CORREÇÃO: Sempre string
+          value={typeof value === "string" ? value : value.label}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onFocus={handleInputFocus}
@@ -288,12 +285,19 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
                     )}
                   </div>
                 </div>
-                {location.lat && location.lng && (
-                  <div className="flex-shrink-0 text-xs text-gray-400 dark:text-gray-500 text-right">
-                    <div>{location.lat.toFixed(4)}</div>
-                    <div>{location.lng.toFixed(4)}</div>
-                  </div>
-                )}
+                {/* ✅ ATUALIZADO: Exibir status das coordenadas */}
+                <div className="flex-shrink-0 text-xs text-right">
+                  {location.lat && location.lng ? (
+                    <>
+                      <div className="text-green-600 dark:text-green-400">Tem coordenadas</div>
+                      <div className="text-gray-400 dark:text-gray-500 text-[10px]">
+                        {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-amber-600 dark:text-amber-400">Busca textual</div>
+                  )}
+                </div>
               </div>
             </button>
           ))}

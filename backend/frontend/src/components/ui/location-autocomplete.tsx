@@ -4,20 +4,20 @@ import { Input } from '@/shared/components/ui/input';
 import { Button } from '@/shared/components/ui/button';
 import { locationsService, LocationSuggestion } from '../../services/locationsService';
 
-// ✅ NOVA INTERFACE para o objeto de localização
+// ✅ CORREÇÃO: Interface atualizada para aceitar lat/lng como number | null
 export interface LocationOption {
   label: string;
   city?: string;
   district?: string;
   id?: string;
-  lat?: number;
-  lng?: number;
+  lat?: number | null;      // ✅ CORREÇÃO: number → number | null
+  lng?: number | null;      // ✅ CORREÇÃO: number → number | null
   type?: string;
   province?: string;
 }
 
 interface LocationAutocompleteProps {
-  value: string | LocationOption; // ✅ CORREÇÃO: value agora aceita string OU objeto
+  value: string | LocationOption;
   onChange: (location: LocationOption) => void;
   onSelect?: (suggestion: LocationSuggestion) => void;
   placeholder?: string;
@@ -51,19 +51,24 @@ export function LocationAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // ✅ CORREÇÃO CRÍTICA: transformar value em texto SEMPRE
-  const textValue =
-    typeof value === "string" ? value : value?.label ?? "";
+  const textValue = typeof value === "string" ? value : value?.label ?? "";
 
-  // ✅ CORREÇÃO: Controlar se estamos usando sugestões externas
+  // ✅ CORREÇÃO: Controlar sugestões externas corretamente
   useEffect(() => {
     const hasExtSuggestions = suggestions.length > 0;
     setHasExternalSuggestions(hasExtSuggestions);
     
     if (hasExtSuggestions) {
-      setInternalSuggestions(suggestions);
+      // ✅ CORREÇÃO: Usar as sugestões externas diretamente
+      // Não precisamos setInternalSuggestions quando temos externas
       if (textValue.length >= 2) {
         setShowSuggestions(true);
+      }
+    } else {
+      // Se não há sugestões externas, limpar as internas se necessário
+      if (internalSuggestions.length > 0 && textValue.length < 2) {
+        setInternalSuggestions([]);
+        setShowSuggestions(false);
       }
     }
   }, [suggestions, textValue]);
@@ -71,7 +76,7 @@ export function LocationAutocomplete({
   // ✅ CORREÇÃO: Buscar sugestões apenas se não houver sugestões externas
   const fetchSuggestions = async (query: string) => {
     // Se suggestions são fornecidas externamente, não buscar
-    if (hasExternalSuggestions) return;
+    if (suggestions.length > 0) return;
 
     if (query.length < 2) {
       setInternalSuggestions([]);
@@ -82,6 +87,12 @@ export function LocationAutocomplete({
     setIsLoading(true);
     try {
       const results = await locationsService.searchSuggestions(query, 8);
+      console.log('📍 [LocationAutocomplete] Sugestões recebidas:', results.map(r => ({
+        name: r.name,
+        lat: r.lat,
+        lng: r.lng,
+        hasCoords: !!(r.lat && r.lng)
+      })));
       setInternalSuggestions(results);
       setShowSuggestions(true);
     } catch (error) {
@@ -95,7 +106,7 @@ export function LocationAutocomplete({
 
   // ✅ CORREÇÃO: Debounced search - apenas se não houver sugestões externas
   useEffect(() => {
-    if (hasExternalSuggestions) return;
+    if (suggestions.length > 0) return;
 
     const timer = setTimeout(() => {
       if (textValue && textValue.length >= 2) {
@@ -107,13 +118,11 @@ export function LocationAutocomplete({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [textValue, hasExternalSuggestions]);
+  }, [textValue, suggestions]);
 
-  // ✅ CORREÇÃO CRÍTICA: Handle input change - SEMPRE gerar LocationOption válido
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const label = e.target.value;
 
-    // ✅ CORREÇÃO: Criar LocationOption básico para digitação livre
     onChange({
       label,
       city: "",
@@ -123,9 +132,8 @@ export function LocationAutocomplete({
 
     setSelectedIndex(-1);
     
-    // Mostrar sugestões se houver e o input tiver pelo menos 2 caracteres
     if (label.length >= 2) {
-      const hasSuggestions = hasExternalSuggestions ? suggestions.length > 0 : internalSuggestions.length > 0;
+      const hasSuggestions = suggestions.length > 0 ? suggestions.length > 0 : internalSuggestions.length > 0;
       if (hasSuggestions) {
         setShowSuggestions(true);
       }
@@ -134,32 +142,33 @@ export function LocationAutocomplete({
     }
   };
 
-  // ✅ CORREÇÃO CRÍTICA: Handle suggestion selection - AGORA RETORNA LocationOption
+  // ✅ CORREÇÃO CRÍTICA: Handle suggestion selection com tratamento de null
   const handleSuggestionSelect = (suggestion: LocationSuggestion) => {
     const displayName = locationsService.formatLocationName(suggestion);
     
     console.log('📍 [LocationAutocomplete] Selecionado:', {
       name: displayName,
       province: suggestion.province,
+      lat: suggestion.lat,
+      lng: suggestion.lng,
+      hasCoords: !!(suggestion.lat && suggestion.lng),
       fullData: suggestion
     });
     
-    // ✅ CORREÇÃO: Criar LocationOption completo
+    // ✅ CORREÇÃO: Converter null para undefined
     const locationOption: LocationOption = {
       label: displayName,
-      city: suggestion.name, // Usar o nome principal como cidade
+      city: suggestion.name,
       district: suggestion.district,
       province: suggestion.province,
       id: suggestion.id,
-      lat: suggestion.lat,
-      lng: suggestion.lng,
+      lat: suggestion.lat ?? undefined,  // ✅ CORREÇÃO: null → undefined
+      lng: suggestion.lng ?? undefined,  // ✅ CORREÇÃO: null → undefined
       type: suggestion.type
     };
     
-    // ✅ CORREÇÃO: Chamar onChange com LocationOption
     onChange(locationOption);
     
-    // ✅ CORREÇÃO: Chamar onSelect SEPARADAMENTE para compatibilidade
     if (onSelect) {
       console.log('📍 [LocationAutocomplete] Chamando onSelect com:', suggestion);
       onSelect(suggestion);
@@ -170,17 +179,15 @@ export function LocationAutocomplete({
     inputRef.current?.blur();
   };
 
-  // ✅ CORREÇÃO: Handle input focus
   const handleInputFocus = () => {
-    const hasSuggestions = hasExternalSuggestions ? suggestions.length > 0 : internalSuggestions.length > 0;
+    const hasSuggestions = suggestions.length > 0 ? suggestions.length > 0 : internalSuggestions.length > 0;
     if (hasSuggestions && textValue.length >= 2) {
       setShowSuggestions(true);
     }
   };
 
-  // ✅ CORREÇÃO: Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    const currentSuggestions = hasExternalSuggestions ? suggestions : internalSuggestions;
+    const currentSuggestions = suggestions.length > 0 ? suggestions : internalSuggestions;
     
     if (!showSuggestions || currentSuggestions.length === 0) return;
 
@@ -200,7 +207,6 @@ export function LocationAutocomplete({
         if (selectedIndex >= 0 && selectedIndex < currentSuggestions.length) {
           handleSuggestionSelect(currentSuggestions[selectedIndex]);
         } else if (currentSuggestions.length === 1) {
-          // ✅ CORREÇÃO: Se há apenas uma sugestão, selecionar automaticamente
           handleSuggestionSelect(currentSuggestions[0]);
         }
         break;
@@ -209,14 +215,12 @@ export function LocationAutocomplete({
         setSelectedIndex(-1);
         break;
       case 'Tab':
-        // ✅ CORREÇÃO: Permitir tab para navegação normal
         setShowSuggestions(false);
         setSelectedIndex(-1);
         break;
     }
   };
 
-  // ✅ CORREÇÃO: Close suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -234,7 +238,6 @@ export function LocationAutocomplete({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ✅ CORREÇÃO: Scroll para sugestão selecionada
   useEffect(() => {
     if (selectedIndex >= 0 && suggestionsRef.current) {
       const selectedElement = suggestionsRef.current.children[selectedIndex] as HTMLElement;
@@ -247,7 +250,6 @@ export function LocationAutocomplete({
     }
   }, [selectedIndex]);
 
-  // ✅ CORREÇÃO: Get type display name
   const getTypeDisplayName = (type: string): string => {
     const typeMap: { [key: string]: string } = {
       'city': 'Cidade',
@@ -265,7 +267,6 @@ export function LocationAutocomplete({
     return typeMap[type] || type;
   };
 
-  // ✅ CORREÇÃO: Get type icon color
   const getTypeColor = (type: string): string => {
     const colorMap: { [key: string]: string } = {
       'city': 'text-green-600',
@@ -283,7 +284,6 @@ export function LocationAutocomplete({
     return colorMap[type] || 'text-gray-500';
   };
 
-  // ✅ CORREÇÃO: Get type background color para badges
   const getTypeBackgroundColor = (type: string): string => {
     const colorMap: { [key: string]: string } = {
       'city': 'bg-green-100 text-green-800',
@@ -299,13 +299,11 @@ export function LocationAutocomplete({
     return colorMap[type] || 'bg-gray-100 text-gray-800';
   };
 
-  // ✅ CORREÇÃO: Loading state
   const showLoading = loading || isLoading;
   
-  // ✅ CORREÇÃO: Sugestões atuais
-  const currentSuggestions = hasExternalSuggestions ? suggestions : internalSuggestions;
+  // ✅ CORREÇÃO: Sempre usar as sugestões corretas
+  const currentSuggestions = suggestions.length > 0 ? suggestions : internalSuggestions;
   
-  // ✅ CORREÇÃO: Mostrar sugestões apenas se há algo para mostrar
   const shouldShowSuggestions = showSuggestions && currentSuggestions.length > 0 && textValue.length >= 2;
 
   return (
@@ -316,7 +314,7 @@ export function LocationAutocomplete({
           ref={inputRef}
           id={id}
           type="text"
-          value={textValue} // ✅ CORREÇÃO CRÍTICA: SEMPRE STRING
+          value={textValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onFocus={handleInputFocus}
@@ -374,8 +372,11 @@ export function LocationAutocomplete({
                   <span className={`text-xs px-2 py-1 rounded-full ${getTypeBackgroundColor(suggestion.type)} capitalize`}>
                     {getTypeDisplayName(suggestion.type)}
                   </span>
-                  {suggestion.relevance_rank !== undefined && suggestion.relevance_rank <= 1 && (
-                    <span className="text-xs text-green-600 font-medium">Relevante</span>
+                  {/* ✅ ADICIONADO: Indicador de coordenadas */}
+                  {suggestion.lat && suggestion.lng ? (
+                    <span className="text-xs text-green-600 font-medium">Tem coordenadas</span>
+                  ) : (
+                    <span className="text-xs text-amber-600 font-medium">Busca textual</span>
                   )}
                 </div>
               </div>

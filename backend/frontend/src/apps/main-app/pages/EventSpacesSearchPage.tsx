@@ -30,33 +30,73 @@ import {
   Heart
 } from 'lucide-react';
 import { eventSpaceService } from '@/services/eventSpaceService';
-import { locationsService } from '@/services/locationsService';
+import { locationsService, LocationSuggestion as ServiceLocationSuggestion } from '@/services/locationsService';
 import EventSpaceCard from '@/shared/components/event-spaces/EventSpaceCard';
 import EventSpaceDetailModal from '@/shared/components/EventSpaceDetailModal';
 import { useToast } from '@/shared/hooks/use-toast';
 import { debounce } from 'lodash';
 import { EventSpace, EventSpaceSearchParams as SearchParamsType } from '@/shared/types/event-spaces';
+import { calculateDistance, parseCoordinate } from '@/utils/calculateDistance';
 
+// ✅ CORREÇÃO: Interface local atualizada - garantir que distance seja number | null (não undefined)
 interface LocationSuggestion {
   id: string;
   name: string;
   province?: string;
   district?: string;
-  lat?: number;
-  lng?: number;
+  locality?: string;
+  lat?: number | null;
+  lng?: number | null;
   type?: string;
+  relevance_rank?: number;
 }
 
-// Extender o tipo para incluir campos necessários para o frontend
+// ✅ CORREÇÃO: Interface estendida com tipos corretos
 interface ExtendedSearchParams extends SearchParamsType {
   sortBy?: string;
   page?: number;
-  radius?: number; // Para compatibilidade
+  radius?: number;
+  locationId?: string;
+  province?: string;
+  locality?: string;
+  lat?: number;
+  lng?: number;
 }
 
-// Função para converter dados da API para o tipo EventSpace
-function convertToEventSpace(data: any): EventSpace {
-  return {
+// ✅ CORREÇÃO CRÍTICA: Interface ExtendedEventSpace com distance definida como number | null (não undefined)
+interface ExtendedEventSpace extends Omit<EventSpace, 'location'> {
+  distance: number | null;  // ✅ ALTERADO: number | null (sempre definida)
+  location?: string;
+  thumbnail?: string;
+  capacityTheater?: number | null;
+  capacityClassroom?: number | null;
+  capacityBanquet?: number | null;
+  capacityStanding?: number | null;
+  capacityCocktail?: number | null;
+}
+
+// ✅ CORREÇÃO: Função auxiliar para calcular distância segura
+const calculateSafeDistance = (
+  lat1: number | null | undefined, 
+  lng1: number | null | undefined, 
+  lat2: number | null | undefined, 
+  lng2: number | null | undefined
+): number | null => {
+  if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) {
+    return null;
+  }
+  
+  try {
+    return calculateDistance(lat1, lng1, lat2, lng2);
+  } catch (error) {
+    console.error('Erro ao calcular distância:', error);
+    return null;
+  }
+};
+
+// ✅ CORREÇÃO: Função para converter dados da API para o tipo ExtendedEventSpace
+function convertToEventSpace(data: any): ExtendedEventSpace {
+  const baseSpace: EventSpace = {
     id: data.id || '',
     hotelId: data.hotelId || data.hotel_id || data.hotel?.id || '',
     hotel_id: data.hotelId || data.hotel_id || data.hotel?.id || '',
@@ -90,8 +130,8 @@ function convertToEventSpace(data: any): EventSpace {
     isActive: data.isActive !== false,
     isFeatured: data.isFeatured || false,
     slug: data.slug || data.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || '',
-    rating: data.rating || undefined,
-    totalReviews: data.totalReviews || data.total_reviews || undefined,
+    rating: Number(data.rating) || 0,
+    totalReviews: Number(data.totalReviews) || Number(data.total_reviews) || 0,
     locality: data.locality || null,
     province: data.province || null,
     lat: data.lat || null,
@@ -100,19 +140,33 @@ function convertToEventSpace(data: any): EventSpace {
     inherits_hotel_location: data.inherits_hotel_location || false,
     createdAt: data.createdAt || data.created_at || new Date().toISOString(),
     updatedAt: data.updatedAt || data.updated_at || new Date().toISOString(),
-    // Campos extras úteis no frontend
+  };
+
+  // ✅ CORREÇÃO CRÍTICA: Inicializar distance como null (não undefined)
+  // Extrair distance dos dados ou calcular
+  let distance: number | null = null;
+  
+  if (data.distance !== undefined && data.distance !== null) {
+    distance = typeof data.distance === 'number' ? data.distance : null;
+  }
+  
+  // Criar objeto estendido
+  const extendedSpace: ExtendedEventSpace = {
+    ...baseSpace,
+    distance, // ✅ SEMPRE definido: number ou null
     thumbnail: data.images?.[0] || '',
     location: data.hotel?.locality 
       ? `${data.hotel.locality}, ${data.hotel.province}`
       : undefined,
     hotel: data.hotel || null,
-    // Capacidades por setup
     capacityTheater: data.capacityTheater || data.capacity_theater || null,
     capacityClassroom: data.capacityClassroom || data.capacity_classroom || null,
     capacityBanquet: data.capacityBanquet || data.capacity_banquet || null,
     capacityStanding: data.capacityStanding || data.capacity_standing || null,
     capacityCocktail: data.capacityCocktail || data.capacity_cocktail || null,
   };
+
+  return extendedSpace;
 }
 
 export default function EventSpacesSearchPage() {
@@ -129,7 +183,7 @@ export default function EventSpacesSearchPage() {
   const [totalPages, setTotalPages] = useState(1);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Obter parâmetros da URL
+  // ✅ CORREÇÃO: Obter parâmetros da URL
   useEffect(() => {
     const params = new URLSearchParams(search);
     
@@ -146,6 +200,9 @@ export default function EventSpacesSearchPage() {
       sortBy: params.get('sortBy') || 'distance',
       page: parseInt(params.get('page') || '1'),
       radius: parseInt(params.get('radius') || '50'),
+      locationId: params.get('locationId') || undefined,
+      lat: parseFloat(params.get('lat') || '') || undefined,
+      lng: parseFloat(params.get('lng') || '') || undefined,
     };
     
     const amenitiesParam = params.get('amenities');
@@ -161,7 +218,7 @@ export default function EventSpacesSearchPage() {
     }
   }, [search]);
 
-  // Buscar sugestões de localização com debounce
+  // ✅ CORREÇÃO: Buscar sugestões com conversão de tipos
   const fetchSuggestions = useCallback(
     debounce(async (query: string) => {
       if (query.length < 2) {
@@ -172,7 +229,20 @@ export default function EventSpacesSearchPage() {
       setIsLoadingSuggestions(true);
       try {
         const suggestions = await locationsService.searchSuggestions(query, 5);
-        setLocationSuggestions(suggestions);
+        // Converter ServiceLocationSuggestion para LocationSuggestion
+        const convertedSuggestions: LocationSuggestion[] = suggestions.map(suggestion => ({
+          id: suggestion.id,
+          name: suggestion.name,
+          province: suggestion.province,
+          district: suggestion.district,
+          locality: suggestion.locality,
+          lat: suggestion.lat ?? null,
+          lng: suggestion.lng ?? null,
+          type: suggestion.type,
+          relevance_rank: suggestion.relevance_rank
+        }));
+        
+        setLocationSuggestions(convertedSuggestions);
       } catch (error) {
         console.error('Erro ao buscar sugestões:', error);
         toast({
@@ -209,11 +279,75 @@ export default function EventSpacesSearchPage() {
     };
   }, []);
 
-  // Buscar espaços para eventos
+  // Buscar espaços para eventos com BUSCA INTELIGENTE
   const { data: spacesResponse, isLoading, refetch, error } = useQuery({
     queryKey: ['eventSpacesSearch', searchParams],
     queryFn: async () => {
       try {
+        // ✅ BUSCA INTELIGENTE: Se temos locationId E coordenadas, buscar por PROXIMIDADE
+        if (searchParams.locationId && searchParams.lat && searchParams.lng) {
+          console.log('📍 [EventSpaces] Buscando espaços por proximidade:', {
+            lat: searchParams.lat,
+            lng: searchParams.lng,
+            radius: searchParams.radius || 50,
+            locality: searchParams.locality,
+            province: searchParams.province
+          });
+          
+          const response = await eventSpaceService.searchNearbyEventSpaces(
+            searchParams.lat,
+            searchParams.lng,
+            searchParams.radius || 50,
+            {
+              startDate: searchParams.startDate,
+              endDate: searchParams.endDate,
+              capacity: searchParams.capacity,
+              eventType: searchParams.eventType,
+              maxPricePerDay: searchParams.maxPricePerDay,
+              amenities: searchParams.amenities,
+            }
+          );
+          
+          // ✅ Calcular distâncias REAIS para espaços com coordenadas válidas
+          if (response.success && response.data) {
+            const spacesWithDistance = response.data.map((space: any) => {
+              const parsedSpace = convertToEventSpace(space);
+              
+              // Se já tem distance, manter; se não, calcular
+              if (parsedSpace.distance === null) {
+                const spaceLat = parseCoordinate(space.lat);
+                const spaceLng = parseCoordinate(space.lng);
+                
+                const calculatedDistance = calculateSafeDistance(
+                  searchParams.lat, 
+                  searchParams.lng, 
+                  spaceLat, 
+                  spaceLng
+                );
+                
+                return {
+                  ...parsedSpace,
+                  distance: calculatedDistance
+                };
+              }
+              
+              return parsedSpace;
+            });
+            
+            return {
+              ...response,
+              data: spacesWithDistance
+            };
+          }
+          return response;
+        }
+        
+        // ✅ FALLBACK: busca tradicional usando locality/province
+        console.log('📍 [EventSpaces] Buscando espaços por localização exata:', {
+          locality: searchParams.locality,
+          province: searchParams.province,
+        });
+        
         // Criar filtros para a API (sem os campos frontend-only)
         const filters: SearchParamsType = {
           locality: searchParams.locality,
@@ -234,6 +368,7 @@ export default function EventSpacesSearchPage() {
           const perPage = 9;
           setTotalPages(Math.ceil(spacesData.length / perPage));
         }
+        
         return response;
       } catch (error) {
         console.error('Erro na busca de espaços:', error);
@@ -245,12 +380,12 @@ export default function EventSpacesSearchPage() {
         throw error;
       }
     },
-    enabled: !!searchParams.locality,
+    enabled: !!searchParams.locality || !!searchParams.locationId,
     retry: 2,
   });
 
-  // Converter dados da API para o tipo EventSpace
-  const spaces: EventSpace[] = React.useMemo(() => {
+  // Converter dados da API para o tipo ExtendedEventSpace
+  const spaces: ExtendedEventSpace[] = React.useMemo(() => {
     if (!spacesResponse?.data) return [];
     
     const spacesData = Array.isArray(spacesResponse.data) ? spacesResponse.data : [];
@@ -259,19 +394,12 @@ export default function EventSpacesSearchPage() {
 
   const totalResults = spaces.length || 0;
 
-  // Calcular distância (mock)
-  const calculateDistance = useCallback((spaceLat: string | null | undefined, spaceLng: string | null | undefined): number => {
-    if (!spaceLat || !spaceLng) return 0;
-    
-    // Mock: retorna distância aleatória entre 0.5 e 30 km
-    return Math.random() * 30 + 0.5;
-  }, []);
-
-  // Ordenar espaços
+  // ✅ CORREÇÃO CRÍTICA: Ordenar espaços - distance agora é sempre number | null (não undefined)
   const sortedSpaces = useCallback(() => {
     const spacesCopy = [...spaces];
     
     const sortBy = searchParams.sortBy || 'distance';
+    
     switch (sortBy) {
       case 'price':
         return spacesCopy.sort((a, b) => 
@@ -288,25 +416,48 @@ export default function EventSpacesSearchPage() {
       case 'distance':
       default:
         return spacesCopy.sort((a, b) => {
-          const distA = calculateDistance(a.lat || null, a.lng || null);
-          const distB = calculateDistance(b.lat || null, b.lng || null);
+          // ✅ CORREÇÃO: distance é SEMPRE number | null, nunca undefined
+          const distA = a.distance;
+          const distB = b.distance;
+          
+          if (distA === null && distB === null) return 0;
+          if (distA === null) return 1; // Sem distância vai para o final
+          if (distB === null) return -1; // Com distância vem antes
+          
+          // ✅ AGORA distA e distB são numbers com certeza
           return distA - distB;
         });
     }
-  }, [spaces, searchParams.sortBy, calculateDistance]);
+  }, [spaces, searchParams.sortBy]);
 
-  // Manipuladores
+  // ✅ CORREÇÃO: Manipulador de seleção de localização
   const handleLocationSelect = (suggestion: LocationSuggestion) => {
-    const locationName = suggestion.district || suggestion.name;
-    setLocationQuery(locationName);
+    console.log('📍 [EventSpaces] Localização selecionada:', {
+      name: suggestion.name,
+      province: suggestion.province,
+      locality: suggestion.locality || suggestion.name,
+      lat: suggestion.lat,
+      lng: suggestion.lng,
+      hasCoords: !!(suggestion.lat && suggestion.lng)
+    });
+    
+    const displayName = suggestion.district || suggestion.name;
+    setLocationQuery(displayName);
+    
+    // ✅ SALVAR TODOS OS DADOS para busca inteligente
     setSearchParams(prev => ({
       ...prev,
-      locality: locationName,
-      province: suggestion.province
+      locationId: suggestion.id,
+      locality: suggestion.locality || suggestion.name,
+      province: suggestion.province || '',
+      lat: suggestion.lat ?? undefined,
+      lng: suggestion.lng ?? undefined
     }));
+    
     setLocationSuggestions([]);
   };
 
+  // ✅ CORREÇÃO: Handle search com todos os parâmetros
   const handleSearch = () => {
     const params = new URLSearchParams();
     if (searchParams.locality) params.set('locality', searchParams.locality);
@@ -319,6 +470,9 @@ export default function EventSpacesSearchPage() {
     if (searchParams.sortBy) params.set('sortBy', searchParams.sortBy);
     if (searchParams.page) params.set('page', searchParams.page.toString());
     if (searchParams.radius) params.set('radius', searchParams.radius.toString());
+    if (searchParams.locationId) params.set('locationId', searchParams.locationId);
+    if (searchParams.lat) params.set('lat', searchParams.lat.toString());
+    if (searchParams.lng) params.set('lng', searchParams.lng.toString());
     if (searchParams.amenities?.length) {
       params.set('amenities', searchParams.amenities.join(','));
     }
@@ -331,6 +485,9 @@ export default function EventSpacesSearchPage() {
     setSearchParams({
       locality: searchParams.locality,
       province: searchParams.province,
+      locationId: searchParams.locationId,
+      lat: searchParams.lat,
+      lng: searchParams.lng,
       startDate: new Date().toISOString().split('T')[0],
       capacity: 50,
       eventType: '',
@@ -472,6 +629,11 @@ export default function EventSpacesSearchPage() {
                             </div>
                             <div className="text-sm text-gray-500">
                               {suggestion.province || 'Moçambique'}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              {suggestion.lat !== null && suggestion.lng !== null 
+                                ? '✅ Tem coordenadas' 
+                                : 'ℹ️ Busca por nome'}
                             </div>
                           </div>
                         </button>
@@ -674,10 +836,19 @@ export default function EventSpacesSearchPage() {
                     {isLoading ? 'Buscando espaços...' : `Espaços encontrados (${totalResults})`}
                   </h2>
                   {searchParams.locality && (
-                    <p className="text-gray-600 mt-1">
-                      em {searchParams.locality}
-                      {searchParams.province && `, ${searchParams.province}`}
-                    </p>
+                    <div className="text-gray-600 mt-1">
+                      <p>em {searchParams.locality}</p>
+                      {searchParams.lat && searchParams.lng && (
+                        <p className="text-sm text-blue-600">
+                          ✅ Buscando por proximidade (raio: {searchParams.radius || 50}km)
+                        </p>
+                      )}
+                      {!searchParams.lat && !searchParams.lng && searchParams.locationId && (
+                        <p className="text-sm text-amber-600">
+                          ℹ️ Buscando por nome (sem coordenadas disponíveis)
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-4">
@@ -765,8 +936,9 @@ export default function EventSpacesSearchPage() {
                         <MapPin className="w-5 h-5 text-purple-600" />
                         <div>
                           <span className="font-medium text-purple-800">
-                            Buscando em: {searchParams.locality || 'Moçambique'}
-                            {searchParams.province && `, ${searchParams.province}`}
+                            {searchParams.lat && searchParams.lng 
+                              ? `Buscando por proximidade em raio de ${searchParams.radius || 50}km` 
+                              : `Buscando em: ${searchParams.locality || 'Moçambique'}`}
                           </span>
                           {searchParams.startDate && (
                             <div className="text-sm text-purple-700 mt-1">
@@ -790,6 +962,11 @@ export default function EventSpacesSearchPage() {
                             }
                           </Badge>
                         )}
+                        {searchParams.lat && searchParams.lng && (
+                          <Badge className="bg-green-100 text-green-800 border-green-300">
+                            ✅ Busca por proximidade
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     
@@ -808,6 +985,10 @@ export default function EventSpacesSearchPage() {
                           <div className="w-3 h-3 rounded-full bg-red-500"></div>
                           <span>Longe (30+ km)</span>
                         </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                          <span>Não disponível</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -815,17 +996,32 @@ export default function EventSpacesSearchPage() {
                   {/* Lista de espaços */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {paginatedSpaces.map((space) => {
-                      const distance = calculateDistance(space.lat || null, space.lng || null);
-                      const distanceColor = distance <= 10 ? 'bg-green-100 text-green-800 border-green-300' : 
-                                          distance <= 30 ? 'bg-yellow-100 text-yellow-800 border-yellow-300' : 
-                                          'bg-red-100 text-red-800 border-red-300';
+                      // ✅ CORREÇÃO: distance agora é SEMPRE number | null, nunca undefined
+                      const distance = space.distance;
+                      
+                      // ✅ CORREÇÃO: distance é number | null
+                      let distanceColor = 'bg-gray-100 text-gray-800 border-gray-300';
+                      let distanceText = 'Localização não disponível';
+                      
+                      if (distance !== null) {
+                        if (distance <= 10) {
+                          distanceColor = 'bg-green-100 text-green-800 border-green-300';
+                          distanceText = `${distance.toFixed(1)} km`;
+                        } else if (distance <= 30) {
+                          distanceColor = 'bg-yellow-100 text-yellow-800 border-yellow-300';
+                          distanceText = `${distance.toFixed(1)} km`;
+                        } else {
+                          distanceColor = 'bg-red-100 text-red-800 border-red-300';
+                          distanceText = `${distance.toFixed(1)} km`;
+                        }
+                      }
                       
                       return (
                         <div key={space.id} className="group relative animate-in fade-in slide-in-from-bottom-2 duration-300">
                           {/* Badge de distância */}
                           <div className="absolute top-3 right-3 z-10">
                             <Badge className={`${distanceColor}`}>
-                              {distance.toFixed(1)} km
+                              {distanceText}
                             </Badge>
                           </div>
 

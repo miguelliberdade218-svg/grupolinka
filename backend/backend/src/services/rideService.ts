@@ -176,8 +176,8 @@ class LocationNormalizerCorrigido {
 
       return normalizedValue;
 
-    } catch (error) {
-      console.error('❌ [NORMALIZADOR] Erro, usando fallback:', error);
+    } catch (error: any) {
+      console.error('❌ [NORMALIZADOR] Erro, usando fallback:', error.message || error);
       return locationName.split(',')[0].trim().toLowerCase();
     }
   }
@@ -299,8 +299,8 @@ export class RideService {
       
       return normalizedRides;
 
-    } catch (error) {
-      console.error("❌ Erro em getRidesUniversal:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em getRidesUniversal:", error.message || error);
       return [];
     }
   }
@@ -321,8 +321,8 @@ export class RideService {
         toLocation: normalizedTo,
         maxResults: 20
       });
-    } catch (error) {
-      console.error("❌ Erro em findRidesExact:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em findRidesExact:", error.message || error);
       return [];
     }
   }
@@ -351,8 +351,8 @@ export class RideService {
         maxResults: 50,
         radiusKm: 100
       });
-    } catch (error) {
-      console.error("❌ Erro em findSmartRides:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em findSmartRides:", error.message || error);
       
       const normalizedFrom = await LocationNormalizerCorrigido.normalizeLocation(passengerFrom);
       const normalizedTo = await LocationNormalizerCorrigido.normalizeLocation(passengerTo);
@@ -401,8 +401,8 @@ export class RideService {
         radiusKm: options?.radiusKm || 100,
         maxResults: options?.maxResults || 50
       });
-    } catch (error) {
-      console.error("❌ Erro em searchRidesHybrid:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em searchRidesHybrid:", error.message || error);
       
       const normalizedFrom = await LocationNormalizerCorrigido.normalizeLocation(fromLocation);
       const normalizedTo = await LocationNormalizerCorrigido.normalizeLocation(toLocation);
@@ -440,8 +440,8 @@ export class RideService {
         radiusKm: 100
       });
 
-    } catch (error) {
-      console.error("❌ Erro em getRides:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em getRides:", error.message || error);
       throw error;
     }
   }
@@ -464,8 +464,8 @@ export class RideService {
         radiusKm,
         maxResults: 50
       });
-    } catch (error) {
-      console.error('❌ Erro em getRidesBetweenCities:', error);
+    } catch (error: any) {
+      console.error('❌ Erro em getRidesBetweenCities:', error.message || error);
       return [];
     }
   }
@@ -491,8 +491,8 @@ export class RideService {
         radiusKm,
         maxResults: 50
       });
-    } catch (error) {
-      console.error("❌ Erro em findNearbyRides:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em findNearbyRides:", error.message || error);
       throw error;
     }
   }
@@ -564,7 +564,7 @@ export class RideService {
       const normalizedFrom = await LocationNormalizerCorrigido.normalizeLocation(fromCity);
       const normalizedTo = await LocationNormalizerCorrigido.normalizeLocation(toCity);
 
-      console.log('📍 [NORMALIZATION] Localizações normalizadas:', {
+      console.log('📍 [NORMALIZATION] Localizaçãoes normalizadas:', {
         original: { from: fromCity, to: toCity },
         normalized: { from: normalizedFrom, to: normalizedTo }
       });
@@ -592,8 +592,8 @@ export class RideService {
             )`
           );
         }
-      } catch (error) {
-        console.log('⚠️ [FUNCTION-FALLBACK] Função original falhou, usando busca direta');
+      } catch (error: any) {
+        console.log('⚠️ [FUNCTION-FALLBACK] Função original falhou, usando busca direta:', error.message || error);
         // Fallback para busca direta se a função não existir
         return await this.searchRidesDirectFallback(normalizedFrom, normalizedTo, radiusKm, maxResults);
       }
@@ -670,8 +670,8 @@ export class RideService {
       
       return normalizedRides;
 
-    } catch (error) {
-      console.error("❌ [SEARCH-ERROR] Erro na busca smart final:", error);
+    } catch (error: any) {
+      console.error("❌ [SEARCH-ERROR] Erro na busca smart final:", error.message || error);
       
       // ✅ FALLBACK ROBUSTO
       try {
@@ -680,8 +680,8 @@ export class RideService {
         
         console.log('🔄 [FALLBACK] Usando busca direta como fallback');
         return await this.searchRidesDirectFallback(normalizedFrom, normalizedTo, params.radiusKm || 100, params.maxResults || 50);
-      } catch (fallbackError) {
-        console.error("❌ [FALLBACK-ERROR] Fallback também falhou:", fallbackError);
+      } catch (fallbackError: any) {
+        console.error("❌ [FALLBACK-ERROR] Fallback também falhou:", fallbackError.message || fallbackError);
         return [];
       }
     }
@@ -767,8 +767,8 @@ export class RideService {
 
       return rows.map(normalizeDbRideToDto);
 
-    } catch (error) {
-      console.error("❌ Erro em searchRidesDirectFallback:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em searchRidesDirectFallback:", error.message || error);
       return [];
     }
   }
@@ -794,8 +794,8 @@ export class RideService {
         radiusKm,
         maxResults
       });
-    } catch (error) {
-      console.error("❌ Erro em searchRidesSmart:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em searchRidesSmart:", error.message || error);
       return await this.searchRidesDirectFallback(from, to, radiusKm, maxResults);
     }
   }
@@ -873,8 +873,8 @@ export class RideService {
 
       return normalizedRide;
 
-    } catch (error) {
-      console.error("❌ [RIDE-SERVICE] Erro em getRideById:", error);
+    } catch (error: any) {
+      console.error("❌ [RIDE-SERVICE] Erro em getRideById:", error.message || error);
       throw error;
     }
   }
@@ -941,8 +941,8 @@ export class RideService {
       
       return rows.map(ride => normalizeDbRideToDto(ride));
 
-    } catch (error) {
-      console.error("❌ Erro em getRidesByDriver:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em getRidesByDriver:", error.message || error);
       throw error;
     }
   }
@@ -954,36 +954,47 @@ export class RideService {
         maxResults: 100,
         radiusKm: 200
       });
-    } catch (error) {
-      console.error("❌ Erro em getAllAvailableRides:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em getAllAvailableRides:", error.message || error);
       throw error;
     }
   }
 
-  // ✅✅✅ MÉTODO createRide CORRIGIDO
+  // ✅✅✅ MÉTODO createRide CORRIGIDO - SOLUÇÃO 1 APLICADA
   async createRide(rideData: any): Promise<any> {
     try {
       console.log('🚗 [RIDE-SERVICE] Criando ride com dados:', {
-        id: rideData.id, // ✅ VERIFICAR SE O ID ESTÁ SENDO RECEBIDO
-        from: `${rideData.fromCity} → ${rideData.toCity}`,
-        driverId: rideData.driverId
+        id: rideData.id,
+        driverId: rideData.driverId, // ✅ ADICIONAR LOG EXPLÍCITO
+        hasDriverId: !!rideData.driverId,
+        from: `${rideData.fromCity} → ${rideData.toCity}`
       });
 
-      // ✅ CORREÇÃO CRÍTICA: Usar o ID fornecido ou gerar um novo
+      // ✅✅✅ CORREÇÃO CRÍTICA: driverId É OBRIGATÓRIO
+      if (!rideData.driverId) {
+        console.error('❌ [RIDE-SERVICE] ERRO CRÍTICO: driverId não fornecido!');
+        console.error('Dados recebidos:', {
+          keys: Object.keys(rideData),
+          driverId: rideData.driverId,
+          data: rideData
+        });
+        throw new Error('driverId é obrigatório para criar uma ride');
+      }
+
       const rideId = rideData.id || uuidv4();
       
       console.log('🎯 [RIDE-SERVICE] ID que será usado:', rideId);
 
-      const finalData = {
-        id: rideId, // ✅ GARANTIR que usa o ID correto
+      // ✅✅✅ CORREÇÃO CRÍTICA: Usar o schema do Drizzle diretamente
+      const insertData = {
+        id: rideId,
+        // ✅✅✅ driverId DEVE SER A PRIMEIRA PROPRIEDADE DEPOIS DO ID
         driverId: rideData.driverId,
         driverName: rideData.driverName || 'Motorista',
         fromAddress: rideData.fromAddress,
         toAddress: rideData.toAddress,
         fromProvince: rideData.fromProvince,
         toProvince: rideData.toProvince,
-        vehicle_uuid: rideData.vehicleId || rideData.vehicle_uuid,
-        vehicle_uuid: rideData.vehicleId || rideData.vehicle_uuid,
         fromCity: rideData.fromCity,
         toCity: rideData.toCity,
         fromDistrict: rideData.fromDistrict || '',
@@ -996,7 +1007,7 @@ export class RideService {
         departureTime: rideData.departureTime,
         availableSeats: rideData.availableSeats,
         maxPassengers: rideData.maxPassengers || rideData.availableSeats,
-        pricePerSeat: rideData.pricePerSeat.toString(),
+        pricePerSeat: rideData.pricePerSeat.toString(), // Converter para string
         vehicleType: rideData.vehicleType,
         additionalInfo: rideData.additionalInfo || null,
         status: rideData.status || 'available',
@@ -1008,19 +1019,31 @@ export class RideService {
         updatedAt: new Date()
       };
 
-      console.log('📦 [RIDE-SERVICE] Dados finais para inserção:', {
-        id: finalData.id,
-        fromTo: `${finalData.fromCity} → ${finalData.toCity}`,
-        driverName: finalData.driverName
+      // ✅ VERIFICAÇÃO FINAL ANTES DA INSERÇÃO
+      console.log('🔍 [RIDE-SERVICE] VERIFICAÇÃO FINAL - driverId presente?', {
+        hasDriverId: !!insertData.driverId,
+        driverId: insertData.driverId,
+        totalKeys: Object.keys(insertData).length,
+        first5Keys: Object.keys(insertData).slice(0, 5)
       });
 
-      // ✅ CORREÇÃO: Inserir com o ID explícito
-      const result = await db.insert(rides).values(finalData).returning();
+      // ✅ LOG EXTRA: mostrar exatamente o que será inserido
+      console.log('🔍 [RIDE-SERVICE] Dados antes da inserção:', JSON.stringify({
+        id: insertData.id,
+        driverId: insertData.driverId,
+        driverName: insertData.driverName,
+        fromTo: `${insertData.fromCity} → ${insertData.toCity}`
+      }, null, 2));
+
+      // ✅ INSERÇÃO COM LOG EXTRA
+      console.log('🚀 [RIDE-SERVICE] Executando INSERT com driverId:', insertData.driverId);
+      const result = await db.insert(rides).values(insertData).returning();
       
-      console.log('✅ [RIDE-SERVICE] Ride criada com sucesso:', {
-        idInserido: result[0].id,
-        idEsperado: rideId,
-        idsIguais: result[0].id === rideId
+      // ✅ VERIFICAÇÃO PÓS-INSERÇÃO
+      console.log('✅ [RIDE-SERVICE] Inserção concluída:', {
+        idRetornado: result[0]?.id,
+        driverIdRetornado: result[0]?.driverId,
+        success: !!result[0]?.id
       });
 
       // ✅ VERIFICAÇÃO DIRETA NO BANCO
@@ -1028,7 +1051,8 @@ export class RideService {
       console.log('🔍 [RIDE-SERVICE] Verificação direta no banco:', {
         idBuscado: rideId,
         encontrada: directCheck.length > 0,
-        idEncontrado: directCheck[0]?.id || 'NÃO ENCONTRADA'
+        idEncontrado: directCheck[0]?.id || 'NÃO ENCONTRADA',
+        driverIdEncontrado: directCheck[0]?.driverId || 'NÃO ENCONTRADO'
       });
 
       if (directCheck.length === 0) {
@@ -1052,7 +1076,6 @@ export class RideService {
           toCity: rideData.toCity,
           fromProvince: rideData.fromProvince,
           toProvince: rideData.toProvince,
-        vehicle_uuid: rideData.vehicleId || rideData.vehicle_uuid,
           departureDate: rideData.departureDate,
           departureTime: rideData.departureTime,
           availableSeats: rideData.availableSeats,
@@ -1064,10 +1087,14 @@ export class RideService {
         };
       }
 
+      console.log('✅ [RIDE-SERVICE] Ride criada com sucesso! DriverId:', fullRide.driverId);
       return fullRide;
 
-    } catch (error) {
-      console.error('❌ [RIDE-SERVICE] Erro ao criar ride:', error);
+    } catch (error: any) {
+      console.error('❌ [RIDE-SERVICE] ERRO NA INSERÇÃO:', {
+        error: error.message,
+        stack: error.stack
+      });
       throw error;
     }
   }
@@ -1124,8 +1151,8 @@ export class RideService {
       // ✅ CORREÇÃO: Buscar dados completos com informações do veículo
       return await this.getRideById(id);
 
-    } catch (error) {
-      console.error("❌ Erro em updateRide:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em updateRide:", error.message || error);
       throw error;
     }
   }
@@ -1139,8 +1166,8 @@ export class RideService {
       
       return !!deleted;
 
-    } catch (error) {
-      console.error("❌ Erro em deleteRide:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em deleteRide:", error.message || error);
       throw error;
     }
   }
@@ -1200,8 +1227,8 @@ export class RideService {
       }
       
       return rows.map(ride => normalizeDbRideToDto(ride));
-    } catch (error) {
-      console.error("❌ Erro em getRidesByIds:", error);
+    } catch (error: any) {
+      console.error("❌ Erro em getRidesByIds:", error.message || error);
       return [];
     }
   }
