@@ -1,3 +1,4 @@
+// src/apps/main-app/AppRouter.tsx - COMPLETO E CORRIGIDO
 import { Switch, Route } from 'wouter';
 import { queryClient } from '@/shared/lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -12,17 +13,22 @@ import Loyalty from './pages/loyalty';
 import Chat from './pages/chat';
 import Notifications from './pages/notifications';
 import Profile from './pages/profile';
-import RideSearchPage from './pages/Rides/search'; // ✅ IMPORT ADICIONADO
+import RideSearchPage from './pages/Rides/search';
 import ProtectedRoute from '@/shared/components/ProtectedRoute';
 import NotFound from './pages/not-found';
 
-// Import das NOVAS páginas de hotéis (corrigido para o caminho correto)
+// Import das páginas de hotéis
 import HotelsSearchPage from './pages/HotelsSearchPage';
-// Import das NOVAS páginas de event spaces (corrigido para o caminho correto)
-import EventSpacesSearchPage from './pages/EventSpacesSearchPage';
+import HotelDetailsPage from './pages/HotelDetailsPage';
+import HotelBookingPage from './pages/HotelBookingPage';
 
-// NOTA: HotelDetailPage e EventSpaceDetailPage podem ser mantidos se existirem
-// ou podem ser substituídos pelos modais que criamos
+// Import das páginas de event spaces
+import EventSpacesSearchPage from './pages/EventSpacesSearchPage';
+import EventSpaceDetailsPage from './pages/EventSpaceDetailsPage';
+import EventSpaceBookingPage from './pages/EventSpaceBookingPage';
+
+// Import da página de confirmação de reserva
+import BookingConfirmationPage from './pages/BookingConfirmationPage';
 
 function MainApp() {
   return (
@@ -32,72 +38,77 @@ function MainApp() {
           <Header />
           <main className="container mx-auto px-4 py-8 pb-20 md:pb-8">
             <Switch>
-              {/* ✅ ROTA CORRIGIDA - usando children em vez de component */}
+              {/* Rota de Rides */}
               <Route path="/rides/search">
                 <RideSearchPage />
               </Route>
-              
-              {/* ✅ ROTAS CORRIGIDAS - Apenas /search mantidas */}
+
+              {/* ========== ROTAS DE HOTÉIS ========== */}
               <Route path="/hotels/search">
                 <HotelsSearchPage />
               </Route>
               
+              <Route path="/hotels/:id">
+                {(params) => <HotelDetailsPage />}
+              </Route>
+              
+              <Route path="/hotels/:id/book">
+                {(params) => <HotelBookingPage />}
+              </Route>
+
+              {/* ========== ROTAS DE EVENT SPACES ========== */}
               <Route path="/event-spaces/search">
                 <EventSpacesSearchPage />
               </Route>
               
-              {/* ✅ REMOVIDAS rotas conflitantes */}
-              {/*
-              <Route path="/hotels">
-                <HotelsSearchPage />
-              </Route>
-              
-              <Route path="/event-spaces">
-                <EventSpacesSearchPage />
-              </Route>
-              */}
-              
-              {/* Rotas de detalhes (podem ser mantidas ou substituídas pelos modais) */}
-              {/* Se você quiser manter as páginas de detalhes separadas, descomente: */}
-              {/*
-              <Route path="/hotels/:id">
-                {(params) => <HotelDetailPage />}
-              </Route>
-              
               <Route path="/event-spaces/:id">
-                {(params) => <EventSpaceDetailPage />}
+                {(params) => <EventSpaceDetailsPage />}
               </Route>
-              */}
               
+              <Route path="/event-spaces/:id/book">
+                {(params) => <EventSpaceBookingPage />}
+              </Route>
+
+              {/* ========== ROTA DE CONFIRMAÇÃO DE RESERVA ========== */}
+              <Route path="/bookings/:type/:bookingId/confirmation">
+                {(params) => <BookingConfirmationPage />}
+              </Route>
+
+              {/* ========== ROTAS PRINCIPAIS DO APP ========== */}
               <Route path="/" component={Home} />
               <Route path="/eventos" component={Events} />
               
-              {/* Rotas URL antigas removidas - agora usamos modais */}
               <Route path="/reservas">
                 <ProtectedRoute>
                   <Bookings />
                 </ProtectedRoute>
               </Route>
+              
               <Route path="/fidelidade">
                 <ProtectedRoute>
                   <Loyalty />
                 </ProtectedRoute>
               </Route>
+              
               <Route path="/chat">
                 <ProtectedRoute>
                   <Chat />
                 </ProtectedRoute>
               </Route>
+              
               <Route path="/notificacoes">
                 <ProtectedRoute>
                   <Notifications />
                 </ProtectedRoute>
               </Route>
+              
               <Route path="/perfil">
                 <ProtectedRoute>
                   <Profile />
                 </ProtectedRoute>
               </Route>
+
+              {/* Rota 404 */}
               <Route component={NotFound} />
             </Switch>
           </main>

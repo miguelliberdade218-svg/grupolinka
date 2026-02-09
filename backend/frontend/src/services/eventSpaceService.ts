@@ -1,10 +1,10 @@
 // src/services/eventSpaceService.ts
 // VERSÃO CORRIGIDA - COM SUPORTE A BUSCA POR PROXIMIDADE
-// ✅ ADICIONADO: Função searchNearbyEventSpaces para busca por coordenadas
-// ✅ ADICIONADO: Suporte para location_id, lat, lng, inherits_hotel_location
-// ✅ ATUALIZADO: Funções auxiliares preparam dados de localização corretamente
-// ✅ CORREÇÃO APLICADA: Filtrar parâmetros undefined na busca
-// ✅ CORREÇÃO APLICADA: Tipagem do parâmetro 'item' na função searchNearbyEventSpaces
+// ✅ CORREÇÃO: Resolvido erro de tipo EventSpaceDetails vs EventSpaceDetailsResponse
+// ✅ CORREÇÃO: Funções getEventSpaceDetails e createEventBooking adicionadas
+// ✅ ADIÇÃO: Método getBookingById adicionado para consistência
+// ✅ CORREÇÃO: Retorno de tipos corrigidos para consistência com ApiResponse
+// ✅ CORREÇÃO: Estrutura de retorno consistente - getEventSpaceDetails retorna ServiceResponse<EventSpaceDetailsResponse>
 
 import { apiService } from './api';
 import type {
@@ -17,11 +17,13 @@ import type {
   EventDashboardSummary,
   CreateEventSpaceRequest,
   UpdateEventSpaceRequest,
-  EventSpaceDetails,
+  EventSpaceDetailsResponse, // ✅ ALTERADO: usar o tipo correto
+  EventSpaceData, // ✅ ADICIONADO
   PaymentStatusType,
   BookingPayment,
   PaymentDetailsResponse,
   ManualPaymentRequest,
+  NearbyEventSpaceParams,
 } from '@/shared/types/event-spaces';
 
 interface ApiResponse<T = any> {
@@ -219,6 +221,35 @@ const extractEventSpace = (data: any): EventSpace | null => {
 };
 
 /**
+ * ✅ NOVA FUNÇÃO: Extrai EventSpaceData dos detalhes (com amenities)
+ */
+const extractEventSpaceData = (data: any): EventSpaceData | null => {
+  if (!data) return null;
+  
+  // Se data já é um EventSpaceData (com amenities)
+  if (data.id && data.name) {
+    const spaceData = data as any;
+    // Garantir que amenities existam
+    if (!Array.isArray(spaceData.amenities)) {
+      spaceData.amenities = spaceData.amenities || [];
+    }
+    return spaceData as EventSpaceData;
+  }
+  
+  // Se data é um EventSpaceDetailsResponse
+  if (data.space && typeof data.space === 'object' && data.space.id) {
+    const spaceData = data.space as any;
+    // Garantir que amenities existam
+    if (!Array.isArray(spaceData.amenities)) {
+      spaceData.amenities = data.amenities || spaceData.amenities || [];
+    }
+    return spaceData as EventSpaceData;
+  }
+  
+  return null;
+};
+
+/**
  * Normaliza EventBooking para formato do frontend
  * ✅ ATUALIZADO: Garante balanceDue correto
  */
@@ -381,7 +412,163 @@ async function searchNearbyEventSpaces(
   }
 }
 
+// src/shared/services/eventSpaceService.ts - FUNÇÕES ADICIONADAS E CORRIGIDAS
+/**
+ * ✅ CORREÇÃO: Obter detalhes do espaço de eventos
+ * Retorna EventSpaceDetailsResponse que inclui EventSpaceData com amenities
+ */
+const getEventSpaceDetails = async (spaceId: string): Promise<ServiceResponse<EventSpaceDetailsResponse>> => {
+  try {
+    const response = await apiService.get<ApiResponse<EventSpaceDetailsResponse>>(`/api/events/spaces/${spaceId}`);
+    
+    if (!response.success) {
+      return { success: false, error: response.error || 'Erro ao buscar detalhes do espaço' };
+    }
+    
+    return { 
+      success: true, 
+      data: response.data 
+    };
+  } catch (err: any) {
+    console.error('[getEventSpaceDetails]', err);
+    return { 
+      success: false, 
+      error: err.message || 'Falha ao buscar detalhes do espaço' 
+    };
+  }
+};
+
+/**
+ * ✅ CORREÇÃO: Criar reserva de evento
+ */
+const createEventBooking = async (spaceId: string, bookingData: any): Promise<ServiceResponse<EventBooking>> => {
+  try {
+    const response = await apiService.post<ApiResponse<EventBooking>>(`/api/events/spaces/${spaceId}/bookings`, bookingData);
+    
+    if (!response.success) {
+      return { success: false, error: response.error || 'Erro ao criar reserva' };
+    }
+    
+    return { 
+      success: true, 
+      data: response.data 
+    };
+  } catch (err: any) {
+    console.error('[createEventBooking]', err);
+    return { 
+      success: false, 
+      error: err.message || 'Falha ao criar reserva' 
+    };
+  }
+};
+
 class EventSpaceService {
+  /**
+   * ✅ CORREÇÃO: Obter detalhes do espaço de eventos com estrutura consistente
+   * Retorna ServiceResponse<EventSpaceDetailsResponse> onde data contém:
+   * - space: EventSpaceData (com amenities)
+   * - hotel: detalhes do hotel
+   * - amenities: lista de amenities (também disponíveis em space.amenities)
+   * - reviews: reviews do espaço
+   * 
+   * USO CORRETO NAS PÁGINAS:
+   * const { data: spaceDetailsResponse } = useQuery({...});
+   * const spaceDetails = spaceDetailsResponse?.data; // EventSpaceDetailsResponse
+   * const space = spaceDetails?.space; // EventSpaceData
+   * const hotel = spaceDetails?.hotel;
+   */
+  async getEventSpaceDetails(spaceId: string): Promise<ServiceResponse<EventSpaceDetailsResponse>> {
+    try {
+      const response = await apiService.get<ApiResponse<EventSpaceDetailsResponse>>(`/api/events/spaces/${spaceId}`);
+      
+      if (!response.success) {
+        return { success: false, error: response.error || 'Erro ao buscar detalhes do espaço' };
+      }
+      
+      return { 
+        success: true, 
+        data: response.data 
+      };
+    } catch (err: any) {
+      console.error('[getEventSpaceDetails]', err);
+      return { 
+        success: false, 
+        error: err.message || 'Falha ao buscar detalhes do espaço' 
+      };
+    }
+  }
+
+  /**
+   * ✅ FUNÇÃO AUXILIAR: Obter apenas os dados do espaço (EventSpaceData) dos detalhes
+   * Útil quando você só precisa do objeto space com amenities
+   * USO: const { data: spaceDataResponse } = useQuery({...});
+   * const space = spaceDataResponse?.data; // EventSpaceData (com amenities)
+   */
+  async getEventSpaceData(spaceId: string): Promise<ServiceResponse<EventSpaceData>> {
+    try {
+      const response = await this.getEventSpaceDetails(spaceId);
+      
+      if (!response.success || !response.data) {
+        return { 
+          success: false, 
+          error: response.error || 'Erro ao buscar dados do espaço' 
+        };
+      }
+      
+      const spaceData = extractEventSpaceData(response.data);
+      if (!spaceData) {
+        return { 
+          success: false, 
+          error: 'Dados do espaço não retornados corretamente' 
+        };
+      }
+      
+      return { 
+        success: true, 
+        data: spaceData 
+      };
+    } catch (err: any) {
+      console.error('[getEventSpaceData]', err);
+      return { 
+        success: false, 
+        error: err.message || 'Erro ao buscar dados do espaço' 
+      };
+    }
+  }
+
+  /**
+   * Criar reserva de evento
+   * ✅ ADICIONADO: Nova função para criar reserva em espaço específico
+   * Retorna ServiceResponse<EventBooking> onde data contém o booking criado
+   */
+  async createEventBooking(spaceId: string, bookingData: any): Promise<ServiceResponse<EventBooking>> {
+    try {
+      const response = await apiService.post<ApiResponse<EventBooking>>(
+        `/api/events/spaces/${spaceId}/bookings`, 
+        bookingData
+      );
+      
+      if (!response.success) {
+        return { 
+          success: false, 
+          error: response.error || 'Erro ao criar reserva' 
+        };
+      }
+      
+      return { 
+        success: true, 
+        data: normalizeEventBooking(response.data), 
+        message: 'Reserva criada com sucesso' 
+      };
+    } catch (err: any) {
+      console.error('[createEventBooking]', err);
+      return { 
+        success: false, 
+        error: err.message || 'Erro ao criar reserva' 
+      };
+    }
+  }
+
   /**
    * Criar novo espaço de eventos
    * ✅ ATUALIZADO: Inclui preparação de dados de localização
@@ -413,7 +600,7 @@ class EventSpaceService {
         inherits_hotel_location: backendData.inherits_hotel_location
       });
       
-      const res = await apiService.post<any>('/api/events/spaces', backendData);
+      const res = await apiService.post<ApiResponse<EventSpace>>('/api/events/spaces', backendData);
       
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao criar espaço' };
@@ -499,7 +686,7 @@ class EventSpaceService {
         inherits_hotel_location: backendData.inherits_hotel_location
       });
       
-      const res = await apiService.put<any>(`/api/events/spaces/${spaceId}`, backendData);
+      const res = await apiService.put<ApiResponse<EventSpace>>(`/api/events/spaces/${spaceId}`, backendData);
       
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao atualizar espaço' };
@@ -531,7 +718,8 @@ class EventSpaceService {
   }
 
   /**
-   * Obter espaço por ID
+   * Obter espaço por ID (alternativa ao getEventSpaceDetails)
+   * Retorna apenas o EventSpace básico
    */
   async getEventSpaceById(spaceId: string): Promise<ServiceResponse<EventSpace>> {
     try {
@@ -672,7 +860,7 @@ class EventSpaceService {
    */
   async deleteEventSpace(spaceId: string): Promise<ServiceResponse<{ message: string }>> {
     try {
-      const res = await apiService.delete<any>(`/api/events/spaces/${spaceId}`);
+      const res = await apiService.delete<ApiResponse<{ message: string }>>(`/api/events/spaces/${spaceId}`);
       
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao deletar espaço' };
@@ -693,7 +881,7 @@ class EventSpaceService {
   }
 
   /**
-   * Criar reserva
+   * Criar reserva (método genérico)
    * ✅ CORREÇÃO: Preparar dados para garantir compatibilidade
    */
   async createBooking(bookingData: EventBookingRequest): Promise<ServiceResponse<EventBooking>> {
@@ -740,6 +928,35 @@ class EventSpaceService {
     } catch (err: any) {
       console.error('[getBookingDetails]', err);
       return { success: false, error: err.message || 'Erro ao buscar detalhes da reserva' };
+    }
+  }
+
+  /**
+   * ✅ NOVO: Buscar reserva por ID (nome consistente com hotelService)
+   * Retorna ServiceResponse<EventBooking> onde data contém o booking
+   */
+  async getBookingById(bookingId: string): Promise<ServiceResponse<EventBooking>> {
+    try {
+      // Usa a rota: GET /api/events/bookings/:bookingId
+      const response = await apiService.get<ApiResponse<EventBooking>>(`/api/events/bookings/${bookingId}`);
+      
+      if (!response.success) {
+        return { 
+          success: false, 
+          error: response.error || 'Reserva não encontrada' 
+        };
+      }
+      
+      return { 
+        success: true, 
+        data: normalizeEventBooking(response.data) 
+      };
+    } catch (err: any) {
+      console.error('[getBookingById]', err);
+      return { 
+        success: false, 
+        error: err.message || 'Erro ao buscar reserva' 
+      };
     }
   }
 
@@ -1045,7 +1262,7 @@ class EventSpaceService {
     reason: string
   ): Promise<ServiceResponse<EventBooking>> {
     try {
-      const res = await apiService.post<any>(`/api/events/bookings/${bookingId}/reject`, { reason });
+      const res = await apiService.post<ApiResponse<EventBooking>>(`/api/events/bookings/${bookingId}/reject`, { reason });
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao rejeitar reserva' };
       }
@@ -1069,7 +1286,7 @@ class EventSpaceService {
     notes?: string
   ): Promise<ServiceResponse<EventBooking>> {
     try {
-      const res = await apiService.put<any>(`/api/events/bookings/${bookingId}/status`, { 
+      const res = await apiService.put<ApiResponse<EventBooking>>(`/api/events/bookings/${bookingId}/status`, { 
         status,
         notes 
       });
@@ -1108,7 +1325,7 @@ class EventSpaceService {
         payment_type: payload.paymentType || 'manual_event_payment',
       };
 
-      const res = await apiService.post<any>(`/api/events/bookings/${bookingId}/payments`, backendPayload);
+      const res = await apiService.post<ApiResponse<any>>(`/api/events/bookings/${bookingId}/payments`, backendPayload);
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao registrar pagamento' };
       }
@@ -1131,7 +1348,7 @@ class EventSpaceService {
     reference?: string
   ): Promise<ServiceResponse<EventBooking>> {
     try {
-      const res = await apiService.put<any>(`/api/events/bookings/${bookingId}/payment-status`, { 
+      const res = await apiService.put<ApiResponse<EventBooking>>(`/api/events/bookings/${bookingId}/payment-status`, { 
         paymentStatus,
         reference 
       });
@@ -1223,7 +1440,7 @@ class EventSpaceService {
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
       
-      const res = await apiService.get<any>(`/api/events/hotels/${hotelId}/financial-summary`, { params });
+      const res = await apiService.get<ApiResponse<any>>(`/api/events/hotels/${hotelId}/financial-summary`, { params });
       if (!res.success) {
         return { success: false, error: res.error || 'Erro ao buscar resumo financeiro' };
       }

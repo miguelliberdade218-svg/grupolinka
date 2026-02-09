@@ -2,12 +2,36 @@
  * src/shared/types/hotels.ts
  * Tipos TypeScript para módulo de Hotéis
  * Compatível 100% com backend hotelController.ts
- * Versão: 19/01/2026 - Corrigido e completo com export interface Hotel
+ * Versão: 07/02/2026 - Status de booking corrigidos
  * NOTA: Usando snake_case para compatibilidade total com backend
  */
 
 import type { HotelBooking, CreateHotelBookingRequest } from './bookings';
 import type { HotelPayment, HotelInvoice, RequiredDeposit } from './payments';
+
+// ==================== TIPOS DE STATUS CORRIGIDOS ====================
+
+/**
+ * ✅ CORREÇÃO: Status válidos para bookings de hotel (conforme banco de dados)
+ * IMPORTANTE: 'rejected' não existe para hotéis, usa 'cancelled' com motivo
+ */
+export type HotelBookingStatus = 
+  | 'pending_confirmation'  // ✅ NOVO: Estado padrão após criação
+  | 'confirmed'             // ✅ Reserva confirmada pelo gestor
+  | 'checked_in'            // ✅ Check-in realizado
+  | 'checked_out'           // ✅ Check-out realizado
+  | 'cancelled'             // ✅ Cancelada (pode ser por rejeição)
+  | 'no_show';              // ✅ No-show (não compareceu)
+
+/**
+ * ✅ CORREÇÃO: Status de pagamento para hotéis
+ */
+export type HotelPaymentStatus = 
+  | 'pending'               // Aguardando pagamento
+  | 'partial'               // Pagamento parcial
+  | 'paid'                  // Pagamento completo
+  | 'refunded'              // Reembolsado
+  | 'failed';               // Falhou
 
 // ==================== HOTEL ====================
 export interface Hotel {
@@ -16,29 +40,28 @@ export interface Hotel {
   slug: string;
   description?: string | null;
   address: string;
-  locality: string; // OBRIGATÓRIO - Localidade/Cidade
+  locality: string;
   province: string;
   country?: string;
   
-  // ✅ NOVO: Campos de localização real
-  location_id?: string | null;  // ID da localização no banco
-  lat?: string | null;         // Latitude (string)
-  lng?: string | null;         // Longitude (string)
+  location_id?: string | null;
+  lat?: string | null;
+  lng?: string | null;
   
   contact_email: string;
   contact_phone?: string | null;
   policies?: string | null;
-  images: string[]; // URLs de imagens
-  amenities: string[]; // Facilidades (WiFi, Piscina, etc)
-  check_in_time?: string | null; // HH:mm (ex: "14:00")
-  check_out_time?: string | null; // HH:mm (ex: "11:00")
-  rating: number; // 0-5
+  images: string[];
+  amenities: string[];
+  check_in_time?: string | null;
+  check_out_time?: string | null;
+  rating: number;
   total_reviews: number;
   is_active: boolean;
   is_featured?: boolean;
-  host_id: string; // ID do proprietário
-  created_at: string; // ISO datetime
-  updated_at: string; // ISO datetime
+  host_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreateHotelRequest {
@@ -46,14 +69,13 @@ export interface CreateHotelRequest {
   slug?: string;
   description?: string;
   address: string;
-  locality: string; // OBRIGATÓRIO
+  locality: string;
   province: string;
   country?: string;
   
-  // ✅ NOVO: Campos de localização
-  location_id?: string;        // ID opcional
-  lat?: string | number;      // Opcional
-  lng?: string | number;      // Opcional
+  location_id?: string;
+  lat?: string | number;
+  lng?: string | number;
   
   contact_email: string;
   contact_phone?: string;
@@ -73,10 +95,9 @@ export interface UpdateHotelRequest {
   province?: string;
   country?: string;
   
-  // ✅ NOVO: Campos de localização
-  location_id?: string;        // ID opcional
-  lat?: string | number;      // Opcional
-  lng?: string | number;      // Opcional
+  location_id?: string;
+  lat?: string | number;
+  lng?: string | number;
   
   contact_email?: string;
   contact_phone?: string;
@@ -91,17 +112,17 @@ export interface UpdateHotelRequest {
 export interface RoomType {
   id: string;
   hotel_id: string;
-  name: string; // (ex: "Duplo Deluxe", "Suite")
+  name: string;
   description?: string | null;
-  capacity: number; // Número máximo de pessoas
-  base_price: string; // Decimal como string (ex: "100.00")
-  total_units: number; // Número total de quartos deste tipo
-  base_occupancy: number; // Ocupação padrão (ex: 2)
-  min_nights?: number | null; // Noites mínimas
-  extra_adult_price?: string | null; // Preço por adulto extra
-  extra_child_price?: string | null; // Preço por criança extra
-  amenities: string[]; // Amenidades do quarto
-  images: string[]; // URLs das imagens
+  capacity: number;
+  base_price: string;
+  total_units: number;
+  base_occupancy: number;
+  min_nights?: number | null;
+  extra_adult_price?: string | null;
+  extra_child_price?: string | null;
+  amenities: string[];
+  images: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -139,12 +160,12 @@ export interface UpdateRoomTypeRequest {
 
 // ==================== SEARCH ====================
 export interface HotelSearchParams {
-  query?: string; // Busca por nome do hotel
-  locality?: string; // Localidade/Cidade
-  province?: string; // Província
-  check_in?: string; // YYYY-MM-DD
-  check_out?: string; // YYYY-MM-DD
-  guests?: number; // Número de hóspedes
+  query?: string;
+  locality?: string;
+  province?: string;
+  check_in?: string;
+  check_out?: string;
+  guests?: number;
   is_active?: boolean;
 }
 
@@ -160,13 +181,13 @@ export interface HotelSearchResult {
 export interface Promotion {
   id: string;
   hotel_id: string;
-  promo_code: string; // (ex: "WELCOME10")
+  promo_code: string;
   name: string;
   description?: string | null;
-  discount_percent?: number | null; // (ex: 10 = 10%)
-  discount_amount?: number | null; // Valor fixo
-  start_date: string; // YYYY-MM-DD
-  end_date: string; // YYYY-MM-DD
+  discount_percent?: number | null;
+  discount_amount?: number | null;
+  start_date: string;
+  end_date: string;
   max_uses?: number | null;
   current_uses: number;
   is_active: boolean;
@@ -200,20 +221,20 @@ export interface UpdatePromotionRequest {
 
 // ==================== AVAILABILITY ====================
 export interface RoomAvailability {
-  date: string; // YYYY-MM-DD
+  date: string;
   room_type_id: string;
   is_available: boolean;
-  available_units: number; // Unidades disponíveis
-  total_units: number; // Total de unidades
+  available_units: number;
+  total_units: number;
   price?: string;
   min_booking_nights?: number;
 }
 
 export interface CheckAvailabilityRequest {
   room_type_id: string;
-  check_in: string; // YYYY-MM-DD
-  check_out: string; // YYYY-MM-DD
-  units?: number; // Quantos quartos
+  check_in: string;
+  check_out: string;
+  units?: number;
 }
 
 export interface CheckAvailabilityResponse {
@@ -231,21 +252,6 @@ export interface AvailabilityUpdate {
 }
 
 // ==================== PRICING ====================
-/**
- * Cálculo de preço para uma reserva
- * Exemplo:
- * - Check-in: 20/01/2026
- * - Check-out: 23/01/2026 (3 noites)
- * - Quarto: Duplo Deluxe (100 MZN/noite)
- * - Ocupação: 2 adultos, 1 criança
- * - Promo: WELCOME10 (10% desconto)
- * 
- * Cálculo:
- * - Noites: 3
- * - Subtotal: 100 × 3 = 300 MZN
- * - Desconto: 300 × 0.10 = 30 MZN
- * - Total: 300 - 30 = 270 MZN
- */
 export interface PricingCalculation {
   room_type_id: string;
   check_in: string;
@@ -271,8 +277,8 @@ export interface PricingCalculation {
 
 export interface CalculatePriceRequest {
   room_type_id: string;
-  check_in: string; // YYYY-MM-DD
-  check_out: string; // YYYY-MM-DD
+  check_in: string;
+  check_out: string;
   adults: number;
   children?: number;
   units?: number;
@@ -289,21 +295,21 @@ export interface HotelReview {
   title: string;
   comment: string;
   ratings: {
-    cleanliness: number; // 1-5
+    cleanliness: number;
     comfort: number;
     location: number;
     facilities: number;
     staff: number;
     value: number;
   };
-  average_rating: number; // Média das 6 categorias
-  pros?: string; // O que gostou
-  cons?: string; // O que não gostou
+  average_rating: number;
+  pros?: string;
+  cons?: string;
   helpful_count: number;
   unhelpful_count: number;
-  manager_response?: string; // Resposta do hotel
+  manager_response?: string;
   manager_response_date?: string;
-  verified: boolean; // Se a estadia foi verificada
+  verified: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -335,22 +341,73 @@ export interface ReviewStats {
     staff: number;
     value: number;
   };
-  rating_distribution: Record<number, number>; // {5: 45, 4: 30, 3: 15, 2: 5, 1: 5}
+  rating_distribution: Record<number, number>;
   with_responses: number;
 }
 
-// ==================== BOOKINGS (Integração) ====================
-export interface HotelBookingData extends HotelBooking {
+// ==================== BOOKINGS ====================
+
+/**
+ * ✅ CORREÇÃO: Interface para booking de hotel
+ * Usa os status corrigidos conforme banco de dados
+ */
+export interface HotelBookingData {
+  id: string;
+  hotel_id: string;
+  room_type_id: string;
+  guest_name: string;
+  guest_email: string;
+  guest_phone?: string | null;
+  check_in: string;
+  check_out: string;
+  adults: number;
+  children: number;
+  units: number;
+  nights?: number;
+  total_price: string;
+  base_price: string;
+  taxes?: string;
+  special_requests?: string | null;
+  
+  // ✅ CORREÇÃO: Status válidos para hotéis
+  status: HotelBookingStatus;
+  payment_status: HotelPaymentStatus;
+  
+  promo_code?: string | null;
+  user_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  
+  // Relacionamentos (opcionais)
   room_type?: RoomType;
   hotel?: Hotel;
   payment?: HotelPayment;
   invoice?: HotelInvoice;
 }
 
-// ==================== DASHBOARD ====================
 /**
- * Resumo para host/proprietário com múltiplos hotéis
+ * ✅ CORREÇÃO: Interface para request de criação de booking
  */
+export interface CreateHotelBookingRequestData {
+  room_type_id: string;
+  guest_name: string;
+  guest_email: string;
+  guest_phone?: string;
+  check_in: string;
+  check_out: string;
+  adults: number;
+  children?: number;
+  units?: number;
+  special_requests?: string;
+  promo_code?: string;
+  user_id?: string;
+  
+  // ✅ Status será definido como 'pending_confirmation' no service
+  status?: HotelBookingStatus;
+  payment_status?: HotelPaymentStatus;
+}
+
+// ==================== DASHBOARD ====================
 export interface HostDashboardSummary {
   total_hotels: number;
   total_bookings: number;
@@ -359,19 +416,16 @@ export interface HostDashboardSummary {
   avg_rating: number;
   total_guests: number;
   pending_payments: number;
-  recent_bookings: HotelBooking[];
+  recent_bookings: HotelBookingData[];
 }
 
-/**
- * Dashboard de um hotel específico
- */
 export interface HotelDashboardStats {
   hotel: Hotel;
-  occupancy_rate: number; // % (ex: 75.5)
-  monthly_revenue: string; // Decimal
+  occupancy_rate: number;
+  monthly_revenue: string;
   total_bookings_month: number;
-  average_nightly_rate: string; // Preço médio/noite
-  upcoming_check_ins: number; // Check-ins próximos 7 dias
+  average_nightly_rate: string;
+  upcoming_check_ins: number;
   pending_payments: number;
   total_reviews: number;
   average_rating: number;
@@ -395,7 +449,7 @@ export interface BookingReport {
     cancelled_bookings: number;
     paid_bookings: number;
   };
-  bookings: HotelBooking[];
+  bookings: HotelBookingData[];
 }
 
 // ==================== RESPOSTAS API ====================
@@ -420,7 +474,7 @@ export interface RoomTypesListResponse {
 
 // ==================== PAGAMENTO ====================
 export interface HotelPaymentData {
-  booking: HotelBooking;
+  booking: HotelBookingData;
   invoice: HotelInvoice;
   payments: HotelPayment[];
   required_deposit: RequiredDeposit;
@@ -431,69 +485,95 @@ export interface HotelPaymentData {
   };
 }
 
-// ==================== LAZY LOADING / CALENDÁRIO ====================
+// ==================== FUNÇÕES HELPER ====================
 
 /**
- * Opções para chamadas de calendário com suporte a lazy loading
- * Usado em hotelService.getAvailabilityCalendar e similares
+ * ✅ CORREÇÃO: Normaliza status de booking para hotéis
+ * Converte status antigos/incompatíveis para os status válidos
  */
-export interface CalendarOptions {
-  /**
-   * Tamanho sugerido do chunk em dias (ex: 90 para 3 meses)
-   * O backend pode ignorar ou usar como orientação
-   */
-  chunkSize?: number;
+export function normalizeHotelBookingStatus(frontendStatus: string | undefined): HotelBookingStatus {
+  if (!frontendStatus) return 'pending_confirmation';
+  
+  const statusMap: Record<string, HotelBookingStatus> = {
+    'pending': 'pending_confirmation',
+    'pending_confirmation': 'pending_confirmation',
+    'confirmed': 'confirmed',
+    'checked_in': 'checked_in',
+    'checked_out': 'checked_out',
+    'cancelled': 'cancelled',
+    'no_show': 'no_show',
+    
+    // Mapear status que não existem para hotéis
+    'rejected': 'cancelled',               // ❌ 'rejected' não existe → 'cancelled'
+    'pending_approval': 'pending_confirmation', // Para compatibilidade
+    'in_progress': 'checked_in',           // Para compatibilidade
+    'completed': 'checked_out',            // Para compatibilidade
+  };
+  
+  return statusMap[frontendStatus.toLowerCase()] || 'pending_confirmation';
+}
 
-  /**
-   * Forçar recarregamento ignorando qualquer cache no backend
-   * Útil no botão "Recarregar" do painel do gestor
-   */
+/**
+ * ✅ CORREÇÃO: Obtém display em português para status de hotel
+ */
+export function getHotelBookingStatusDisplay(status: HotelBookingStatus): string {
+  const displayMap: Record<HotelBookingStatus, string> = {
+    'pending_confirmation': 'Aguardando confirmação',
+    'confirmed': 'Confirmado',
+    'checked_in': 'Check-in realizado',
+    'checked_out': 'Check-out realizado',
+    'cancelled': 'Cancelado',
+    'no_show': 'No-show',
+  };
+  
+  return displayMap[status] || status.replace('_', ' ');
+}
+
+/**
+ * ✅ CORREÇÃO: Obtém display em português para status de pagamento
+ */
+export function getHotelPaymentStatusDisplay(status: HotelPaymentStatus): string {
+  const displayMap: Record<HotelPaymentStatus, string> = {
+    'pending': 'Pendente',
+    'partial': 'Parcial',
+    'paid': 'Pago',
+    'refunded': 'Reembolsado',
+    'failed': 'Falhou',
+  };
+  
+  return displayMap[status] || status;
+}
+
+// ==================== LAZY LOADING / CALENDÁRIO ====================
+export interface CalendarOptions {
+  chunkSize?: number;
   forceReload?: boolean;
 }
 
-/**
- * Período carregado no estado do calendário lazy loading
- * Usado em RoomTypesManagement.tsx para rastrear chunks já buscados
- */
 export interface LoadedPeriod {
-  start: string; // 'YYYY-MM-DD'
-  end: string;   // 'YYYY-MM-DD'
+  start: string;
+  end: string;
 }
 
-/**
- * Chunk completo de dados do calendário (disponibilidade + reservas filtradas)
- * Pode ser usado para cache ou hooks futuros
- */
 export interface CalendarChunk {
   hotelId: string;
   roomTypeId: string;
   startDate: string;
   endDate: string;
-  availability: any[];    // Array de dias (como retornado pela API)
-  bookings: HotelBooking[];    // Reservas que se sobrepõem ao chunk
-  events: any[];          // Eventos formatados para react-big-calendar
-  loadedAt: string;       // ISO timestamp de quando foi carregado
+  availability: any[];
+  bookings: HotelBookingData[];
+  events: any[];
+  loadedAt: string;
 }
 
-/**
- * Opções gerais de configuração do lazy loading (pode ser usado em hooks)
- */
 export interface LazyLoadingConfig {
-  /**
-   * Tamanho padrão do chunk em dias (usado se não especificado)
-   * @default 90
-   */
   defaultChunkSize?: number;
-
-  /**
-   * Máximo de meses no futuro permitido (limite suave)
-   * @default 60 (5 anos)
-   */
   maxMonthsFuture?: number;
-
-  /**
-   * Duração do cache local em milissegundos (opcional)
-   * @default 300000 (5 minutos)
-   */
   cacheDuration?: number;
 }
+
+// ==================== EXPORTAÇÕES ====================
+export type {
+  HotelBookingData as HotelBooking,
+  CreateHotelBookingRequestData as CreateHotelBookingRequest
+};

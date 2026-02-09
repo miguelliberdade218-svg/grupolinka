@@ -1,15 +1,13 @@
 // src/apps/hotels-app/pages/bookings/components/BookingList.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { HotelBooking } from '@/shared/types/bookings';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { 
-  User, 
   Mail, 
   Phone, 
   Calendar, 
-  Clock, 
   Users as UsersIcon,
   CreditCard,
   MoreVertical,
@@ -20,7 +18,11 @@ import {
   XCircle,
   FileText,
   RefreshCw,
-  Hotel
+  AlertCircle,
+  Bed,
+  Check,
+  X,
+  UserX,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { pt } from 'date-fns/locale';
@@ -32,48 +34,226 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/components/ui/dropdown-menu';
+import { useToast } from '@/shared/hooks/use-toast';
+
+// ✅ IMPORTAR UTILIDADES COMPARTILHADAS
+import {
+  normalizeStatus,
+  normalizePaymentStatus,
+  canCheckIn as canCheckInUtil,
+  canCheckOut as canCheckOutUtil,
+  canCancel as canCancelUtil,
+  canConfirm as canConfirmUtil,
+  canReject as canRejectUtil,
+  canMarkNoShow as canMarkNoShowUtil,
+  canRegisterPayment as canRegisterPaymentUtil,
+  getStatusConfig,
+  getPaymentStatusConfig,
+  getAvailableActions,
+  BOOKING_ACTION_CONFIGS,
+} from '../../../utils/bookingUtils';
+
+// ✅ CORREÇÃO: Tipo extendido com informações do room type
+interface HotelBookingWithRoomType extends HotelBooking {
+  roomTypeName?: string;
+  roomTypeCapacity?: number;
+  roomTypeTotalUnits?: number;
+  roomTypeBasePrice?: string;
+}
 
 interface BookingListProps {
   bookings: HotelBooking[];
   loading?: boolean;
   onViewDetails: (booking: HotelBooking) => void;
+  onConfirm: (booking: HotelBooking) => void; // ✅ NOVO
+  onReject: (booking: HotelBooking) => void; // ✅ NOVO
   onCheckIn: (booking: HotelBooking) => void;
   onCheckOut: (booking: HotelBooking) => void;
   onCancel: (booking: HotelBooking) => void;
   onRegisterPayment: (booking: HotelBooking) => void;
+  // ✅ NOVO: Props para buscar detalhes dos room types
+  onFetchRoomTypes?: (roomTypeIds: string[]) => Promise<Map<string, {
+    name: string;
+    capacity: number;
+    total_units: number;
+    base_price: string;
+  }>>;
 }
-
-const getStatusConfig = (status: HotelBooking['status']) => {
-  const configs = {
-    pending: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    confirmed: { label: 'Confirmada', color: 'bg-green-100 text-green-800 border-green-200' },
-    checked_in: { label: 'Check-in', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-    checked_out: { label: 'Check-out', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    cancelled: { label: 'Cancelada', color: 'bg-red-100 text-red-800 border-red-200' },
-    rejected: { label: 'Rejeitada', color: 'bg-gray-100 text-gray-800 border-gray-200' },
-  };
-  return configs[status] || configs.pending;
-};
-
-const getPaymentStatusConfig = (status: HotelBooking['payment_status']) => {
-  const configs = {
-    pending: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800' },
-    partial: { label: 'Parcial', color: 'bg-blue-100 text-blue-800' },
-    paid: { label: 'Pago', color: 'bg-green-100 text-green-800' },
-  };
-  return configs[status] || configs.pending;
-};
 
 export const BookingList: React.FC<BookingListProps> = ({
   bookings,
   loading = false,
   onViewDetails,
+  onConfirm,
+  onReject,
   onCheckIn,
   onCheckOut,
   onCancel,
   onRegisterPayment,
+  onFetchRoomTypes,
 }) => {
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [enrichedBookings, setEnrichedBookings] = useState<HotelBookingWithRoomType[]>([]);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const { toast } = useToast();
+  
+  // ✅ REFS para evitar loops infinitos
+  const isEnrichingRef = useRef(false);
+  const lastBookingsHashRef = useRef<string>('');
+
+  // ✅ DEBUG: Log para verificar dados recebidos (APENAS NO DEV)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && bookings.length > 0) {
+      const currentHash = JSON.stringify(bookings.map(b => b.id).sort());
+      if (lastBookingsHashRef.current !== currentHash) {
+        console.log('📊 [BookingList] Dados das reservas recebidas:', {
+          count: bookings.length,
+          ids: bookings.map(b => b.id),
+          hasPaymentStatus: bookings.filter(b => !!b.payment_status).length
+        });
+        lastBookingsHashRef.current = currentHash;
+      }
+    }
+  }, [bookings]);
+
+  // ✅ CORREÇÃO: Função para enriquecer bookings com informações do room type (usando useCallback)
+  const enrichBookingsWithRoomTypeInfo = useCallback(async (
+    bookingsToEnrich: HotelBooking[]
+  ): Promise<HotelBookingWithRoomType[]> => {
+    if (!bookingsToEnrich.length || !onFetchRoomTypes) {
+      return bookingsToEnrich.map(booking => ({
+        ...booking,
+        roomTypeName: 'Não especificado',
+        roomTypeCapacity: 2,
+        roomTypeTotalUnits: 0,
+        roomTypeBasePrice: '0.00',
+      }));
+    }
+
+    try {
+      // Extrair IDs únicos de room types
+      const roomTypeIds = [...new Set(bookingsToEnrich
+        .map(b => b.room_type_id)
+        .filter(Boolean) as string[]
+      )];
+
+      if (roomTypeIds.length === 0) {
+        console.log('⚠️ Nenhum room_type_id encontrado para enriquecimento');
+        return bookingsToEnrich.map(booking => ({
+          ...booking,
+          roomTypeName: 'Não especificado',
+          roomTypeCapacity: 2,
+          roomTypeTotalUnits: 0,
+          roomTypeBasePrice: '0.00',
+        }));
+      }
+
+      console.log(`🔍 Enriquecendo ${bookingsToEnrich.length} reservas com ${roomTypeIds.length} tipos de quarto...`);
+      
+      // Buscar detalhes dos room types
+      const roomTypeMap = await onFetchRoomTypes(roomTypeIds);
+      
+      // Enriquecer bookings
+      return bookingsToEnrich.map(booking => {
+        const roomTypeInfo = roomTypeMap.get(booking.room_type_id || '');
+        
+        return {
+          ...booking,
+          roomTypeName: roomTypeInfo?.name || 'Tipo de quarto não encontrado',
+          roomTypeCapacity: roomTypeInfo?.capacity || 2,
+          roomTypeTotalUnits: roomTypeInfo?.total_units || 0,
+          roomTypeBasePrice: roomTypeInfo?.base_price || '0.00',
+        };
+      });
+    } catch (error) {
+      console.error('❌ Erro ao enriquecer bookings com room type info:', error);
+      toast({
+        title: 'Erro ao carregar detalhes',
+        description: 'Não foi possível carregar informações dos tipos de quarto',
+        variant: 'destructive',
+        duration: 3000,
+      });
+      
+      // Fallback: retornar bookings sem enriquecimento
+      return bookingsToEnrich.map(booking => ({
+        ...booking,
+        roomTypeName: 'Erro ao carregar',
+        roomTypeCapacity: 2,
+        roomTypeTotalUnits: 0,
+        roomTypeBasePrice: '0.00',
+      }));
+    }
+  }, [onFetchRoomTypes, toast]);
+
+  // ✅ CORREÇÃO: Efeito para enriquecer bookings - COM CONTROLE DE EXECUÇÃO
+  useEffect(() => {
+    const enrichData = async () => {
+      // Evitar múltiplas execuções simultâneas
+      if (isEnrichingRef.current) {
+        console.log('⏸️ [BookingList] Enriquecimento já em andamento, ignorando...');
+        return;
+      }
+
+      // Verificar se há bookings para enriquecer
+      if (!bookings.length) {
+        setEnrichedBookings([]);
+        return;
+      }
+
+      // Calcular hash dos bookings atuais
+      const currentHash = JSON.stringify(bookings.map(b => ({
+        id: b.id,
+        room_type_id: b.room_type_id
+      })).sort((a, b) => a.id.localeCompare(b.id)));
+
+      // Verificar se os bookings já foram enriquecidos
+      const lastHash = localStorage.getItem('lastBookingsHash');
+      if (lastHash === currentHash && enrichedBookings.length > 0) {
+        console.log('🔄 [BookingList] Bookings já enriquecidos anteriormente');
+        return;
+      }
+
+      isEnrichingRef.current = true;
+      setIsEnriching(true);
+      
+      try {
+        const enriched = await enrichBookingsWithRoomTypeInfo(bookings);
+        
+        // ✅ CORREÇÃO: Atualizar apenas se realmente mudou
+        const enrichedChanged = JSON.stringify(enriched) !== JSON.stringify(enrichedBookings);
+        if (enrichedChanged) {
+          setEnrichedBookings(enriched);
+          localStorage.setItem('lastBookingsHash', currentHash);
+          console.log(`✅ ${enriched.length} reservas enriquecidas com informações do tipo de quarto`);
+        }
+      } catch (error) {
+        console.error('Erro no enriquecimento:', error);
+        // Fallback: usar bookings originais
+        const fallbackEnriched = bookings.map(booking => ({
+          ...booking,
+          roomTypeName: 'Carregamento falhou',
+          roomTypeCapacity: 2,
+          roomTypeTotalUnits: 0,
+          roomTypeBasePrice: '0.00',
+        }));
+        
+        const fallbackChanged = JSON.stringify(fallbackEnriched) !== JSON.stringify(enrichedBookings);
+        if (fallbackChanged) {
+          setEnrichedBookings(fallbackEnriched);
+        }
+      } finally {
+        setIsEnriching(false);
+        isEnrichingRef.current = false;
+      }
+    };
+
+    // Adicionar um pequeno delay para evitar execuções rápidas consecutivas
+    const timer = setTimeout(() => {
+      enrichData();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [bookings, enrichBookingsWithRoomTypeInfo, enrichedBookings]); // ✅ Adicionado enrichedBookings para controle
 
   const toggleExpand = (bookingId: string) => {
     setExpandedBookingId(expandedBookingId === bookingId ? null : bookingId);
@@ -81,7 +261,14 @@ export const BookingList: React.FC<BookingListProps> = ({
 
   const formatDate = (dateString: string) => {
     try {
-      return format(parseISO(dateString), "dd 'de' MMM 'de' yyyy", { locale: pt });
+      // Tenta parse como ISO, depois como YYYY-MM-DD
+      let date: Date;
+      if (dateString.includes('T')) {
+        date = parseISO(dateString);
+      } else {
+        date = new Date(dateString + 'T00:00:00');
+      }
+      return format(date, "dd 'de' MMM 'de' yyyy", { locale: pt });
     } catch {
       return dateString;
     }
@@ -89,38 +276,68 @@ export const BookingList: React.FC<BookingListProps> = ({
 
   const formatDateTime = (dateString: string) => {
     try {
-      return format(parseISO(dateString), "dd/MM/yyyy HH:mm", { locale: pt });
+      // Tenta parse como ISO
+      let date: Date;
+      if (dateString.includes('T')) {
+        date = parseISO(dateString);
+      } else {
+        // Se não tem timezone, adiciona um
+        date = new Date(dateString + 'T00:00:00');
+      }
+      return format(date, "dd/MM/yyyy HH:mm", { locale: pt });
     } catch {
       return dateString;
     }
   };
 
   const formatCurrency = (amount: string) => {
-    const num = parseFloat(amount);
-    return isNaN(num) 
-      ? '0,00 MZN' 
-      : num.toLocaleString('pt-MZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' MZN';
+    // Remove espaços e converte para número
+    const cleanAmount = amount?.toString().replace(/\s/g, '') || '0';
+    const num = parseFloat(cleanAmount);
+    
+    // Verifica se é um número válido
+    if (isNaN(num)) {
+      console.warn(`❌ Valor inválido para formatação: "${amount}"`);
+      return '0,00 MZN';
+    }
+    
+    return num.toLocaleString('pt-MZ', { 
+      minimumFractionDigits: 2, 
+      maximumFractionDigits: 2 
+    }) + ' MZN';
   };
 
-  const canCheckIn = (booking: HotelBooking) => {
-    return booking.status === 'confirmed';
-  };
+  // ✅ USAR FUNÇÕES DE UTILIDADE COMPARTILHADAS
+  const canRegisterPayment = useCallback((booking: HotelBooking) => {
+    const canRegister = canRegisterPaymentUtil(booking);
+    
+    // Debug logging (APENAS NO DEV e limitado)
+    if (process.env.NODE_ENV === 'development') {
+      // Limitar logs para evitar spam
+      const shouldLog = Math.random() < 0.1; // Apenas 10% dos logs
+      if (shouldLog) {
+        console.log('🔍 [BookingList.canRegisterPayment] Verificação:', {
+          bookingId: booking?.id,
+          payment_status: booking?.payment_status,
+          normalized: normalizePaymentStatus(booking?.payment_status),
+          canRegister,
+        });
+      }
+    }
+    
+    return canRegister;
+  }, []);
 
-  const canCheckOut = (booking: HotelBooking) => {
-    return booking.status === 'checked_in';
-  };
+  // ✅ NOVO: Determinar ações disponíveis
+  const getBookingActions = useCallback((booking: HotelBooking) => {
+    const availableActions = getAvailableActions(booking.status);
+    return availableActions.map(action => BOOKING_ACTION_CONFIGS[action]);
+  }, []);
 
-  const canCancel = (booking: HotelBooking) => {
-    return ['pending', 'confirmed'].includes(booking.status);
-  };
+  // ✅ CORREÇÃO: Indicador de carregamento combinado
+  const isLoading = loading || isEnriching;
 
-  // ✅ CORREÇÃO: Verifica se pode mostrar botão de pagamento
-  const canRegisterPayment = (booking: HotelBooking) => {
-    // Mostra botão se o status de pagamento for 'pending' ou 'partial'
-    return booking.payment_status === 'pending' || booking.payment_status === 'partial';
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-4">
         {[...Array(5)].map((_, i) => (
@@ -135,11 +352,17 @@ export const BookingList: React.FC<BookingListProps> = ({
             </div>
           </Card>
         ))}
+        {isEnriching && (
+          <div className="flex items-center justify-center p-4 text-sm text-gray-600">
+            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+            Carregando detalhes dos tipos de quarto...
+          </div>
+        )}
       </div>
     );
   }
 
-  if (bookings.length === 0) {
+  if (enrichedBookings.length === 0) {
     return (
       <Card className="p-8 md:p-12 text-center">
         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -163,17 +386,38 @@ export const BookingList: React.FC<BookingListProps> = ({
 
   return (
     <div className="space-y-4">
-      {bookings.map((booking) => {
+      {enrichedBookings.map((booking) => {
+        // ✅ USAR FUNÇÕES DE UTILIDADE COMPARTILHADAS
         const statusConfig = getStatusConfig(booking.status);
         const paymentConfig = getPaymentStatusConfig(booking.payment_status);
         const isExpanded = expandedBookingId === booking.id;
+        
+        // ✅ CORREÇÃO: Verificações de data melhoradas
         const today = new Date();
-        const checkInDate = new Date(booking.check_in);
+        today.setHours(0, 0, 0, 0);
+        
+        let checkInDate: Date;
+        try {
+          if (booking.check_in.includes('T')) {
+            checkInDate = parseISO(booking.check_in);
+          } else {
+            checkInDate = new Date(booking.check_in + 'T00:00:00');
+          }
+          checkInDate.setHours(0, 0, 0, 0);
+        } catch {
+          checkInDate = new Date();
+        }
+        
         const isUpcoming = checkInDate > today;
-        const isToday = 
-          checkInDate.getDate() === today.getDate() &&
-          checkInDate.getMonth() === today.getMonth() &&
-          checkInDate.getFullYear() === today.getFullYear();
+        const isToday = checkInDate.getTime() === today.getTime();
+
+        // ✅ NOVO: Usar funções de utilidade para verificar ações
+        const showConfirm = canConfirmUtil(booking);
+        const showReject = canRejectUtil(booking);
+        const showCheckIn = canCheckInUtil(booking);
+        const showCheckOut = canCheckOutUtil(booking);
+        const showCancel = canCancelUtil(booking);
+        const showRegisterPayment = canRegisterPayment(booking);
 
         return (
           <Card key={booking.id} className="overflow-hidden hover:shadow-md transition-all">
@@ -186,7 +430,7 @@ export const BookingList: React.FC<BookingListProps> = ({
                       <h4 className="font-semibold text-gray-900 text-lg">
                         {booking.guest_name}
                       </h4>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
                         <Badge className={cn("border", statusConfig.color)}>
                           {statusConfig.label}
                         </Badge>
@@ -220,12 +464,12 @@ export const BookingList: React.FC<BookingListProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Calendar className="w-4 h-4" />
+                        <Calendar className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">Check-in:</span>
                         <span className="text-gray-900">{formatDate(booking.check_in)}</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-600">
-                        <LogOut className="w-4 h-4" />
+                        <LogOut className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">Check-out:</span>
                         <span className="text-gray-900">{formatDate(booking.check_out)}</span>
                       </div>
@@ -233,7 +477,7 @@ export const BookingList: React.FC<BookingListProps> = ({
                     
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-gray-600">
-                        <UsersIcon className="w-4 h-4" />
+                        <UsersIcon className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">Hóspedes:</span>
                         <span className="text-gray-900">
                           {booking.adults} adulto{booking.adults !== 1 ? 's' : ''}
@@ -241,23 +485,23 @@ export const BookingList: React.FC<BookingListProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Hotel className="w-4 h-4" />
+                        <Bed className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">Quarto:</span>
-                        <span className="text-gray-900">
-                          {booking.room_type_name || 'Tipo de quarto'}
+                        <span className="text-gray-900 font-medium">
+                          {booking.roomTypeName || `Quarto #${booking.room_type_id?.slice(0, 8) || '???'}`}
                         </span>
                       </div>
                     </div>
                     
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Mail className="w-4 h-4" />
+                        <Mail className="w-4 h-4 flex-shrink-0" />
                         <span className="font-medium">Email:</span>
                         <span className="text-gray-900 truncate">{booking.guest_email}</span>
                       </div>
                       {booking.guest_phone && (
                         <div className="flex items-center gap-2 text-gray-600">
-                          <Phone className="w-4 h-4" />
+                          <Phone className="w-4 h-4 flex-shrink-0" />
                           <span className="font-medium">Telefone:</span>
                           <span className="text-gray-900">{booking.guest_phone}</span>
                         </div>
@@ -265,7 +509,7 @@ export const BookingList: React.FC<BookingListProps> = ({
                     </div>
                   </div>
 
-                  {/* Botões de ação */}
+                  {/* Botões de ação - AGORA DINÂMICOS */}
                   <div className="flex flex-wrap gap-2 pt-2">
                     <Button
                       size="sm"
@@ -277,7 +521,34 @@ export const BookingList: React.FC<BookingListProps> = ({
                       Detalhes
                     </Button>
                     
-                    {canCheckIn(booking) && (
+                    {/* ✅ CONFIRMAR (se disponível) */}
+                    {showConfirm && (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => onConfirm(booking)}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        <Check className="w-4 h-4" />
+                        Confirmar
+                      </Button>
+                    )}
+                    
+                    {/* ✅ REJEITAR (se disponível) */}
+                    {showReject && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReject(booking)}
+                        className="flex items-center gap-2 border-amber-600 text-amber-600 hover:bg-amber-50"
+                      >
+                        <X className="w-4 h-4" />
+                        Rejeitar
+                      </Button>
+                    )}
+                    
+                    {/* CHECK-IN (se disponível) */}
+                    {showCheckIn && (
                       <Button
                         size="sm"
                         variant="default"
@@ -289,7 +560,8 @@ export const BookingList: React.FC<BookingListProps> = ({
                       </Button>
                     )}
                     
-                    {canCheckOut(booking) && (
+                    {/* CHECK-OUT (se disponível) */}
+                    {showCheckOut && (
                       <Button
                         size="sm"
                         variant="default"
@@ -301,8 +573,8 @@ export const BookingList: React.FC<BookingListProps> = ({
                       </Button>
                     )}
                     
-                    {/* ✅ CORREÇÃO: Usa a função auxiliar que não verifica 'refunded' */}
-                    {canRegisterPayment(booking) && (
+                    {/* PAGAMENTO (se disponível) */}
+                    {showRegisterPayment && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -314,7 +586,8 @@ export const BookingList: React.FC<BookingListProps> = ({
                       </Button>
                     )}
                     
-                    {canCancel(booking) && (
+                    {/* CANCELAR (se disponível) */}
+                    {showCancel && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -331,7 +604,7 @@ export const BookingList: React.FC<BookingListProps> = ({
                 {/* Menu dropdown para ações adicionais */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 flex-shrink-0">
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -341,10 +614,33 @@ export const BookingList: React.FC<BookingListProps> = ({
                       Ver detalhes completos
                     </DropdownMenuItem>
                     
-                    <DropdownMenuItem onClick={() => {
-                      navigator.clipboard.writeText(booking.id);
-                      // Opcional: Mostrar toast de confirmação
-                    }}>
+                    {/* ✅ AÇÕES DINÂMICAS NO DROPDOWN */}
+                    {showConfirm && (
+                      <DropdownMenuItem onClick={() => onConfirm(booking)}>
+                        <Check className="mr-2 h-4 w-4" />
+                        Confirmar reserva
+                      </DropdownMenuItem>
+                    )}
+                    
+                    {showReject && (
+                      <DropdownMenuItem onClick={() => onReject(booking)}>
+                        <X className="mr-2 h-4 w-4" />
+                        Rejeitar reserva
+                      </DropdownMenuItem>
+                    )}
+                    
+                    <DropdownMenuSeparator />
+                    
+                    <DropdownMenuItem 
+                      onClick={() => {
+                        navigator.clipboard.writeText(booking.id);
+                        toast({
+                          title: 'ID copiado',
+                          description: 'O ID da reserva foi copiado para a área de transferência',
+                          duration: 2000,
+                        });
+                      }}
+                    >
                       <FileText className="mr-2 h-4 w-4" />
                       Copiar ID da reserva
                     </DropdownMenuItem>
@@ -414,6 +710,12 @@ export const BookingList: React.FC<BookingListProps> = ({
                             </Badge>
                           </p>
                         )}
+                        {booking.taxes && (
+                          <p className="text-gray-600">
+                            <span className="font-medium">Taxas:</span>{' '}
+                            {formatCurrency(booking.taxes)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     
@@ -431,10 +733,20 @@ export const BookingList: React.FC<BookingListProps> = ({
                           <span className="font-medium">Preço total:</span>{' '}
                           {formatCurrency(booking.total_price)}
                         </p>
-                        {booking.room_type_capacity && (
+                        <p className="text-gray-600">
+                          <span className="font-medium">Capacidade do quarto:</span>{' '}
+                          {booking.roomTypeCapacity || 2} pessoa{booking.roomTypeCapacity !== 1 ? 's' : ''}
+                        </p>
+                        {booking.roomTypeTotalUnits && booking.roomTypeTotalUnits > 0 && (
                           <p className="text-gray-600">
-                            <span className="font-medium">Capacidade do quarto:</span>{' '}
-                            {booking.room_type_capacity} pessoa{booking.room_type_capacity !== 1 ? 's' : ''}
+                            <span className="font-medium">Total de unidades:</span>{' '}
+                            {booking.roomTypeTotalUnits}
+                          </p>
+                        )}
+                        {booking.roomTypeBasePrice && (
+                          <p className="text-gray-600">
+                            <span className="font-medium">Preço base/noite:</span>{' '}
+                            {formatCurrency(booking.roomTypeBasePrice)}
                           </p>
                         )}
                       </div>
@@ -446,6 +758,17 @@ export const BookingList: React.FC<BookingListProps> = ({
           </Card>
         );
       })}
+      
+      {/* ✅ CORREÇÃO: Indicador de enriquecimento concluído */}
+      {!isLoading && enrichedBookings.length > 0 && (
+        <div className="text-xs text-gray-500 text-center pt-2">
+          <div className="flex items-center justify-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            Mostrando {enrichedBookings.length} reservas
+            {onFetchRoomTypes && ' com informações enriquecidas do tipo de quarto'}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-// src/AppRouter.tsx - VERSÃO CORRIGIDA E SIMPLIFICADA
+// src/AppRouter.tsx - VERSÃO CORRIGIDA E COMPLETA
 import { Route, Switch } from 'wouter';
 import SearchRides from './apps/main-app/pages/Rides/search';
 import MainApp from './apps/main-app/App';
@@ -19,21 +19,12 @@ function AppRouter() {
       {/* Rota de busca de viagens */}
       <Route path="/rides/search" component={SearchRides} />
       
-      {/* 🏨 BUSCA PÚBLICA DE HOTÉIS - PARA CLIENTES */}
-      <Route path="/hotels/search">
-        {(params) => <MainApp />}
-      </Route>
-      
-      {/* 🎪 BUSCA PÚBLICA DE ESPAÇOS DE EVENTOS - PARA CLIENTES */}
-      <Route path="/event-spaces/search">
-        {(params) => <MainApp />}
-      </Route>
-      
-      {/* Apps - IMPORTANTE: Ordem importa! Mais específicas primeiro */}
+      {/* ========== APPS ESPECÍFICOS ========== */}
       
       {/* 🏨 HOTELS APP - Para gerentes de hotéis gerenciar suas propriedades */}
-      <Route path="/hotels/*" component={HotelsApp} />
-      <Route path="/hotels" component={HotelsApp} />
+      {/* ❗ IMPORTANTE: Deve vir ANTES das rotas /hotels/:id */}
+      <Route path="/hotels-app/*" component={HotelsApp} />
+      <Route path="/hotels-app" component={HotelsApp} />
       
       {/* 👨‍💼 DRIVERS APP - Para motoristas gerenciar viagens */}
       <Route path="/drivers/*" component={DriversApp} />
@@ -42,6 +33,45 @@ function AppRouter() {
       {/* 🔐 ADMIN APP - APENAS para admins da plataforma (NÃO hotéis!) */}
       <Route path="/admin/*" component={AdminApp} />
       <Route path="/admin" component={AdminApp} />
+      
+      {/* ========== ROTAS DO MAIN APP (CLIENTES) ========== */}
+      
+      {/* 🏨 BUSCA PÚBLICA DE HOTÉIS - PARA CLIENTES */}
+      <Route path="/hotels/search">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* 🏨 DETALHES DE HOTEL - PARA CLIENTES */}
+      <Route path="/hotels/:id">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* 🏨 RESERVA DE HOTEL - PARA CLIENTES */}
+      <Route path="/hotels/:id/book">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* 🎪 BUSCA PÚBLICA DE ESPAÇOS DE EVENTOS - PARA CLIENTES */}
+      <Route path="/event-spaces/search">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* 🎪 DETALHES DE ESPAÇO DE EVENTO - PARA CLIENTES */}
+      <Route path="/event-spaces/:id">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* 🎪 RESERVA DE ESPAÇO DE EVENTO - PARA CLIENTES */}
+      <Route path="/event-spaces/:id/book">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* ✅ CONFIRMAÇÃO DE RESERVA - PARA CLIENTES */}
+      <Route path="/bookings/:type/:bookingId/confirmation">
+        {(params) => <MainApp />}
+      </Route>
+      
+      {/* ========== ROTAS GERAIS DO MAIN APP ========== */}
       
       {/* Rota principal - captura tudo o resto */}
       <Route path="/:rest*" component={MainApp} />

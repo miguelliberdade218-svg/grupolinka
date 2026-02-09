@@ -155,6 +155,23 @@ export default function HotelsSearchPage() {
     }
   }, [search]);
 
+  // Função para lidar com a visualização de detalhes do hotel
+  const handleViewHotelDetails = (hotel: any) => {
+    if (!hotel?.id) {
+      console.error('❌ Hotel ID não encontrado:', hotel);
+      toast({
+        title: "Erro",
+        description: "Hotel não encontrado",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Usar slug se disponível, caso contrário ID
+    const identifier = hotel.slug || hotel.id;
+    setLocation(`/hotels/${identifier}`);
+  };
+
   // Buscar sugestões de localização com debounce
   const fetchSuggestions = useCallback(
     debounce(async (query: string) => {
@@ -396,8 +413,8 @@ export default function HotelsSearchPage() {
     if (searchParams.checkOut) params.set('checkOut', searchParams.checkOut);
     if (searchParams.guests) params.set('guests', searchParams.guests.toString());
     if (searchParams.radius) params.set('radius', searchParams.radius.toString());
-    if (searchParams.minPrice) params.set('minPrice', searchParams.minPrice.toString());
-    if (searchParams.maxPrice) params.set('maxPrice', searchParams.maxPrice.toString());
+    if (searchParams.minPrice) params.set('minPrice', searchParams.minPrice?.toString() || '0');
+    if (searchParams.maxPrice) params.set('maxPrice', searchParams.maxPrice?.toString() || '10000');
     if (searchParams.rating) params.set('rating', searchParams.rating.toString());
     if (searchParams.sortBy) params.set('sortBy', searchParams.sortBy);
     if (searchParams.page) params.set('page', searchParams.page.toString());
@@ -577,7 +594,7 @@ export default function HotelsSearchPage() {
                       <Input
                         type="date"
                         className="pl-10 bg-white/20 border-white/30 text-white"
-                        value={searchParams.checkIn}
+                        value={searchParams.checkIn || ''}
                         min={new Date().toISOString().split('T')[0]}
                         onChange={(e) => setSearchParams(prev => ({ ...prev, checkIn: e.target.value }))}
                       />
@@ -587,7 +604,7 @@ export default function HotelsSearchPage() {
                       <Input
                         type="date"
                         className="pl-10 bg-white/20 border-white/30 text-white"
-                        value={searchParams.checkOut}
+                        value={searchParams.checkOut || ''}
                         min={searchParams.checkIn || new Date().toISOString().split('T')[0]}
                         onChange={(e) => setSearchParams(prev => ({ ...prev, checkOut: e.target.value }))}
                       />
@@ -654,7 +671,7 @@ export default function HotelsSearchPage() {
                   <div>
                     <Label className="flex items-center gap-2 mb-4">
                       <Navigation className="w-4 h-4" />
-                      Raio de busca: {searchParams.radius} km
+                      Raio de busca: {searchParams.radius || 50} km
                     </Label>
                     <Slider
                       value={[searchParams.radius || 50]}
@@ -682,7 +699,7 @@ export default function HotelsSearchPage() {
                           type="number"
                           min="0"
                           max="20000"
-                          value={searchParams.minPrice}
+                          value={searchParams.minPrice || 0}
                           onChange={(e) => {
                             const value = parseInt(e.target.value) || 0;
                             if (value <= (searchParams.maxPrice || 10000)) {
@@ -697,7 +714,7 @@ export default function HotelsSearchPage() {
                           type="number"
                           min="0"
                           max="20000"
-                          value={searchParams.maxPrice}
+                          value={searchParams.maxPrice || 10000}
                           onChange={(e) => {
                             const value = parseInt(e.target.value) || 10000;
                             if (value >= (searchParams.minPrice || 0)) {
@@ -1029,7 +1046,7 @@ export default function HotelsSearchPage() {
                             }}
                             showPrice={true}
                             minPrice={parseInt(hotel.base_price || '0')}
-                            onViewDetails={() => setSelectedHotelId(hotel.id)}
+                            onViewDetails={() => handleViewHotelDetails(hotel)}
                             onBook={() => {
                               toast({
                                 title: "Reserva iniciada",

@@ -1,4 +1,4 @@
-// src/apps/hotels-app/pages/hotel-management/HotelManagerDashboard.tsx
+// src/apps/hotels-app/pages/hotel-management/HotelManagerDashboard.tsx - VERSÃO CORRIGIDA
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { Card } from '@/shared/components/ui/card';
@@ -26,7 +26,6 @@ import CreateHotelForm from '../../components/CreateHotelForm';
 import EditHotelForm from '../../components/EditHotelForm';
 import { useActiveHotel } from '@/contexts/ActiveHotelContext';
 import { Hotel as SharedHotel } from '@/shared/types/hotels';
-import { auth } from '@/shared/lib/firebaseConfig';
 
 /**
  * Dashboard principal do gerenciador de hotéis
@@ -34,7 +33,11 @@ import { auth } from '@/shared/lib/firebaseConfig';
  */
 const HotelManagerDashboard: React.FC = () => {
   const [location, navigate] = useLocation();
-  const { activeHotel, isLoading: contextLoading, refreshActiveHotel } = useActiveHotel();
+  // ✅ CORREÇÃO: Verificar se useActiveHotel retorna corretamente
+  const activeHotelContext = useActiveHotel();
+  const activeHotel = activeHotelContext?.activeHotel;
+  const contextLoading = activeHotelContext?.isLoading || false;
+  const refreshActiveHotel = activeHotelContext?.refreshActiveHotel || (() => {});
 
   const [dashboard, setDashboard] = useState<HotelDashboard | null>(null);
   const [loadingDashboard, setLoadingDashboard] = useState(true);
@@ -60,7 +63,7 @@ const HotelManagerDashboard: React.FC = () => {
 
   // ✅ NOVA FUNÇÃO: Navegação para gestão de reservas do hotel
   const handleNavigateToHotelBookings = () => {
-    navigate('/hotels/bookings');
+    navigate('/hotels-app/bookings');
   };
 
   // Carrega número de hotéis do usuário

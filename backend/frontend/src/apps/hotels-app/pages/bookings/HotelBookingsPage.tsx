@@ -1,5 +1,5 @@
 // src/apps/hotels-app/pages/bookings/HotelBookingsPage.tsx
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { Card } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
@@ -18,10 +18,13 @@ import {
   CheckCircle,
   DoorOpen,
   AlertCircle,
+  Check,
+  X,
 } from 'lucide-react';
 import { useToast } from '@/shared/hooks/use-toast';
 import { useActiveHotel } from '@/contexts/ActiveHotelContext';
 import { HotelBooking } from '@/shared/types/bookings';
+import { hotelService } from '@/services/hotelService';
 
 // Import dos componentes
 import { BookingFilters } from './components/BookingFilters';
@@ -33,6 +36,27 @@ import { useHotelBookings } from './hooks/useHotelBookings';
 
 // Import do modal de cancelamento
 import { CancelBookingModal } from './components/CancelBookingModal';
+import { RejectBookingModal } from './components/RejectBookingModal';
+import { ConfirmBookingModal } from './components/ConfirmBookingModal';
+
+// ✅ IMPORTAR CONSTANTES E UTILIDADES ATUALIZADAS
+import { 
+  BOOKING_STATUS, 
+  BOOKING_STATUS_DISPLAY,
+  normalizeBookingStatus 
+} from '@/shared/constants/bookingStatus';
+
+// Função para verificar se o booking está hoje
+const isBookingToday = (booking: HotelBooking): boolean => {
+  const today = new Date().toISOString().split('T')[0];
+  return booking.check_in === today || booking.check_out === today;
+};
+
+// ✅ ATUALIZADO: Usar constantes compartilhadas
+const getStatusDisplay = (status: string): string => {
+  return BOOKING_STATUS_DISPLAY[normalizeBookingStatus(status)] || 
+         status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
 
 const HotelBookingsPage: React.FC = () => {
   const [location, navigate] = useLocation();
@@ -44,7 +68,12 @@ const HotelBookingsPage: React.FC = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
+
+  // ✅ NOVO: Estado para mapeamento de room types
+  const [roomTypeMap, setRoomTypeMap] = useState<Map<string, any>>(new Map());
 
   // Hook para gestão de reservas
   const {
@@ -68,23 +97,122 @@ const HotelBookingsPage: React.FC = () => {
     autoLoad: !!activeHotel?.id,
   });
 
+  // ✅ NOVO: Função para buscar informações de room types
+  const fetchRoomTypesInfo = async (roomTypeIds: string[]) => {
+    try {
+      if (!activeHotel?.id) return new Map();
+      
+      const roomTypeMap = new Map();
+      
+      // Buscar informações de cada room type
+      for (const roomTypeId of roomTypeIds) {
+        try {
+          // Buscar room type pelo ID (precisa implementar no service se não existir)
+          // Por enquanto, vamos buscar todos os room types do hotel
+          const roomTypesResponse = await hotelService.getRoomTypesByHotel(activeHotel.id);
+          
+          if (roomTypesResponse.success && roomTypesResponse.data) {
+            const roomTypes = roomTypesResponse.data;
+            const roomType = roomTypes.find(rt => rt.id === roomTypeId);
+            
+            if (roomType) {
+              roomTypeMap.set(roomTypeId, {
+                name: roomType.name,
+                capacity: roomType.capacity,
+                total_units: roomType.total_units,
+                base_price: roomType.base_price,
+              });
+            }
+          }
+        } catch (error) {
+          console.warn(`❌ Erro ao buscar room type ${roomTypeId}:`, error);
+        }
+      }
+      
+      setRoomTypeMap(roomTypeMap);
+      return roomTypeMap;
+    } catch (error) {
+      console.error('Erro ao buscar informações de room types:', error);
+      return new Map();
+    }
+  };
+
+  // ✅ NOVO: Função para buscar room types (usada pelo BookingList)
+  const handleFetchRoomTypes = async (roomTypeIds: string[]) => {
+    return fetchRoomTypesInfo(roomTypeIds);
+  };
+
   // Filtra bookings por tab ativa
-  const filteredBookings = React.useMemo(() => {
+  const filteredBookings = useMemo(() => {
     if (activeTab === 'all') return bookings;
     
     if (activeTab === 'today') {
-      const today = new Date().toISOString().split('T')[0];
-      return bookings.filter(booking => 
-        booking.check_in === today || booking.check_out === today
-      );
+      return bookings.filter(isBookingToday);
     }
     
     if (activeTab === 'pending_payment') {
-      return bookings.filter(booking => booking.payment_status !== 'paid');
+      return bookings.filter(booking => 
+        booking.payment_status !== 'paid' && booking.payment_status !== 'refunded'
+      );
     }
     
-    return bookings.filter(booking => booking.status === activeTab);
+    // ✅ CORREÇÃO: Converter tab para status do backend
+    let statusToFilter = activeTab;
+    if (activeTab === 'pending') {
+      statusToFilter = 'pending_confirmation';
+    }
+    
+    // Normalizar status para comparação
+    return bookings.filter(booking => 
+      normalizeBookingStatus(booking.status) === normalizeBookingStatus(statusToFilter)
+    );
   }, [bookings, activeTab]);
+
+  // ✅ NOVO: Handler para confirmar reserva
+  const handleConfirm = async (booking: HotelBooking) => {
+    try {
+      const result = await hotelService.confirmBooking(booking.id);
+      
+      if (result.success) {
+        toast({
+          title: 'Reserva confirmada',
+          description: `Reserva de ${booking.guest_name} foi confirmada`,
+          variant: 'default',
+        });
+        refresh(); // Recarregar lista
+      }
+    } catch (error) {
+      console.error('Erro ao confirmar reserva:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível confirmar a reserva',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // ✅ NOVO: Handler para rejeitar reserva
+  const handleReject = async (booking: HotelBooking, reason: string) => {
+    try {
+      const result = await hotelService.rejectBooking(booking.id, reason);
+      
+      if (result.success) {
+        toast({
+          title: 'Reserva rejeitada',
+          description: `Reserva de ${booking.guest_name} foi rejeitada`,
+          variant: 'default',
+        });
+        refresh(); // Recarregar lista
+      }
+    } catch (error) {
+      console.error('Erro ao rejeitar reserva:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível rejeitar a reserva',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleCheckIn = async (booking: HotelBooking) => {
     const result = await performAction(booking.id, 'checkIn', {
@@ -176,7 +304,7 @@ const HotelBookingsPage: React.FC = () => {
       booking.nights || 1,
       booking.adults,
       booking.children || 0,
-      booking.status,
+      getStatusDisplay(booking.status),
       booking.payment_status,
       parseFloat(booking.total_price || '0').toFixed(2),
       booking.created_at,
@@ -229,7 +357,7 @@ const HotelBookingsPage: React.FC = () => {
             Selecione um hotel no menu superior para gerenciar suas reservas.
           </p>
           <Button
-            onClick={() => navigate('/hotels/dashboard')}
+            onClick={() => navigate('/hotels-app/dashboard')}
             className="w-full"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -251,7 +379,7 @@ const HotelBookingsPage: React.FC = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => navigate('/hotels/dashboard')}
+                  onClick={() => navigate('/hotels-app/dashboard')}
                   className="h-8 w-8 p-0"
                 >
                   <ArrowLeft className="w-4 h-4" />
@@ -291,7 +419,7 @@ const HotelBookingsPage: React.FC = () => {
               </Button>
               
               <Button
-                onClick={() => navigate('/hotels/dashboard')}
+                onClick={() => navigate('/hotels-app/dashboard')}
                 size="sm"
                 className="flex items-center gap-2"
               >
@@ -334,8 +462,13 @@ const HotelBookingsPage: React.FC = () => {
                     <span className="hidden sm:inline">Hoje</span>
                   </TabsTrigger>
                   
+                  <TabsTrigger value="pending" className="flex items-center gap-2 whitespace-nowrap">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span className="hidden sm:inline">Pendentes</span>
+                  </TabsTrigger>
+                  
                   <TabsTrigger value="confirmed" className="flex items-center gap-2 whitespace-nowrap">
-                    <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                    <Check className="w-4 h-4 flex-shrink-0" />
                     <span className="hidden sm:inline">Confirmadas</span>
                   </TabsTrigger>
                   
@@ -378,6 +511,14 @@ const HotelBookingsPage: React.FC = () => {
                       setSelectedBooking(booking);
                       setShowDetailsModal(true);
                     }}
+                    onConfirm={(booking) => {
+                      setSelectedBooking(booking);
+                      setShowConfirmModal(true);
+                    }}
+                    onReject={(booking) => {
+                      setSelectedBooking(booking);
+                      setShowRejectModal(true);
+                    }}
                     onCheckIn={(booking) => {
                       setSelectedBooking(booking);
                       handleCheckIn(booking);
@@ -394,6 +535,8 @@ const HotelBookingsPage: React.FC = () => {
                       setSelectedBooking(booking);
                       setShowPaymentModal(true);
                     }}
+                    // ✅ PASSAR FUNÇÃO PARA BUSCAR ROOM TYPES
+                    onFetchRoomTypes={handleFetchRoomTypes}
                   />
                   
                   {/* Load more button */}
@@ -426,6 +569,14 @@ const HotelBookingsPage: React.FC = () => {
         booking={selectedBooking}
         open={showDetailsModal}
         onOpenChange={setShowDetailsModal}
+        onConfirm={(booking) => {
+          setSelectedBooking(booking);
+          setShowConfirmModal(true);
+        }}
+        onReject={(booking) => {
+          setSelectedBooking(booking);
+          setShowRejectModal(true);
+        }}
         onCheckIn={handleCheckIn}
         onCheckOut={handleCheckOut}
         onCancel={(booking) => {
@@ -450,6 +601,20 @@ const HotelBookingsPage: React.FC = () => {
         open={showCancelModal}
         onOpenChange={setShowCancelModal}
         onSubmit={handleCancel}
+      />
+
+      <RejectBookingModal
+        booking={selectedBooking}
+        open={showRejectModal}
+        onOpenChange={setShowRejectModal}
+        onSubmit={handleReject}
+      />
+
+      <ConfirmBookingModal
+        booking={selectedBooking}
+        open={showConfirmModal}
+        onOpenChange={setShowConfirmModal}
+        onSubmit={handleConfirm}
       />
     </div>
   );

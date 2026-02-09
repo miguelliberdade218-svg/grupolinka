@@ -2,6 +2,7 @@
  * src/apps/hotels-app/components/event-spaces/EventSpaceCard.tsx
  * Card moderno de espaço de evento - VERSÃO FINAL 27/01/2026
  * ✅ CORRIGIDO: Campo location corrigido, adicionado suporte para info do hotel
+ * ✅ CORRIGIDO: Problema de imagens 404 resolvido com fallback
  * Alinhado com shared/types/event-spaces.ts
  * Design inspirado em Booking.com / Airbnb
  */
@@ -60,19 +61,23 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   const rating = space.rating || 0;
   const totalReviews = space.totalReviews || 0;
 
+  // ✅ CORREÇÃO: URL da imagem com fallback
+  const imageUrl = space.images?.[0] || `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
+
   return (
     <div
       className={`group relative bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 ${className}`}
     >
       {/* Imagem principal + overlay */}
       <div className="relative h-52 overflow-hidden bg-gray-100">
+        {/* ✅ CORREÇÃO APLICADA: Imagem com fallback e tratamento de erro */}
         <img
-          src={space.images?.[0] || 'https://via.placeholder.com/400x300/eee/999?text=Sem+Foto'}
+          src={imageUrl}
           alt={space.name}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
           onError={(e) => {
-            e.currentTarget.src = 'https://via.placeholder.com/400x300/eee/999?text=Sem+Foto';
+            (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent" />

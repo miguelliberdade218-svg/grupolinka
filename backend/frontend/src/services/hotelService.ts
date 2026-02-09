@@ -7,6 +7,10 @@
 // ✅ ADICIONADO: Função de conversão para tipo compatível
 // ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
 // ✅ CORREÇÃO APLICADA: Suporte para localização com vírgula (locality, province)
+// ✅ ADIÇÃO APLICADA: Funções getHotelById e getHotelBySlug adicionadas
+// ✅ CORREÇÃO APLICADA: Método getBookingById unificado com parâmetro opcional
+// ✅ CORREÇÃO APLICADA: Normalização de status no método getHotelBookings
+// ✅ ADIÇÃO APLICADA: Função confirmBooking adicionada
 
 import { apiService } from './api';
 import moment from 'moment';
@@ -59,6 +63,55 @@ function clearAllHotelCaches(): void {
     requestCache.delete(key);
   });
   console.log(`🧹 [Cache] Limpos ${keysToDelete.length} caches de hotel`);
+}
+
+// ==================== FUNÇÕES DE NORMALIZAÇÃO DE STATUS ====================
+
+/**
+ * ✅ CORREÇÃO: Normaliza status do frontend para o backend
+ * Converte status como 'rejected', 'pending' para os status válidos do banco
+ */
+function normalizeHotelBookingStatus(frontendStatus: string | undefined): string {
+  if (!frontendStatus) return 'pending_confirmation';
+  
+  const statusMap: Record<string, string> = {
+    'pending': 'pending_confirmation',
+    'pending_confirmation': 'pending_confirmation',
+    'confirmed': 'confirmed',
+    'checked_in': 'checked_in',
+    'checked_out': 'checked_out',
+    'cancelled': 'cancelled',
+    'no_show': 'no_show',
+    // Mapear status antigos/inexistentes
+    'rejected': 'cancelled',
+    'pending_approval': 'pending_confirmation',
+    'in_progress': 'checked_in',
+    'completed': 'checked_out',
+  };
+  
+  return statusMap[frontendStatus.toLowerCase()] || 'pending_confirmation';
+}
+
+/**
+ * ✅ CORREÇÃO: Normaliza status do backend para o frontend
+ */
+function denormalizeHotelBookingStatus(backendStatus: string | undefined): string {
+  if (!backendStatus) return 'pending_confirmation';
+  
+  const validStatuses = [
+    'pending_confirmation',
+    'confirmed', 
+    'checked_in',
+    'checked_out',
+    'cancelled',
+    'no_show'
+  ];
+  
+  if (validStatuses.includes(backendStatus)) {
+    return backendStatus;
+  }
+  
+  return 'pending_confirmation';
 }
 
 // ==================== TIPOS ====================
@@ -163,7 +216,8 @@ export interface Booking {
   base_price: string;
   taxes?: string;
   special_requests?: string;
-  status: 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled' | 'rejected' | 'pending';
+  // ✅ CORREÇÃO: Alterado para string para aceitar qualquer status após normalização
+  status: string;
   payment_status: 'pending' | 'partial' | 'paid' | 'refunded';
   promo_code?: string;
   user_id?: string;
@@ -389,24 +443,35 @@ class HotelService {
 
   /**
    * Obter hotel por ID
+   * ✅ ADICIONADO: Função específica conforme solicitado
    */
-  async getHotelById(hotelId: string): Promise<ApiResponse<Hotel>> {
-    const cacheKey = `getHotelById_${hotelId}`;
-    const cached = getCached<ApiResponse<Hotel>>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-    
+  async getHotelById(hotelId: string): Promise<Hotel> {
     try {
       const response = await apiService.get<ApiResponse<Hotel>>(`/api/hotels/${hotelId}`);
-      setCached(cacheKey, response);
-      return response;
+      if (response.success && response.data) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Hotel não encontrado');
     } catch (error) {
-      console.error('Erro ao buscar hotel:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar hotel'
-      };
+      console.error('Erro ao buscar hotel por ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Obter hotel por slug
+   * ✅ ADICIONADO: Função específica conforme solicitado
+   */
+  async getHotelBySlug(slug: string): Promise<Hotel> {
+    try {
+      const response = await apiService.get<ApiResponse<Hotel>>(`/api/hotels/slug/${slug}`);
+      if (response.success && response.data) {
+        return response.data;
+      }
+      throw new Error(response.error || 'Hotel não encontrado');
+    } catch (error) {
+      console.error('Erro ao buscar hotel por slug:', error);
+      throw error;
     }
   }
 
@@ -854,11 +919,48 @@ class HotelService {
   }
 
   /**
-   * Obter detalhes de uma reserva
+   * ✅ CORREÇÃO UNIFICADA: Buscar reserva por ID (com hotelId opcional)
+   * Para BookingConfirmationPage: hotelService.getBookingById(bookingId)
+   * Para outros usos: hotelService.getBookingById(bookingId, hotelId)
    */
-  async getBookingById(hotelId: string, bookingId: string): Promise<ApiResponse<Booking>> {
+  async getBookingById(bookingId: string, hotelId?: string): Promise<ApiResponse<any>> {
     try {
-      return await apiService.get<ApiResponse<Booking>>(`/api/hotels/${hotelId}/bookings/${bookingId}`);
+      // Se hotelId for fornecido, usa rota específica
+      if (hotelId) {
+        return await apiService.get<ApiResponse<any>>(`/api/hotels/${hotelId}/bookings/${bookingId}`);
+      }
+      
+      // Caso contrário, tenta rota global
+      const response = await apiService.get<ApiResponse<any>>(`/api/hotels/bookings/${bookingId}`);
+      if (response.success) {
+        return response;
+      }
+      
+      // Fallback: buscar em todos os hotéis do usuário
+      const myHotels = await this.getMyHotels();
+      if (myHotels.success && myHotels.data.length > 0) {
+        for (const hotel of myHotels.data) {
+          try {
+            const hotelResponse = await apiService.get<ApiResponse<any>>(`/api/hotels/${hotel.id}/bookings/${bookingId}`);
+            if (hotelResponse.success) {
+              return {
+                ...hotelResponse,
+                data: {
+                  ...hotelResponse.data,
+                  hotel: hotel
+                }
+              };
+            }
+          } catch (error) {
+            continue;
+          }
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Reserva não encontrada'
+      };
     } catch (error) {
       console.error('Erro ao buscar reserva:', error);
       return {
@@ -898,11 +1000,37 @@ class HotelService {
     }
   }
 
+  // ==================== NOVA FUNÇÃO: Confirmar Reserva ====================
+
+  /**
+   * ✅ NOVA FUNÇÃO: Confirmar reserva
+   * Endpoint: POST /api/hotels/bookings/:bookingId/confirm
+   */
+  async confirmBooking(bookingId: string): Promise<ApiResponse<Booking>> {
+    try {
+      console.log('✅ Confirmando reserva:', bookingId);
+      
+      const response = await apiService.post<ApiResponse<Booking>>(
+        `/api/hotels/bookings/${bookingId}/confirm`,
+        {}
+      );
+      
+      return response;
+    } catch (error) {
+      console.error('Erro ao confirmar reserva:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao confirmar reserva'
+      };
+    }
+  }
+
   // ==================== MÉTODOS DE BOOKINGS ====================
 
   /**
    * Buscar reservas do hotel
    * ✅ Endpoint existente: GET /api/hotels/:id/bookings
+   * ✅ CORREÇÃO APLICADA: Normalização de status
    */
   async getHotelBookings(
     hotelId: string, 
@@ -916,11 +1044,17 @@ class HotelService {
       const params = new URLSearchParams();
       
       if (filters?.status) {
+        let statusArray: string[];
+        
         if (Array.isArray(filters.status)) {
-          params.append('status', filters.status.join(','));
+          statusArray = filters.status;
         } else {
-          params.append('status', filters.status);
+          statusArray = filters.status.split(',');
         }
+        
+        // ✅ CORREÇÃO: Converter status do frontend para backend
+        const backendStatusArray = statusArray.map(s => normalizeHotelBookingStatus(s));
+        params.append('status', backendStatusArray.join(','));
       }
       
       if (filters?.payment_status) {
@@ -934,8 +1068,13 @@ class HotelService {
       
       const response = await apiService.get<ListResponse<Booking>>(url);
       
-      if (!response.success) {
-        console.error('Erro na resposta:', response.error);
+      // ✅ CORREÇÃO: Normalizar status na resposta
+      if (response.success && response.data) {
+        response.data = response.data.map(booking => ({
+          ...booking,
+          // ✅ CORREÇÃO: status agora é string (aceita qualquer valor)
+          status: denormalizeHotelBookingStatus(booking.status) || 'pending_confirmation',
+        }));
       }
       
       return response;
@@ -1163,11 +1302,9 @@ class HotelService {
     // Tenta carregar o hotel salvo
     if (savedId) {
       try {
-        const result = await this.getHotelById(savedId);
-        if (result.success && result.data) {
-          setCached(cacheKey, result.data);
-          return result.data; // Retorna o Hotel do tipo do serviço
-        }
+        const hotel = await this.getHotelById(savedId);
+        setCached(cacheKey, hotel);
+        return hotel; // Retorna o Hotel do tipo do serviço
       } catch (err) {
         console.warn('Hotel salvo não encontrado:', err);
         localStorage.removeItem('activeHotelId'); // limpa se inválido
@@ -1230,7 +1367,6 @@ class HotelService {
     clearCache(`getMyHotels_${userId}`);
     clearCache(`getActiveHotel_${userId}`);
     clearCache(`getActiveHotelConverted_${userId}`);
-    clearCache(`getHotelById_*`);
     console.log('🧹 [Cache] Todos os caches de hotel limpos');
   }
 
@@ -1253,21 +1389,6 @@ class HotelService {
   }
 
   // ==================== NOVAS ROTAS ADICIONAIS (para completude) ====================
-
-  /**
-   * Obter hotel por slug
-   */
-  async getHotelBySlug(slug: string): Promise<ApiResponse<Hotel>> {
-    try {
-      return await apiService.get<ApiResponse<Hotel>>(`/api/hotels/slug/${slug}`);
-    } catch (error) {
-      console.error('Erro ao buscar hotel por slug:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Erro ao buscar hotel'
-      };
-    }
-  }
 
   /**
    * Buscar hotéis por província

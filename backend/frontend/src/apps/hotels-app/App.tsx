@@ -40,20 +40,6 @@ function AppContent() {
   const activeHotelId = activeHotel?.id || '';
   const [, setLocation] = useLocation();
   const location = useLocation()[0];
-  const [_, navigate] = useLocation();
-
-  // Redirecionamentos automáticos
-  React.useEffect(() => {
-    if (location === '/hotels' || location === '/hotels/') {
-      setLocation('/hotels/manage');
-    }
-    if (location === '/hotels/events' || location === '/hotels/events/') {
-      setLocation('/hotels/events/dashboard');
-    }
-    if (location === '/hotels/bookings' || location === '/hotels/bookings/') {
-      setLocation('/hotels/bookings');
-    }
-  }, [location, setLocation]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -61,13 +47,13 @@ function AppContent() {
       <main className="flex-1 pb-20 md:pb-4">
         <Switch>
           {/* Gestão de hotéis */}
-          <Route path="/hotels/manage" component={HotelManagerDashboard} />
+          <Route path="/hotels-app/manage" component={HotelManagerDashboard} />
           
           {/* ✅ ADICIONADO: Gestão de reservas de hotéis */}
-          <Route path="/hotels/bookings" component={HotelBookingsPage} />
+          <Route path="/hotels-app/bookings" component={HotelBookingsPage} />
           
           {/* Detalhes de reserva específica */}
-          <Route path="/hotels/bookings/:bookingId">
+          <Route path="/hotels-app/bookings/:bookingId">
             {(params) => (
               <div className="container mx-auto p-6">
                 <div className="text-center p-10 bg-white rounded-lg shadow">
@@ -77,7 +63,7 @@ function AppContent() {
                     Para ver detalhes completos, use a página de gestão de reservas.
                   </p>
                   <div className="flex gap-4 justify-center">
-                    <Button onClick={() => navigate('/hotels/bookings')}>
+                    <Button onClick={() => setLocation('/hotels-app/bookings')}>
                       Voltar para Gestão de Reservas
                     </Button>
                   </div>
@@ -87,30 +73,30 @@ function AppContent() {
           </Route>
 
           {/* Criação de hotel */}
-          <Route path="/hotels/create">
+          <Route path="/hotels-app/create">
             {() => (
               <CreateHotelForm 
                 onSuccess={(hotelId) => {
                   console.log('✅ Hotel criado com sucesso, redirecionando...');
                   setTimeout(() => {
-                    navigate('/hotels/manage');
+                    setLocation('/hotels-app/manage');
                   }, 1500);
                 }}
                 onCancel={() => {
                   console.log('❌ Criação cancelada, voltando ao dashboard...');
-                  navigate('/hotels/manage');
+                  setLocation('/hotels-app/manage');
                 }}
               />
             )}
           </Route>
 
           {/* Dashboard de Eventos */}
-          <Route path="/hotels/events/dashboard">
+          <Route path="/hotels-app/events/dashboard">
             <EventDashboardPage hotelId={activeHotelId} />
           </Route>
 
           {/* Dashboard específico do espaço de eventos */}
-          <Route path="/hotels/events/spaces/:spaceId/dashboard">
+          <Route path="/hotels-app/events/spaces/:spaceId/dashboard">
             {(params) => {
               const spaceId = params.spaceId || '';
               return <EventDashboardWithSpace hotelId={activeHotelId} spaceId={spaceId} />;
@@ -118,23 +104,23 @@ function AppContent() {
           </Route>
 
           {/* Lista geral de reservas (por hotel) */}
-          <Route path="/hotels/events/bookings">
+          <Route path="/hotels-app/events/bookings">
             <EventBookingsPage hotelId={activeHotelId} />
           </Route>
 
           {/* Reservas de um espaço específico */}
-          <Route path="/hotels/events/spaces/:spaceId/bookings">
+          <Route path="/hotels-app/events/spaces/:spaceId/bookings">
             {(params) => (
               <EventSpaceBookingsList
                 spaceId={params.spaceId || ''}
                 spaceName="Espaço de Eventos"
-                onClose={() => setLocation('/hotels/events/bookings')}
+                onClose={() => setLocation('/hotels-app/events/bookings')}
               />
             )}
           </Route>
 
           {/* Criação de espaço de eventos */}
-          <Route path="/hotels/events/spaces/create">
+          <Route path="/hotels-app/events/spaces/create">
             {(params) => {
               const urlParams = new URLSearchParams(window.location.search);
               const hotelIdParam = urlParams.get('hotelId') || activeHotelId;
@@ -143,14 +129,14 @@ function AppContent() {
           </Route>
 
           {/* Edição de espaço de eventos */}
-          <Route path="/hotels/events/spaces/:spaceId/edit">
+          <Route path="/hotels-app/events/spaces/:spaceId/edit">
             {(params) => (
               <EventSpaceEditPage spaceId={params.spaceId || ''} />
             )}
           </Route>
 
           {/* Calendário do espaço de eventos */}
-          <Route path="/hotels/events/spaces/:spaceId/calendar">
+          <Route path="/hotels-app/events/spaces/:spaceId/calendar">
             {(params) => (
               <div className="container mx-auto p-6">
                 <div className="text-center p-10 bg-white rounded-lg shadow">
@@ -158,7 +144,7 @@ function AppContent() {
                   <p className="text-gray-600 mb-4">ID: {params.spaceId}</p>
                   <p className="text-gray-600 mb-6">Página em desenvolvimento...</p>
                   <div className="flex gap-4 justify-center">
-                    <Button onClick={() => setLocation('/hotels/events/spaces')}>
+                    <Button onClick={() => setLocation('/hotels-app/events/spaces')}>
                       Voltar para Gestão de Espaços
                     </Button>
                   </div>
@@ -168,7 +154,7 @@ function AppContent() {
           </Route>
 
           {/* Detalhes do espaço de eventos */}
-          <Route path="/hotels/events/spaces/:spaceId">
+          <Route path="/hotels-app/events/spaces/:spaceId">
             {(params) => (
               <div className="container mx-auto p-6">
                 <div className="text-center p-10 bg-white rounded-lg shadow">
@@ -176,10 +162,10 @@ function AppContent() {
                   <p className="text-gray-600 mb-4">ID: {params.spaceId}</p>
                   <p className="text-gray-600 mb-6">Página em desenvolvimento...</p>
                   <div className="flex gap-4 justify-center">
-                    <Button onClick={() => setLocation(`/hotels/events/spaces/${params.spaceId}/edit`)}>
+                    <Button onClick={() => setLocation(`/hotels-app/events/spaces/${params.spaceId}/edit`)}>
                       Editar Espaço
                     </Button>
-                    <Button onClick={() => setLocation('/hotels/events/spaces')} variant="outline">
+                    <Button onClick={() => setLocation('/hotels-app/events/spaces')} variant="outline">
                       Voltar
                     </Button>
                   </div>
@@ -189,16 +175,16 @@ function AppContent() {
           </Route>
 
           {/* Gestão de espaços de eventos */}
-          <Route path="/hotels/events/spaces">
+          <Route path="/hotels-app/events/spaces">
             <EventSpacesManagementModern hotelId={activeHotelId} />
           </Route>
 
-          {/* Redirecionamentos */}
-          <Route path="/hotels">
-            <Redirect to="/hotels/manage" />
+          {/* Redirecionamentos DENTRO do hotels-app */}
+          <Route path="/hotels-app">
+            <Redirect to="/hotels-app/manage" />
           </Route>
-          <Route path="/hotels/events">
-            <Redirect to="/hotels/events/dashboard" />
+          <Route path="/hotels-app/events">
+            <Redirect to="/hotels-app/events/dashboard" />
           </Route>
 
           {/* Default - fallback */}

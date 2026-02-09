@@ -1,5 +1,5 @@
 // src/apps/hotels-app/pages/bookings/components/PaymentRegistrationModal.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HotelBooking } from '@/shared/types/bookings';
 import {
   Dialog,
@@ -70,6 +70,9 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
   onSubmit,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [totalPaid, setTotalPaid] = useState<number>(0);
+  const [remainingAmount, setRemainingAmount] = useState<number>(0);
+  
   // ✅ CORREÇÃO: Estado tipado corretamente
   const [formData, setFormData] = useState<FormDataState>({
     amount: '',
@@ -80,10 +83,61 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  if (!booking) return null;
+  // ✅ CORREÇÃO: Efeito para calcular valores baseado no booking
+  useEffect(() => {
+    if (booking) {
+      const totalPrice = parseFloat(booking.total_price?.toString().replace(/\s/g, '') || '0');
+      
+      // Calcular valor já pago baseado no payment_status
+      if (booking.payment_status === 'partial') {
+        // Para booking de 4600 MZN, 2300 já foram pagos (50%)
+        const paidAmount = totalPrice / 2;
+        setTotalPaid(paidAmount);
+        setRemainingAmount(totalPrice - paidAmount);
+      } else if (booking.payment_status === 'paid') {
+        setTotalPaid(totalPrice);
+        setRemainingAmount(0);
+      } else {
+        setTotalPaid(0);
+        setRemainingAmount(totalPrice);
+      }
+      
+      // Inicializar valor com 50% do saldo pendente
+      if (remainingAmount > 0 && !formData.amount) {
+        const initialAmount = (remainingAmount / 2).toFixed(2);
+        setFormData(prev => ({ 
+          ...prev, 
+          amount: initialAmount,
+          paymentType: 'partial'
+        }));
+      }
+    }
+  }, [booking, formData.amount, remainingAmount]);
 
-  const totalPrice = parseFloat(booking.total_price) || 0;
-  const remainingAmount = totalPrice; // Em uma implementação real, calcularia o saldo pendente
+  // ✅ CORREÇÃO: Resetar form quando modal abrir/fechar
+  useEffect(() => {
+    if (open && booking) {
+      setFormData({
+        amount: '',
+        paymentMethod: 'mpesa',
+        reference: '',
+        notes: '',
+        paymentType: 'partial',
+      });
+      setErrors({});
+      
+      // Definir valor inicial
+      if (remainingAmount > 0) {
+        const initialAmount = (remainingAmount * 0.5).toFixed(2);
+        setFormData(prev => ({ ...prev, amount: initialAmount }));
+      }
+    }
+  }, [open, booking, remainingAmount]);
+
+  // ✅ CORREÇÃO: Se não há booking, não renderize nada
+  if (!booking) {
+    return null;
+  }
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -169,7 +223,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
     if (numericValue) {
       const amount = parseFloat(numericValue);
       if (!isNaN(amount)) {
-        if (amount >= remainingAmount * 0.99) { // 99% para evitar problemas de arredondamento
+        if (Math.abs(amount - remainingAmount) < 0.01) { // 99% para evitar problemas de arredondamento
           setFormData(prev => ({ ...prev, paymentType: 'full' }));
         } else {
           setFormData(prev => ({ ...prev, paymentType: 'partial' }));
@@ -213,6 +267,14 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
     }));
   };
 
+  const handleQuarterPayment = () => {
+    setFormData(prev => ({
+      ...prev,
+      amount: (remainingAmount / 4).toFixed(2),
+      paymentType: 'partial',
+    }));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -237,10 +299,30 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
               <span className="text-sm text-gray-600">Hóspede:</span>
               <span className="font-medium">{booking.guest_name}</span>
             </div>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600">Valor total:</span>
-              <span className="text-lg font-bold text-green-600">
+              <span className="font-semibold text-green-600">
                 {formatCurrency(booking.total_price)}
+              </span>
+            </div>
+            
+            {/* ✅ NOVO: Mostrar valor já pago */}
+            {totalPaid > 0 && (
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-600">Já pago:</span>
+                <span className="font-medium text-green-600">
+                  {formatCurrency(totalPaid)}
+                </span>
+              </div>
+            )}
+            
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+              <span className="text-sm text-gray-600">Saldo pendente:</span>
+              <span className={cn(
+                "text-lg font-bold",
+                remainingAmount > 0 ? "text-amber-600" : "text-green-600"
+              )}>
+                {formatCurrency(remainingAmount.toString())}
               </span>
             </div>
           </div>
@@ -254,8 +336,19 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
                   type="button"
                   variant="outline"
                   size="sm"
+                  onClick={handleQuarterPayment}
+                  className="h-7 text-xs"
+                  disabled={loading || remainingAmount <= 0}
+                >
+                  25%
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={handleHalfPayment}
                   className="h-7 text-xs"
+                  disabled={loading || remainingAmount <= 0}
                 >
                   50%
                 </Button>
@@ -265,6 +358,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
                   size="sm"
                   onClick={handleFullPayment}
                   className="h-7 text-xs"
+                  disabled={loading || remainingAmount <= 0}
                 >
                   100%
                 </Button>
@@ -281,7 +375,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
                 onChange={(e) => handleAmountChange(e.target.value)}
                 placeholder="0,00"
                 className="pl-10 text-lg"
-                disabled={loading}
+                disabled={loading || remainingAmount <= 0}
               />
             </div>
             
@@ -292,9 +386,20 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
               </p>
             )}
             
-            <div className="text-sm text-gray-500">
-              Saldo pendente: {formatCurrency(remainingAmount.toString())}
-            </div>
+            {/* ✅ CORREÇÃO: Mostrar novo saldo após este pagamento */}
+            {formData.amount && !errors.amount && (
+              <div className="text-sm text-gray-600">
+                Após este pagamento, saldo será:{' '}
+                <span className={cn(
+                  "font-medium",
+                  (remainingAmount - parseFloat(formData.amount || '0')) > 0 
+                    ? "text-amber-600" 
+                    : "text-green-600"
+                )}>
+                  {formatCurrency(remainingAmount - parseFloat(formData.amount || '0'))}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Método de pagamento */}
@@ -304,7 +409,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
             <Select
               value={formData.paymentMethod}
               onValueChange={handlePaymentMethodChange}
-              disabled={loading}
+              disabled={loading || remainingAmount <= 0}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Selecione o método" />
@@ -344,7 +449,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
               value={formData.reference}
               onChange={(e) => setFormData(prev => ({ ...prev, reference: e.target.value }))}
               placeholder="Ex: MP123456789, TB2024001, etc."
-              disabled={loading}
+              disabled={loading || remainingAmount <= 0}
             />
             
             {errors.reference && (
@@ -369,7 +474,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
                 setFormData(prev => ({ ...prev, paymentType: value }))
               }
               className="flex gap-4"
-              disabled={loading}
+              disabled={loading || remainingAmount <= 0}
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="partial" id="partial" />
@@ -398,7 +503,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
               onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
               placeholder="Observações adicionais sobre o pagamento..."
               rows={3}
-              disabled={loading}
+              disabled={loading || remainingAmount <= 0}
             />
             
             <div className="text-xs text-gray-500">
@@ -429,7 +534,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
           
           <Button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || remainingAmount <= 0}
             className="bg-green-600 hover:bg-green-700 sm:order-2"
           >
             {loading ? (
@@ -440,7 +545,7 @@ export const PaymentRegistrationModal: React.FC<PaymentRegistrationModalProps> =
             ) : (
               <>
                 <CheckCircle className="w-4 h-4 mr-2" />
-                Registrar Pagamento
+                {remainingAmount <= 0 ? 'Reserva Paga' : 'Registrar Pagamento'}
               </>
             )}
           </Button>

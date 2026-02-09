@@ -21,10 +21,12 @@ export interface HotelBooking {
   base_price: string; // ✅ CORRIGIDO: snake_case - Decimal como string
   discount_amount?: string | null; // ✅ CORRIGIDO: snake_case
   total_price: string; // ✅ CORRIGIDO: snake_case
+  taxes?: string | null; // ✅ ADICIONADO: Campo taxes que existe no backend
   special_requests?: string | null; // ✅ CORRIGIDO: snake_case
   promo_code?: string | null; // ✅ CORRIGIDO: snake_case
-  status: 'pending' | 'confirmed' | 'checked_in' | 'checked_out' | 'cancelled' | 'rejected';
-  payment_status: 'pending' | 'partial' | 'paid'; // ✅ CORRIGIDO: snake_case
+  // ✅ CORREÇÃO: Status como string para compatibilidade com sistema de normalização
+  status: string;
+  payment_status: 'pending' | 'partial' | 'paid' | 'refunded'; // ✅ CORRIGIDO: snake_case, incluindo 'refunded'
   user_id?: string | null; // ✅ CORRIGIDO: snake_case
   created_at: string; // ✅ CORRIGIDO: snake_case - ISO datetime
   updated_at: string; // ✅ CORRIGIDO: snake_case - ISO datetime

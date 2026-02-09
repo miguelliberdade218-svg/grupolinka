@@ -1,6 +1,11 @@
-// src/services/apiService.ts - VERSÃO CORRIGIDA 26/01/2026 - SUPORTE COMPLETO A DIÁRIAS (EVENTS)
-// Mantém rides e hotels intactos | Corrige e completa tudo de events / eventSpaces
-// ALINHADO COM shared/types/event-spaces.ts (usando camelCase)
+// src/services/apiService.ts - VERSÃO CORRIGIDA 07/02/2026
+// ✅ CORREÇÃO COMPLETA: Todas as rotas /api/v2/hotels substituídas por /api/hotels
+// ✅ CORREÇÃO: Funções de normalização de status de hotel adicionadas
+// ✅ CORREÇÃO: Métodos de booking atualizados para usar rotas corretas
+// ✅ CORREÇÃO: Tipo EventSpaceDetails corrigido para EventSpaceDetailsResponse
+// ✅ CORREÇÃO CRÍTICA: Método getEventSpaceDetails corrigido para acessar res.data.space corretamente
+// ✅ NOVO: Método debugEventSpaceData adicionado para diagnóstico
+// Mantém rides e events intactos
 
 import { auth } from '@/shared/lib/firebaseConfig';
 import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday, formatDateTime } from '../utils/dateFormatter';
@@ -60,10 +65,12 @@ import {
   EventBookingResponse,
   EventBooking,
   EventDashboardSummary,
-  EventSpaceDetails,
+  // ✅ CORREÇÃO: EventSpaceDetails substituído por EventSpaceDetailsResponse
+  EventSpaceDetailsResponse,
+  EventSpaceData,
   CreateEventSpaceRequest,
   UpdateEventSpaceRequest,
-  PaymentStatusType, // ✅ ADICIONADO: Importar o tipo de status de pagamento
+  PaymentStatusType,
 } from '@/shared/types/event-spaces';
 
 // ====================== EXPORTAÇÕES ======================
@@ -82,6 +89,120 @@ const toNumber = (value: string | number | null | undefined): number => {
   const num = Number(value);
   return isNaN(num) ? 0 : num;
 };
+
+// ====================== FUNÇÕES DE NORMALIZAÇÃO DE STATUS (HOTÉIS) ======================
+
+/**
+ * ✅ CORREÇÃO: Normaliza status do frontend para o backend
+ * Converte status como 'rejected', 'pending' para os status válidos do banco
+ */
+function normalizeHotelBookingStatus(frontendStatus: string | undefined): string {
+  if (!frontendStatus) return 'pending_confirmation';
+  
+  const statusMap: Record<string, string> = {
+    'pending': 'pending_confirmation',
+    'pending_confirmation': 'pending_confirmation',
+    'confirmed': 'confirmed',
+    'checked_in': 'checked_in',
+    'checked_out': 'checked_out',
+    'cancelled': 'cancelled',
+    'no_show': 'no_show',
+    // Mapear status antigos/inexistentes
+    'rejected': 'cancelled',
+    'pending_approval': 'pending_confirmation',
+    'in_progress': 'checked_in',
+    'completed': 'checked_out',
+  };
+  
+  return statusMap[frontendStatus.toLowerCase()] || 'pending_confirmation';
+}
+
+/**
+ * ✅ CORREÇÃO: Normaliza status do backend para o frontend
+ */
+function denormalizeHotelBookingStatus(backendStatus: string | undefined): string {
+  if (!backendStatus) return 'pending_confirmation';
+  
+  const validStatuses = [
+    'pending_confirmation',
+    'confirmed', 
+    'checked_in',
+    'checked_out',
+    'cancelled',
+    'no_show'
+  ];
+  
+  if (validStatuses.includes(backendStatus)) {
+    return backendStatus;
+  }
+  
+  return 'pending_confirmation';
+}
+
+/**
+ * ✅ CORREÇÃO: Normaliza um booking completo de hotel
+ */
+function normalizeHotelBooking(apiBooking: any): any {
+  const booking = apiBooking.booking || apiBooking;
+  
+  const normalizedStatus = denormalizeHotelBookingStatus(booking.status);
+  
+  return {
+    // IDs e dados básicos
+    id: booking.id || '',
+    bookingId: booking.id || '',
+    hotelId: booking.hotelId || booking.hotel_id || '',
+    roomTypeId: booking.roomTypeId || booking.room_type_id || '',
+    
+    // Dados do hóspede
+    guestName: booking.guestName || booking.guest_name || '',
+    guestEmail: booking.guestEmail || booking.guest_email || '',
+    guestPhone: booking.guestPhone || booking.guest_phone || null,
+    
+    // Datas
+    checkIn: booking.checkIn || booking.check_in || '',
+    checkOut: booking.checkOut || booking.check_out || '',
+    
+    // Quantidades
+    adults: Number(booking.adults || 1),
+    children: Number(booking.children || 0),
+    units: Number(booking.units || 1),
+    nights: Number(booking.nights || 
+      (booking.checkIn && booking.checkOut ? 
+        Math.max(1, Math.ceil(
+          (new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / 
+          (1000 * 60 * 60 * 24)
+        )) : 1
+      )
+    ),
+    
+    // Status (✅ CORRIGIDO: usa status normalizado)
+    status: normalizedStatus,
+    paymentStatus: booking.paymentStatus || booking.payment_status || 'pending',
+    
+    // Preços
+    totalPrice: booking.totalPrice || booking.total_price || '0',
+    basePrice: booking.basePrice || booking.base_price || '0',
+    taxes: booking.taxes || '0',
+    
+    // Outros dados
+    specialRequests: booking.specialRequests || booking.special_requests || null,
+    promoCode: booking.promoCode || booking.promo_code || null,
+    userId: booking.userId || booking.user_id || null,
+    
+    // Timestamps
+    createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
+    updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
+    
+    // Campos snake_case para compatibilidade
+    guest_name: booking.guestName || booking.guest_name || '',
+    guest_email: booking.guestEmail || booking.guest_email || '',
+    check_in: booking.checkIn || booking.check_in || '',
+    check_out: booking.checkOut || booking.check_out || '',
+    total_price: booking.totalPrice || booking.total_price || '0',
+    created_at: booking.createdAt || booking.created_at || new Date().toISOString(),
+  };
+}
 
 // ====================== FUNÇÕES UTILITÁRIAS RIDES (INTACTAS) ======================
 
@@ -196,7 +317,6 @@ export function createDefaultMatchStats(): any {
 export function normalizeEventSpace(apiSpace: any): EventSpace {
   const space = apiSpace.space || apiSpace;
   
-  // Campos camelCase (frontend-friendly) conforme shared/types/event-spaces.ts
   const normalized: EventSpace = {
     id: space.id || '',
     hotelId: space.hotelId || space.hotel_id || '',
@@ -233,7 +353,6 @@ export function normalizeEventSpace(apiSpace: any): EventSpace {
     createdAt: space.createdAt || space.created_at || new Date().toISOString(),
     updatedAt: space.updatedAt || space.updated_at || new Date().toISOString(),
     
-    // Campos opcionais/com calculados
     rating: space.rating || undefined,
     totalReviews: space.totalReviews || undefined,
     thumbnail: (space.images?.[0] || ''),
@@ -247,7 +366,6 @@ export function normalizeEventSpace(apiSpace: any): EventSpace {
     } : null,
   };
   
-  // Campos específicos de capacidade por setup (opcionais)
   if (space.capacityTheater !== undefined || space.capacity_theater !== undefined) {
     normalized.capacityTheater = Number(space.capacityTheater || space.capacity_theater);
   }
@@ -271,23 +389,19 @@ export function normalizeEventSpaces(apiSpaces: any[]): EventSpace[] {
   return (apiSpaces || []).map(normalizeEventSpace);
 }
 
-// ✅ CORREÇÃO COMPLETA: Função normalizeEventBooking atualizada com cálculo correto de campos financeiros
 export function normalizeEventBooking(apiBooking: any): EventBooking {
   const booking = apiBooking.booking || apiBooking;
   
-  // ✅ CORREÇÃO: Calcular valores corretamente
   const totalPrice = toNumber(booking.totalPrice || booking.total_price || '0');
   const depositPaid = toNumber(booking.depositPaid || booking.deposit_paid || '0');
   const basePrice = toNumber(booking.basePrice || booking.base_price || '0');
   const securityDeposit = toNumber(booking.securityDeposit || booking.security_deposit || '0');
   
-  // ✅ CORREÇÃO: Calcular balanceDue corretamente (se não fornecido, calcular)
   let balanceDue = toNumber(booking.balanceDue || booking.balance_due || '0');
   if (balanceDue === 0 && totalPrice > 0 && depositPaid < totalPrice) {
     balanceDue = Math.max(0, totalPrice - depositPaid);
   }
   
-  // ✅ CORREÇÃO: Determinar payment_status automaticamente se não fornecido
   let paymentStatus = booking.paymentStatus || booking.payment_status || 'pending';
   if (balanceDue <= 0 && totalPrice > 0) {
     paymentStatus = 'paid';
@@ -316,7 +430,6 @@ export function normalizeEventBooking(apiBooking: any): EventBooking {
     totalPrice: String(totalPrice),
     securityDeposit: String(securityDeposit),
     
-    // ✅ CORREÇÃO CRÍTICA: Campos financeiros calculados corretamente
     depositPaid: String(depositPaid),
     balanceDue: String(balanceDue),
     
@@ -325,11 +438,9 @@ export function normalizeEventBooking(apiBooking: any): EventBooking {
     createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
     updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
     
-    // Campos calculados/display
     dateRange: `${booking.startDate || booking.start_date} - ${booking.endDate || booking.end_date}`,
     statusDisplay: getEventStatusDisplay(booking.status),
     
-    // Campos do backend (snake_case para compatibilidade)
     deposit_paid: String(depositPaid),
     balance_due: String(balanceDue),
     payment_status: paymentStatus,
@@ -344,12 +455,11 @@ export function normalizeEventBookings(apiBookings: any[]): EventBooking[] {
   return (apiBookings || []).map(normalizeEventBooking);
 }
 
-// ✅ CORREÇÃO: Função getEventStatusDisplay atualizada com status in_progress
 function getEventStatusDisplay(status: string): string {
   const map: Record<string, string> = {
     pending_approval: 'Aguardando aprovação',
     confirmed: 'Confirmado',
-    in_progress: 'Em andamento', // ✅ ADICIONADO
+    in_progress: 'Em andamento',
     cancelled: 'Cancelado',
     rejected: 'Rejeitado',
     completed: 'Concluído',
@@ -475,7 +585,6 @@ class ApiService {
     }
   }
 
-  // Métodos HTTP básicos
   async get<T>(url: string, params?: any, customHeaders?: Record<string, string>): Promise<T> {
     if (params) {
       const queryParams = new URLSearchParams(params).toString();
@@ -586,11 +695,118 @@ class ApiService {
     return await response.json() as T;
   }
 
+  // ====================== ✅ NOVO: MÉTODO DE DEBUG ======================
+
+  async debugEventSpaceData(spaceId: string) {
+    try {
+      console.group('🔧 DEBUG EVENT SPACE DATA - ANÁLISE COMPLETA');
+      
+      // 1. Buscar dados brutos SEM normalização
+      const response = await fetch(`${this.baseURL}/api/events/spaces/${spaceId}`, {
+        headers: await this.getAuthHeaders()
+      });
+      
+      const rawText = await response.text();
+      console.log('📦 Resposta bruta (texto):', rawText);
+      
+      const rawJson = JSON.parse(rawText);
+      console.log('📦 JSON parseado:', JSON.stringify(rawJson, null, 2));
+      
+      // 2. Análise estrutural detalhada
+      console.log('🔍 ANÁLISE ESTRUTURAL:');
+      console.log('- Status:', response.status);
+      console.log('- Success:', rawJson.success);
+      
+      if (rawJson.success && rawJson.data) {
+        console.log('📊 DATA OBJECT ANALYSIS:');
+        console.log('  1. Keys em data:', Object.keys(rawJson.data));
+        console.log('  2. Tem space?', !!rawJson.data.space);
+        console.log('  3. Tipo de space:', typeof rawJson.data.space);
+        console.log('  4. Tem hotel?', !!rawJson.data.hotel);
+        console.log('  5. Tipo de hotel:', typeof rawJson.data.hotel);
+        
+        if (rawJson.data.space) {
+          console.log('  6. Keys em space:', Object.keys(rawJson.data.space));
+          console.log('  7. base_price_per_day em space?', 'base_price_per_day' in rawJson.data.space);
+          console.log('  8. Valor de base_price_per_day em space:', rawJson.data.space.base_price_per_day);
+        }
+        
+        console.log('  9. base_price_per_day em data (nível superior)?', 'base_price_per_day' in rawJson.data);
+        console.log('  10. Valor de base_price_per_day em data:', rawJson.data.base_price_per_day);
+        
+        if (rawJson.data.hotel) {
+          console.log('  11. Keys em hotel:', Object.keys(rawJson.data.hotel));
+          console.log('  12. locality em hotel?', 'locality' in rawJson.data.hotel);
+          console.log('  13. locality valor:', rawJson.data.hotel.locality);
+          console.log('  14. province em hotel?', 'province' in rawJson.data.hotel);
+          console.log('  15. province valor:', rawJson.data.hotel.province);
+        }
+      }
+      
+      // 3. Testar normalização atual
+      console.log('🧪 TESTE DE NORMALIZAÇÃO:');
+      let normalizedSpace;
+      if (rawJson.data) {
+        // Tentativa 1: Passar data.space (CORRETO)
+        normalizedSpace = normalizeEventSpace(rawJson.data.space);
+        console.log('  Tentativa 1 (com data.space):', normalizedSpace?.basePricePerDay);
+        
+        // Tentativa 2: Passar data inteiro (errado, mas é o que estava sendo feito)
+        const wrongNormalized = normalizeEventSpace(rawJson.data);
+        console.log('  Tentativa 2 (com data inteiro):', wrongNormalized?.basePricePerDay);
+      }
+      
+      // 4. Construir objeto final como deveria ser
+      console.log('🏗️  OBJETO FINAL CORRETO:');
+      const correctResponse = {
+        success: true,
+        data: {
+          space: normalizedSpace,
+          hotel: rawJson.data?.hotel || null,
+          base_price_per_day: rawJson.data?.base_price_per_day || "0",
+          weekend_surcharge_percent: rawJson.data?.weekend_surcharge_percent || 0,
+          available_for_immediate_booking: rawJson.data?.available_for_immediate_booking || false,
+          alcohol_allowed: rawJson.data?.alcohol_allowed || false,
+          max_capacity: rawJson.data?.max_capacity || 0,
+          offers_catering: rawJson.data?.offers_catering || false,
+          catering_discount_percent: rawJson.data?.catering_discount_percent || 0,
+          catering_menu_urls: rawJson.data?.catering_menu_urls || [],
+          security_deposit: rawJson.data?.security_deposit || "0",
+        }
+      };
+      
+      console.log('✅ Estrutura correta:', correctResponse.data?.space?.basePricePerDay);
+      console.log('📍 Localização:', 
+        rawJson.data?.hotel?.locality && rawJson.data?.hotel?.province 
+          ? `${rawJson.data.hotel.locality}, ${rawJson.data.hotel.province}`
+          : 'Não disponível'
+      );
+      
+      console.groupEnd();
+      
+      return { 
+        rawResponse: rawJson, 
+        normalizedSpace, 
+        correctStructure: correctResponse,
+        analysis: {
+          hasPrice: !!rawJson.data?.base_price_per_day,
+          hasLocation: !!(rawJson.data?.hotel?.locality && rawJson.data?.hotel?.province),
+          priceValue: rawJson.data?.base_price_per_day,
+          locationValue: rawJson.data?.hotel ? 
+            `${rawJson.data.hotel.locality}, ${rawJson.data.hotel.province}` : null
+        }
+      };
+    } catch (error) {
+      console.error('❌ Debug failed:', error);
+      console.groupEnd();
+      throw error;
+    }
+  }
+
   // ====================== EVENTS / EVENT SPACES ======================
 
   async searchEventSpaces(params: EventSpaceSearchParams): Promise<EventSpaceSearchResponse> {
     try {
-      // Converter camelCase para snake_case para o backend
       const backendParams = {
         query: params.query,
         locality: params.locality,
@@ -621,7 +837,8 @@ class ApiService {
     }
   }
 
-  async getEventSpaceDetails(spaceId: string): Promise<ApiResponse<EventSpaceDetails>> {
+  // ✅ CORREÇÃO CRÍTICA: Método getEventSpaceDetails corrigido para acessar res.data.space corretamente
+  async getEventSpaceDetails(spaceId: string): Promise<ApiResponse<EventSpaceDetailsResponse>> {
     try {
       const res = await this.get<any>(`/api/events/spaces/${spaceId}`);
 
@@ -629,26 +846,35 @@ class ApiService {
         throw new Error(res.message || 'Espaço não encontrado');
       }
 
-      const normalizedSpace = normalizeEventSpace(res.data.space || res.data);
+      // ✅ CORREÇÃO CRÍTICA: Passar res.data.space, não res.data
+      const normalizedSpace = normalizeEventSpace(res.data.space);
       
       return {
         success: true,
         data: {
           space: normalizedSpace,
           hotel: res.data.hotel || null,
-          base_price_per_day: String(res.data.base_price_per_day || normalizedSpace.basePricePerDay || '0'),
-          weekend_surcharge_percent: Number(res.data.weekend_surcharge_percent || normalizedSpace.weekendSurchargePercent || 0),
-          available_for_immediate_booking: !!res.data.available_for_immediate_booking,
-          alcohol_allowed: !!res.data.alcohol_allowed || normalizedSpace.alcoholAllowed,
-          max_capacity: Number(res.data.max_capacity || normalizedSpace.capacityMax || 0),
-          offers_catering: !!res.data.offers_catering || normalizedSpace.offersCatering,
-          catering_discount_percent: Number(res.data.catering_discount_percent || normalizedSpace.cateringDiscountPercent || 0),
-          catering_menu_urls: res.data.catering_menu_urls || normalizedSpace.cateringMenuUrls || [],
-          security_deposit: String(res.data.security_deposit || normalizedSpace.securityDeposit || '0'),
-        },
+          base_price_per_day: res.data.base_price_per_day || "0",
+          weekend_surcharge_percent: res.data.weekend_surcharge_percent || 0,
+          available_for_immediate_booking: res.data.available_for_immediate_booking || false,
+          alcohol_allowed: res.data.alcohol_allowed || false,
+          max_capacity: res.data.max_capacity || normalizedSpace.capacityMax || 0,
+          offers_catering: res.data.offers_catering || false,
+          catering_discount_percent: res.data.catering_discount_percent || 0,
+          catering_menu_urls: res.data.catering_menu_urls || [],
+          security_deposit: res.data.security_deposit || "0",
+        } as EventSpaceDetailsResponse,
       };
     } catch (err) {
       console.error('[getEventSpaceDetails]', err);
+      
+      // Debug automático em caso de erro
+      try {
+        await this.debugEventSpaceData(spaceId);
+      } catch (debugError) {
+        console.error('Debug também falhou:', debugError);
+      }
+      
       return { success: false, error: (err as Error).message };
     }
   }
@@ -677,7 +903,6 @@ class ApiService {
 
   async createEventBooking(frontendReq: EventBookingRequest): Promise<EventBookingResponse> {
     try {
-      // Converter camelCase para snake_case para o backend
       const backendPayload = {
         event_space_id: frontendReq.eventSpaceId,
         organizer_name: frontendReq.organizerName,
@@ -695,7 +920,6 @@ class ApiService {
         user_id: frontendReq.userId ?? auth.currentUser?.uid,
       };
 
-      // ✅ Endpoint correto conforme backend - /api/events/spaces/:id/bookings
       const res = await this.post<any>(`/api/events/spaces/${backendPayload.event_space_id}/bookings`, backendPayload);
 
       return {
@@ -723,7 +947,6 @@ class ApiService {
     }
   }
 
-  // ✅ CORREÇÃO CRÍTICA: Função cancelEventBooking atualizada para usar endpoint correto
   async cancelEventBooking(
     bookingId: string, 
     data?: { reason?: string }
@@ -731,7 +954,6 @@ class ApiService {
     try {
       console.log('🎯 [cancelEventBooking] Chamado com bookingId:', bookingId, 'reason:', data?.reason);
       
-      // ✅ CORREÇÃO: Usar endpoint correto conforme backend
       const res = await this.post<any>(`/api/events/bookings/${bookingId}/cancel`, { reason: data?.reason });
       
       console.log('📥 [cancelEventBooking] Resposta recebida:', res);
@@ -767,14 +989,11 @@ class ApiService {
     }
   }
 
-  // ✅ CORREÇÃO CRÍTICA: Método confirmEventBooking corrigido para enviar apenas objeto vazio
   async confirmEventBooking(bookingId: string): Promise<ApiResponse<EventBooking>> {
     try {
       console.log('🎯 [confirmEventBooking] Chamado com bookingId:', bookingId);
       console.log('📤 [confirmEventBooking] Payload sendo enviado: {}');
       
-      // ✅ ENVIAR APENAS OBJETO VAZIO para evitar envio de campos incorretos
-      // NÃO enviar nenhum dado extra que possa conter startDatetime
       const res = await this.post<any>(`/api/events/bookings/${bookingId}/confirm`, {});
       
       console.log('📥 [confirmEventBooking] Resposta recebida:', res);
@@ -880,11 +1099,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 📝 Busca avaliações de um espaço de eventos (CORRIGIDO)
-   * ✅ CORREÇÃO: Assinatura corrigida para aceitar parâmetros opcionais
-   * Endpoint: GET /api/events/spaces/:id/reviews
-   */
   async getEventSpaceReviews(
     spaceId: string,
     params?: {
@@ -913,7 +1127,6 @@ class ApiService {
     }
   }
 
-  // ✅ NOVO MÉTODO: Buscar detalhes de pagamento de uma reserva
   async getEventBookingPaymentDetails(bookingId: string): Promise<ApiResponse<any>> {
     try {
       const res = await this.get<any>(`/api/events/bookings/${bookingId}/payment`);
@@ -932,7 +1145,6 @@ class ApiService {
     }
   }
 
-  // ✅ NOVO MÉTODO: Registrar pagamento manual para uma reserva
   async registerEventPayment(
     bookingId: string,
     paymentData: {
@@ -944,7 +1156,6 @@ class ApiService {
     }
   ): Promise<ApiResponse<any>> {
     try {
-      // ✅ CORREÇÃO: Usar endpoint correto conforme backend
       const res = await this.post<any>(`/api/events/bookings/${bookingId}/payments`, {
         amount: paymentData.amount,
         payment_method: paymentData.paymentMethod,
@@ -967,7 +1178,6 @@ class ApiService {
     }
   }
 
-  // ✅ NOVO MÉTODO: Confirmar um pagamento (para gestores)
   async confirmEventPayment(
     bookingId: string,
     paymentId: string
@@ -991,7 +1201,6 @@ class ApiService {
     }
   }
 
-  // ✅ NOVO MÉTODO: Buscar histórico de pagamentos de uma reserva
   async getEventBookingPayments(bookingId: string): Promise<ApiResponse<any[]>> {
     try {
       const res = await this.get<any>(`/api/events/bookings/${bookingId}/payment-history`);
@@ -1011,7 +1220,6 @@ class ApiService {
     }
   }
 
-  // ✅ NOVO MÉTODO: Buscar estatísticas financeiras para dashboard
   async getEventFinancialSummary(
     hotelId: string,
     startDate?: string,
@@ -1039,11 +1247,6 @@ class ApiService {
 
   // ====================== 🆕 NOVOS MÉTODOS PARA GESTÃO DE RESERVAS E PAGAMENTOS ======================
 
-  /**
-   * ❌ Rejeitar reserva
-   * Endpoint: POST /api/events/bookings/:id/reject
-   * Para: Gestor rejeitar uma reserva
-   */
   async rejectEventBooking(bookingId: string, reason: string): Promise<ApiResponse<any>> {
     try {
       const res = await this.post<any>(`/api/events/bookings/${bookingId}/reject`, { reason });
@@ -1061,11 +1264,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 🔄 Atualizar status geral da reserva
-   * Endpoint: PUT /api/events/bookings/:id/status
-   * Para: Gestor atualizar status manualmente
-   */
   async updateEventBookingStatus(
     bookingId: string,
     status: string,
@@ -1087,11 +1285,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 🔄 Atualizar status de pagamento
-   * Endpoint: PUT /api/events/bookings/:id/payment-status
-   * Para: Gestor atualizar status de pagamento manualmente
-   */
   async updateEventPaymentStatus(
     bookingId: string,
     paymentStatus: string,
@@ -1116,11 +1309,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 📋 Detalhes completos (booking + payments + logs)
-   * Endpoint: GET /api/events/bookings/:id/full-details
-   * Para: Página de detalhes da reserva com tudo
-   */
   async getFullEventBookingDetails(bookingId: string): Promise<ApiResponse<any>> {
     try {
       const res = await this.get<any>(`/api/events/bookings/${bookingId}/full-details`);
@@ -1144,11 +1332,6 @@ class ApiService {
 
   // ====================== 🆕 NOVOS MÉTODOS PARA ENDPOINTS FALTANTES ======================
 
-  /**
-   * 🔄 Busca o calendário de disponibilidade de um espaço (NOVO ENDPOINT)
-   * Endpoint: GET /api/events/spaces/:id/calendar
-   * Para: EventSpaceAvailabilityCalendar.tsx
-   */
   async getEventSpaceCalendar(
     spaceId: string, 
     startDate: string, 
@@ -1176,11 +1359,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 🔄 Atualiza disponibilidade de UM dia específico (NOVO ENDPOINT)
-   * Endpoint: POST /api/events/spaces/:id/availability/day
-   * Para: Atualizar um dia específico no calendário
-   */
   async updateEventSpaceDayAvailability(
     spaceId: string, 
     data: { 
@@ -1191,7 +1369,6 @@ class ApiService {
     }
   ): Promise<ApiResponse<any>> {
     try {
-      // Converter camelCase para snake_case
       const backendData = {
         date: data.date,
         is_available: data.isAvailable,
@@ -1215,11 +1392,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 🔄 Atualiza disponibilidade em massa (vários dias)
-   * Endpoint: POST /api/events/spaces/:id/availability/bulk
-   * Para: Bulk actions no calendário
-   */
   async bulkUpdateEventSpaceAvailability(
     spaceId: string, 
     updates: Array<{ 
@@ -1230,7 +1402,6 @@ class ApiService {
     }>
   ): Promise<ApiResponse<{ updated: number }>> {
     try {
-      // Converter camelCase para snake_case
       const backendUpdates = updates.map(update => ({
         date: update.date,
         is_available: update.isAvailable,
@@ -1257,12 +1428,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 🔄 Busca reservas com filtros (NOVO ENDPOINT)
-   * ✅ CORREÇÃO: Removida propriedade 'pagination' que não existe no tipo
-   * Endpoint: GET /api/events/spaces/:id/bookings/filtered
-   * Para: Listar reservas com filtros avançados
-   */
   async getEventSpaceBookings(
     spaceId: string,
     params?: { 
@@ -1292,12 +1457,6 @@ class ApiService {
     }
   }
 
-  // ====================== MÉTODOS EXISTENTES DE DISPONIBILIDADE (COMPATIBILIDADE) ======================
-
-  /**
-   * 📅 Busca disponibilidade (método existente - mantido para compatibilidade)
-   * Endpoint: GET /api/events/spaces/:id/availability
-   */
   async getEventSpaceAvailability(
     spaceId: string,
     startDate: string,
@@ -1319,10 +1478,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 📊 Lista reservas de um espaço (método existente - mantido para compatibilidade)
-   * Endpoint: GET /api/events/spaces/:id/bookings
-   */
   async getEventSpaceBookingsLegacy(
     spaceId: string,
     params?: {
@@ -1350,10 +1505,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 📅 Busca eventos futuros de um espaço (método existente)
-   * Endpoint: GET /api/events/spaces/:id/bookings/upcoming
-   */
   async getFutureEventsBySpace(
     spaceId: string,
     limit: number = 10
@@ -1509,11 +1660,12 @@ class ApiService {
     return this.get('/api/rides/driver', params);
   }
 
-  // ====================== HOTELS API (INTACTA) ======================
+  // ====================== ✅ CORRIGIDO: HOTELS API (TODAS AS ROTAS /api/v2 REMOVIDAS) ======================
   
   async searchHotels(params: SearchParams): Promise<HotelSearchResponse> {
     try {
-      return await this.get<HotelSearchResponse>('/api/v2/hotels/search', params);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<HotelSearchResponse>('/api/hotels', params);
     } catch (error) {
       return {
         success: false,
@@ -1535,7 +1687,8 @@ class ApiService {
         throw new Error(`Problema de CORS: ${corsTest.message}`);
       }
       
-      return await this.get<HotelListResponse>('/api/v2/hotels', params);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<HotelListResponse>('/api/hotels', params);
     } catch (error) {
       console.error('❌ Erro ao buscar hotéis:', error);
       return {
@@ -1550,7 +1703,8 @@ class ApiService {
 
   async getHotelById(hotelId: string): Promise<HotelByIdResponse> {
     try {
-      return await this.get<HotelByIdResponse>(`/api/v2/hotels/${hotelId}`);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<HotelByIdResponse>(`/api/hotels/${hotelId}`);
     } catch (error) {
       return {
         success: false,
@@ -1568,7 +1722,14 @@ class ApiService {
     promoCode?: string;
   }): Promise<AvailabilityResponse> {
     try {
-      return await this.get<AvailabilityResponse>('/api/v2/hotels/availability', params);
+      // ✅ CORREÇÃO: Usar rota correta conforme backend
+      return await this.get<AvailabilityResponse>(`/api/hotels/${params.hotelId}/availability/check`, {
+        roomTypeId: params.roomTypeId,
+        checkIn: params.checkIn,
+        checkOut: params.checkOut,
+        units: params.units,
+        promoCode: params.promoCode
+      });
     } catch (error) {
       return {
         success: false,
@@ -1579,7 +1740,13 @@ class ApiService {
 
   async createHotelBooking(bookingData: HotelBookingRequest): Promise<HotelBookingResponse> {
     try {
-      return await this.post<HotelBookingResponse>('/api/v2/hotels/bookings', bookingData);
+      // ✅ CORREÇÃO: Rota correta conforme backend - POST /api/hotels/:id/bookings
+      const { hotelId, ...bookingPayload } = bookingData;
+      
+      return await this.post<HotelBookingResponse>(
+        `/api/hotels/${hotelId}/bookings`, 
+        bookingPayload
+      );
     } catch (error) {
       return {
         success: false,
@@ -1590,7 +1757,8 @@ class ApiService {
 
   async createHotel(data: HotelCreateRequest): Promise<HotelOperationResponse> {
     try {
-      return await this.post<HotelOperationResponse>('/api/v2/hotels', data);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.post<HotelOperationResponse>('/api/hotels', data);
     } catch (error) {
       return {
         success: false,
@@ -1601,7 +1769,8 @@ class ApiService {
 
   async updateHotel(hotelId: string, data: HotelUpdateRequest): Promise<HotelOperationResponse> {
     try {
-      return await this.put<HotelOperationResponse>(`/api/v2/hotels/${hotelId}`, data);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.put<HotelOperationResponse>(`/api/hotels/${hotelId}`, data);
     } catch (error) {
       return {
         success: false,
@@ -1612,7 +1781,8 @@ class ApiService {
 
   async deleteHotel(hotelId: string): Promise<ApiResponse<{ message: string }>> {
     try {
-      return await this.delete<ApiResponse<{ message: string }>>(`/api/v2/hotels/${hotelId}`);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.delete<ApiResponse<{ message: string }>>(`/api/hotels/${hotelId}`);
     } catch (error) {
       return {
         success: false,
@@ -1623,7 +1793,8 @@ class ApiService {
 
   async getHotelStatsDetailed(hotelId: string): Promise<ApiResponse<HotelStatistics>> {
     try {
-      return await this.get<ApiResponse<HotelStatistics>>(`/api/v2/hotels/${hotelId}/stats`);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<ApiResponse<HotelStatistics>>(`/api/hotels/${hotelId}/stats`);
     } catch (error) {
       return {
         success: false,
@@ -1644,7 +1815,8 @@ class ApiService {
     error?: string;
   }> {
     try {
-      const response = await this.get<AvailabilityResponse>('/api/v2/hotels/availability/quick', params);
+      // ✅ CORREÇÃO: Removido /v2
+      const response = await this.get<AvailabilityResponse>('/api/hotels/availability/quick', params);
       return {
         success: response.success || false,
         available: response.data?.available,
@@ -1661,7 +1833,8 @@ class ApiService {
 
   async getBookingsByEmail(email: string, status?: BookingStatus): Promise<MyHotelBookingsResponse> {
     try {
-      return await this.get<MyHotelBookingsResponse>('/api/v2/hotels/my-bookings', { email, status });
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<MyHotelBookingsResponse>('/api/hotels/my-bookings', { email, status });
     } catch (error) {
       return {
         success: false,
@@ -1672,7 +1845,17 @@ class ApiService {
 
   async getBookingDetails(bookingId: string): Promise<ApiResponse<HotelBookingData>> {
     try {
-      return await this.get<ApiResponse<HotelBookingData>>(`/api/v2/hotels/bookings/${bookingId}`);
+      // ✅ CORREÇÃO: Usar rota correta
+      const response = await this.get<ApiResponse<any>>(`/api/hotels/bookings/${bookingId}`);
+      
+      if (response.success && response.data) {
+        return {
+          success: true,
+          data: normalizeHotelBooking(response.data)
+        };
+      }
+      
+      return response;
     } catch (error) {
       return {
         success: false,
@@ -1683,7 +1866,8 @@ class ApiService {
 
   async cancelBooking(bookingId: string): Promise<ApiResponse<{ message: string }>> {
     try {
-      return await this.post<ApiResponse<{ message: string }>>(`/api/v2/hotels/bookings/${bookingId}/cancel`);
+      // ✅ CORREÇÃO: Usar rota correta do backend
+      return await this.post<ApiResponse<{ message: string }>>(`/api/hotels/bookings/${bookingId}/cancel`);
     } catch (error) {
       return {
         success: false,
@@ -1694,7 +1878,8 @@ class ApiService {
 
   async createRoomType(hotelId: string, data: RoomTypeCreateRequest): Promise<HotelOperationResponse> {
     try {
-      return await this.post<HotelOperationResponse>(`/api/v2/hotels/${hotelId}/room-types`, data);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.post<HotelOperationResponse>(`/api/hotels/${hotelId}/room-types`, data);
     } catch (error) {
       return {
         success: false,
@@ -1705,7 +1890,8 @@ class ApiService {
 
   async updateRoomType(roomTypeId: string, data: RoomTypeUpdateRequest): Promise<HotelOperationResponse> {
     try {
-      return await this.put<HotelOperationResponse>(`/api/v2/hotels/room-types/${roomTypeId}`, data);
+      // ✅ CORREÇÃO: Usar rota correta (sem v2)
+      return await this.put<HotelOperationResponse>(`/api/hotels/room-types/${roomTypeId}`, data);
     } catch (error) {
       return {
         success: false,
@@ -1716,7 +1902,8 @@ class ApiService {
 
   async getRoomTypeById(roomTypeId: string): Promise<ApiResponse<RoomType>> {
     try {
-      return await this.get<ApiResponse<RoomType>>(`/api/v2/hotels/room-types/${roomTypeId}`);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<ApiResponse<RoomType>>(`/api/hotels/room-types/${roomTypeId}`);
     } catch (error) {
       return {
         success: false,
@@ -1743,8 +1930,9 @@ class ApiService {
 
     try {
       const headers = await this.getAuthHeaders();
+      // ✅ CORREÇÃO: Removido /v2
       return await this.delete<ApiResponse<{ message: string }>>(
-        `/api/v2/hotels/room-types/${roomTypeId}`,
+        `/api/hotels/room-types/${roomTypeId}`,
         headers
       );
     } catch (error) {
@@ -1784,7 +1972,8 @@ class ApiService {
     checkOut?: string;
   }): Promise<RoomTypeListResponse> {
     try {
-      return await this.get<RoomTypeListResponse>(`/api/v2/hotels/${hotelId}/room-types`, params);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<RoomTypeListResponse>(`/api/hotels/${hotelId}/room-types`, params);
     } catch (error) {
       return {
         success: false,
@@ -1795,7 +1984,8 @@ class ApiService {
 
   async getRoomTypeDetails(hotelId: string, roomTypeId: string): Promise<ApiResponse<RoomType>> {
     try {
-      return await this.get<ApiResponse<RoomType>>(`/api/v2/hotels/${hotelId}/room-types/${roomTypeId}`);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<ApiResponse<RoomType>>(`/api/hotels/${hotelId}/room-types/${roomTypeId}`);
     } catch (error) {
       try {
         const response = await this.getRoomTypesByHotel(hotelId);
@@ -1820,7 +2010,8 @@ class ApiService {
 
   async bulkUpdateAvailability(hotelId: string, data: BulkAvailabilityUpdate): Promise<ApiResponse<{ updated: number; message: string }>> {
     try {
-      return await this.post<ApiResponse<{ updated: number; message: string }>>(`/api/v2/hotels/${hotelId}/availability/bulk`, data);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.post<ApiResponse<{ updated: number; message: string }>>(`/api/hotels/${hotelId}/availability/bulk`, data);
     } catch (error) {
       return {
         success: false,
@@ -1835,7 +2026,8 @@ class ApiService {
     period?: 'day' | 'week' | 'month' | 'year';
   }): Promise<ApiResponse<HotelPerformance>> {
     try {
-      return await this.get<ApiResponse<HotelPerformance>>(`/api/v2/hotels/${hotelId}/performance`, params);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<ApiResponse<HotelPerformance>>(`/api/hotels/${hotelId}/performance`, params);
     } catch (error) {
       return {
         success: false,
@@ -1844,7 +2036,7 @@ class ApiService {
     }
   }
 
-  // ====================== OUTROS MÉTODOS (INTACTOS) ======================
+  // ====================== OUTROS MÉTODOS (ATUALIZADOS) ======================
   
   async login(data: { email: string; password: string }) {
     return this.post('/api/auth/login', data);
@@ -1899,15 +2091,18 @@ class ApiService {
   }
 
   async getHotelStats(hotelId: string) {
-    return this.get(`/api/v2/hotels/${hotelId}/stats`);
+    // ✅ CORREÇÃO: Removido /v2
+    return this.get(`/api/hotels/${hotelId}/stats`);
   }
 
   async getHotelEvents(hotelId: string, params?: { status?: BookingStatus; upcoming?: boolean }) {
-    return this.get(`/api/v2/hotels/${hotelId}/events`, params);
+    // ✅ CORREÇÃO: Removido /v2
+    return this.get(`/api/hotels/${hotelId}/events`, params);
   }
 
   async getChat(hotelId: string, params?: { threadId?: string; limit?: number }) {
-    return this.get(`/api/v2/hotels/${hotelId}/chat`, params);
+    // ✅ CORREÇÃO: Removido /v2
+    return this.get(`/api/hotels/${hotelId}/chat`, params);
   }
 
   async cancelHotelBooking(bookingId: string) {
@@ -1915,11 +2110,13 @@ class ApiService {
   }
 
   async checkInHotelBooking(bookingId: string) {
-    return this.post(`/api/v2/hotels/bookings/${bookingId}/check-in`);
+    // ✅ CORREÇÃO: Usar rota correta do backend
+    return this.post(`/api/hotels/bookings/${bookingId}/check-in`);
   }
 
   async checkOutHotelBooking(bookingId: string) {
-    return this.post(`/api/v2/hotels/bookings/${bookingId}/check-out`);
+    // ✅ CORREÇÃO: Usar rota correta do backend
+    return this.post(`/api/hotels/bookings/${bookingId}/check-out`);
   }
 
   async getMyHotelBookings(email: string, status?: BookingStatus): Promise<MyHotelBookingsResponse> {
@@ -1932,7 +2129,8 @@ class ApiService {
 
   async testHotelsV2(): Promise<ApiResponse<{ message: string; count?: number }>> {
     try {
-      const response = await fetch(`${this.baseURL}/api/v2/hotels/search?location=Maputo&limit=1`, {
+      // ✅ CORREÇÃO: Testar rota correta (sem v2)
+      const response = await fetch(`${this.baseURL}/api/hotels?location=Maputo&limit=1`, {
         mode: 'cors'
       });
       const v2Working = response.ok;
@@ -1962,7 +2160,8 @@ class ApiService {
     units?: number;
   }): Promise<ApiResponse<NightlyPrice[]>> {
     try {
-      return await this.get<ApiResponse<NightlyPrice[]>>('/api/v2/hotels/availability/nightly-prices', params);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<ApiResponse<NightlyPrice[]>>('/api/hotels/availability/nightly-prices', params);
     } catch (error) {
       return {
         success: false,
@@ -1973,7 +2172,8 @@ class ApiService {
 
   async getBookingStatus(bookingId: string): Promise<ApiResponse<{ status: BookingStatus; paymentStatus: PaymentStatus }>> {
     try {
-      return await this.get<ApiResponse<{ status: BookingStatus; paymentStatus: PaymentStatus }>>(`/api/v2/hotels/bookings/${bookingId}/status`);
+      // ✅ CORREÇÃO: Removido /v2
+      return await this.get<ApiResponse<{ status: BookingStatus; paymentStatus: PaymentStatus }>>(`/api/hotels/bookings/${bookingId}/status`);
     } catch (error) {
       return {
         success: false,
@@ -2038,19 +2238,25 @@ class ApiService {
         return { success: true, data: result.data };
         
       } else if (type === 'hotel') {
+        // ✅ CORREÇÃO: Normalizar status antes de enviar
+        const normalizedBookingData = {
+          ...bookingData,
+          status: normalizeHotelBookingStatus(bookingData.status),
+        };
+        
         const payload: HotelBookingRequest = {
-          hotelId: bookingData.hotelId,
-          roomTypeId: bookingData.roomTypeId,
-          checkIn: bookingData.checkIn,
-          checkOut: bookingData.checkOut,
-          guestName: bookingData.guestName,
-          guestEmail: bookingData.guestEmail,
-          guestPhone: bookingData.guestPhone,
-          adults: bookingData.adults || 1,
-          children: bookingData.children || 0,
-          units: bookingData.units || 1,
-          specialRequests: bookingData.specialRequests,
-          promoCode: bookingData.promoCode
+          hotelId: normalizedBookingData.hotelId,
+          roomTypeId: normalizedBookingData.roomTypeId,
+          checkIn: normalizedBookingData.checkIn,
+          checkOut: normalizedBookingData.checkOut,
+          guestName: normalizedBookingData.guestName,
+          guestEmail: normalizedBookingData.guestEmail,
+          guestPhone: normalizedBookingData.guestPhone,
+          adults: normalizedBookingData.adults || 1,
+          children: normalizedBookingData.children || 0,
+          units: normalizedBookingData.units || 1,
+          specialRequests: normalizedBookingData.specialRequests,
+          promoCode: normalizedBookingData.promoCode
         };
         
         const result = await this.createHotelBooking(payload);
@@ -2058,23 +2264,7 @@ class ApiService {
         return { 
           success: result.success, 
           data: result.booking ? { 
-            booking: {
-              id: result.booking.bookingId || result.booking.booking_id || '',
-              type: 'hotel',
-              bookingDate: result.booking.createdAt || result.booking.created_at || new Date().toISOString().split('T')[0],
-              status: result.booking.status || 'pending',
-              guestName: result.booking.guestName || result.booking.guest_name,
-              guestEmail: result.booking.guestEmail || result.booking.guest_email,
-              guestPhone: result.booking.guestPhone || result.booking.guest_phone,
-              totalPrice: result.booking.totalPrice || result.booking.total_price || 0,
-              hotelId: result.booking.hotelId || result.booking.hotel_id,
-              startDate: result.booking.checkIn || result.booking.check_in,
-              endDate: result.booking.checkOut || result.booking.check_out,
-              adults: result.booking.adults || 0,
-              children: result.booking.children || 0,
-              units: result.booking.units || 0,
-              createdAt: result.booking.createdAt || result.booking.created_at,
-            } as Booking
+            booking: normalizeHotelBooking(result.booking)
           } : undefined,
           error: result.error
         };

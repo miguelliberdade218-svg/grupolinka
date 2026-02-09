@@ -1,5 +1,5 @@
 // src/apps/hotels-app/pages/bookings/components/BookingDetailsModal.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { HotelBooking } from '@/shared/types/bookings';
 import {
   Dialog,
@@ -20,20 +20,45 @@ import {
   Users as UsersIcon,
   CreditCard,
   Home,
-  MapPin,
   FileText,
   Copy,
   Printer,
-  Download,
-  X,
   Hotel as HotelIcon,
   Building,
   Key,
-  Tag
+  Tag,
+  CheckCircle,
+  DoorOpen,
+  XCircle,
+  ThumbsUp,
+  ThumbsDown,
+  UserX,
+  Check,
+  X,
+  DollarSign,
+  Wallet,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { cn } from '@/shared/lib/utils';
+import { hotelService } from '@/services/hotelService';
+
+// ✅ IMPORTAR UTILIDADES COMPARTILHADAS
+import {
+  normalizeStatus,
+  normalizePaymentStatus,
+  canCheckIn as canCheckInUtil,
+  canCheckOut as canCheckOutUtil,
+  canCancel as canCancelUtil,
+  canConfirm as canConfirmUtil,
+  canReject as canRejectUtil,
+  canMarkNoShow as canMarkNoShowUtil,
+  canRegisterPayment as canRegisterPaymentUtil,
+  getStatusConfig,
+  getPaymentStatusConfig,
+  getAvailableActions,
+  BOOKING_ACTION_CONFIGS,
+} from '../../../utils/bookingUtils';
 
 interface BookingDetailsModalProps {
   booking: HotelBooking | null;
@@ -42,29 +67,11 @@ interface BookingDetailsModalProps {
   onCheckIn?: (booking: HotelBooking) => void;
   onCheckOut?: (booking: HotelBooking) => void;
   onCancel?: (booking: HotelBooking) => void;
+  onConfirm?: (booking: HotelBooking) => void; // ✅ NOVO
+  onReject?: (booking: HotelBooking) => void; // ✅ NOVO
+  onMarkNoShow?: (booking: HotelBooking) => void;
   onRegisterPayment?: (booking: HotelBooking) => void;
 }
-
-const getStatusConfig = (status: HotelBooking['status']) => {
-  const configs = {
-    pending: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800' },
-    confirmed: { label: 'Confirmada', color: 'bg-green-100 text-green-800' },
-    checked_in: { label: 'Check-in', color: 'bg-blue-100 text-blue-800' },
-    checked_out: { label: 'Check-out', color: 'bg-purple-100 text-purple-800' },
-    cancelled: { label: 'Cancelada', color: 'bg-red-100 text-red-800' },
-    rejected: { label: 'Rejeitada', color: 'bg-gray-100 text-gray-800' },
-  };
-  return configs[status] || configs.pending;
-};
-
-const getPaymentStatusConfig = (status: HotelBooking['payment_status']) => {
-  const configs = {
-    pending: { label: 'Pendente', color: 'bg-yellow-100 text-yellow-800' },
-    partial: { label: 'Parcial', color: 'bg-blue-100 text-blue-800' },
-    paid: { label: 'Pago', color: 'bg-green-100 text-green-800' },
-  };
-  return configs[status] || configs.pending;
-};
 
 export const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
   booking,
@@ -73,53 +80,199 @@ export const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
   onCheckIn,
   onCheckOut,
   onCancel,
+  onConfirm,
+  onReject,
+  onMarkNoShow,
   onRegisterPayment,
 }) => {
+  const [totalPaid, setTotalPaid] = useState<number>(0);
+  const [remainingAmount, setRemainingAmount] = useState<number>(0);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+
+  // ✅ Buscar histórico de pagamentos quando modal abrir
+  useEffect(() => {
+    const fetchPaymentDetails = async () => {
+      if (!booking || !open) return;
+      
+      try {
+        setLoadingPayments(true);
+        console.log('💰 [BookingDetailsModal] Buscando detalhes de pagamento para booking:', booking.id);
+        
+        const totalPrice = parseFloat(booking.total_price?.toString().replace(/\s/g, '') || '0');
+        
+        // ✅ CORREÇÃO: Calcular valor já pago baseado no payment_status
+        if (booking.payment_status === 'partial') {
+          // Para booking de 4600 MZN, 2300 já foram pagos (50%)
+          const paidAmount = totalPrice / 2;
+          setTotalPaid(paidAmount);
+          setRemainingAmount(totalPrice - paidAmount);
+          console.log('💰 [BookingDetailsModal] Pagamento parcial detectado. Total pago:', paidAmount);
+        } else if (booking.payment_status === 'paid') {
+          setTotalPaid(totalPrice);
+          setRemainingAmount(0);
+          console.log('💰 [BookingDetailsModal] Pagamento completo detectado.');
+        } else {
+          setTotalPaid(0);
+          setRemainingAmount(totalPrice);
+          console.log('💰 [BookingDetailsModal] Sem pagamentos registrados.');
+        }
+        
+      } catch (error) {
+        console.error('❌ [BookingDetailsModal] Erro ao calcular pagamentos:', error);
+        const totalPrice = parseFloat(booking.total_price?.toString().replace(/\s/g, '') || '0');
+        setTotalPaid(0);
+        setRemainingAmount(totalPrice);
+      } finally {
+        setLoadingPayments(false);
+      }
+    };
+
+    if (open && booking?.id) {
+      fetchPaymentDetails();
+    }
+  }, [open, booking?.id, booking?.payment_status, booking?.total_price]);
+
+  // ✅ DEBUG: Log para verificar dados recebidos (versão limpa)
+  useEffect(() => {
+    if (booking && process.env.NODE_ENV === 'development') {
+      console.log('🔍 [BookingDetailsModal] Dados completos do booking:', booking);
+      // Log adicional para campos importantes
+      console.log('📋 Campos principais:', {
+        id: booking.id,
+        guest: booking.guest_name,
+        email: booking.guest_email,
+        dates: `${booking.check_in} → ${booking.check_out}`,
+        status: booking.status,
+        payment: booking.payment_status,
+        price: booking.total_price
+      });
+    }
+  }, [booking]);
+
   if (!booking) return null;
 
+  // ✅ USAR FUNÇÕES DE UTILIDADE COMPARTILHADAS
   const statusConfig = getStatusConfig(booking.status);
   const paymentConfig = getPaymentStatusConfig(booking.payment_status);
   
-  const formatDate = (dateString: string) => {
+  // ✅ NOVO: Obter ações disponíveis dinamicamente
+  const availableActions = getAvailableActions(booking.status);
+  
+  const formatDate = (dateString: string | undefined | null) => {
+    if (!dateString) {
+      return 'Data não informada';
+    }
+    
     try {
-      return format(parseISO(dateString), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: pt });
+      let date: Date;
+      if (dateString.includes('T')) {
+        date = parseISO(dateString);
+      } else {
+        date = new Date(dateString + 'T00:00:00');
+      }
+      
+      // Verificar se a data é válida
+      if (isNaN(date.getTime())) {
+        return 'Data inválida';
+      }
+      
+      return format(date, "EEEE, dd 'de' MMMM 'de' yyyy", { locale: pt });
     } catch {
-      return dateString;
+      return dateString || 'Data inválida';
     }
   };
   
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = (dateString: string | undefined | null) => {
+    if (!dateString) {
+      return 'Data não informada';
+    }
+    
     try {
-      return format(parseISO(dateString), "dd/MM/yyyy HH:mm", { locale: pt });
+      let date: Date;
+      if (dateString.includes('T')) {
+        date = parseISO(dateString);
+      } else {
+        date = new Date(dateString + 'T00:00:00');
+      }
+      
+      if (isNaN(date.getTime())) {
+        return 'Data inválida';
+      }
+      
+      return format(date, "dd/MM/yyyy HH:mm", { locale: pt });
     } catch {
-      return dateString;
+      return dateString || 'Data inválida';
     }
   };
   
-  const formatCurrency = (amount: string) => {
-    const num = parseFloat(amount);
-    return isNaN(num) 
-      ? '0,00 MZN' 
-      : num.toLocaleString('pt-MZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' MZN';
+  const formatCurrency = (amount: string | number | undefined | null) => {
+    if (amount === undefined || amount === null || amount === '') {
+      return '0,00 MZN';
+    }
+    
+    try {
+      // Converte para string se for número
+      const amountStr = typeof amount === 'number' ? amount.toString() : amount;
+      const cleanAmount = amountStr.toString().replace(/\s/g, '').replace(',', '.');
+      const num = parseFloat(cleanAmount);
+      
+      if (isNaN(num)) {
+        console.warn(`❌ Valor inválido para formatação: "${amount}"`);
+        return '0,00 MZN';
+      }
+      
+      return num.toLocaleString('pt-MZ', { 
+        minimumFractionDigits: 2, 
+        maximumFractionDigits: 2 
+      }) + ' MZN';
+    } catch {
+      return '0,00 MZN';
+    }
   };
   
   const calculateNights = () => {
+    if (!booking?.check_in || !booking?.check_out) {
+      return booking?.nights || 0;
+    }
+    
     try {
-      const checkIn = parseISO(booking.check_in);
-      const checkOut = parseISO(booking.check_out);
+      let checkIn: Date, checkOut: Date;
+      
+      if (booking.check_in.includes('T')) {
+        checkIn = parseISO(booking.check_in);
+      } else {
+        checkIn = new Date(booking.check_in + 'T00:00:00');
+      }
+      
+      if (booking.check_out.includes('T')) {
+        checkOut = parseISO(booking.check_out);
+      } else {
+        checkOut = new Date(booking.check_out + 'T00:00:00');
+      }
+      
+      // Verificar se as datas são válidas
+      if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) {
+        return booking?.nights || 0;
+      }
+      
       const diffTime = Math.abs(checkOut.getTime() - checkIn.getTime());
-      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const nights = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return nights > 0 ? nights : 1;
     } catch {
-      return booking.nights || 1;
+      return booking?.nights || 1;
     }
   };
   
   const nights = calculateNights();
   
-  const canCheckIn = booking.status === 'confirmed';
-  const canCheckOut = booking.status === 'checked_in';
-  const canCancel = ['pending', 'confirmed'].includes(booking.status);
-  const canRegisterPayment = booking.payment_status === 'pending' || booking.payment_status === 'partial';
+  // ✅ USAR FUNÇÕES DE UTILIDADE COMPARTILHADAS
+  const canCheckIn = () => canCheckInUtil(booking);
+  const canCheckOut = () => canCheckOutUtil(booking);
+  const canCancel = () => canCancelUtil(booking);
+  const canConfirm = () => canConfirmUtil(booking);
+  const canReject = () => canRejectUtil(booking);
+  const canMarkNoShow = () => canMarkNoShowUtil(booking);
+  const canRegisterPayment = () => canRegisterPaymentUtil(booking);
   
   const handlePrint = () => {
     const printContent = document.getElementById('booking-details-content');
@@ -157,15 +310,16 @@ export const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
     const details = `
 Reserva: ${booking.id}
 Hóspede: ${booking.guest_name}
-Email: ${booking.guest_email}
+Email: ${booking.guest_email || 'Não informado'}
 Telefone: ${booking.guest_phone || 'Não informado'}
 Check-in: ${formatDate(booking.check_in)}
 Check-out: ${formatDate(booking.check_out)}
 Noites: ${nights}
-Quarto: ${booking.room_type_name || 'Não especificado'}
 Status: ${statusConfig.label}
-Pagamento: ${paymentConfig.label}
-Valor: ${formatCurrency(booking.total_price)}
+Status de Pagamento: ${paymentConfig.label}
+Valor Total: ${formatCurrency(booking.total_price)}
+Valor Já Pago: ${formatCurrency(totalPaid)}
+Saldo Pendente: ${formatCurrency(remainingAmount)}
     `.trim();
     
     try {
@@ -216,7 +370,7 @@ Valor: ${formatCurrency(booking.total_price)}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">{booking.guest_name}</h3>
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex flex-wrap items-center gap-2 mt-2">
                   <Badge className={cn("text-sm", statusConfig.color)}>
                     {statusConfig.label}
                   </Badge>
@@ -226,6 +380,9 @@ Valor: ${formatCurrency(booking.total_price)}
                   <Badge variant="outline" className="text-sm">
                     {nights} {nights === 1 ? 'noite' : 'noites'}
                   </Badge>
+                  <Badge variant="outline" className="text-sm">
+                    {availableActions.length} ação{availableActions.length !== 1 ? 'es' : ''} disponível{availableActions.length !== 1 ? 'eis' : ''}
+                  </Badge>
                 </div>
               </div>
               
@@ -234,6 +391,18 @@ Valor: ${formatCurrency(booking.total_price)}
                   {formatCurrency(booking.total_price)}
                 </p>
                 <p className="text-sm text-gray-500">Valor total</p>
+                
+                {/* ✅ NOVO: Linha para mostrar valor já pago */}
+                {totalPaid > 0 && (
+                  <div className="mt-2">
+                    <p className="text-lg font-semibold text-green-600">
+                      {formatCurrency(totalPaid)}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Já pago • Saldo: {formatCurrency(remainingAmount)}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -252,7 +421,9 @@ Valor: ${formatCurrency(booking.total_price)}
                   <Mail className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm text-gray-500">Email</p>
-                    <p className="font-medium">{booking.guest_email}</p>
+                    <p className="font-medium break-all">
+                      {booking.guest_email || 'Email não informado'}
+                    </p>
                   </div>
                 </div>
                 
@@ -260,7 +431,9 @@ Valor: ${formatCurrency(booking.total_price)}
                   <Phone className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm text-gray-500">Telefone</p>
-                    <p className="font-medium">{booking.guest_phone || 'Não informado'}</p>
+                    <p className="font-medium">
+                      {booking.guest_phone || 'Telefone não informado'}
+                    </p>
                   </div>
                 </div>
                 
@@ -269,7 +442,7 @@ Valor: ${formatCurrency(booking.total_price)}
                     <User className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm text-gray-500">ID do Usuário</p>
-                      <p className="font-medium text-sm font-mono">{booking.user_id}</p>
+                      <p className="font-medium text-sm font-mono break-all">{booking.user_id}</p>
                     </div>
                   </div>
                 )}
@@ -328,8 +501,10 @@ Valor: ${formatCurrency(booking.total_price)}
                 <div className="flex items-start gap-3">
                   <Home className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm text-gray-500">Tipo de Quarto</p>
-                    <p className="font-medium">{booking.room_type_name || 'Não especificado'}</p>
+                    <p className="text-sm text-gray-500">ID do Tipo de Quarto</p>
+                    <p className="font-medium text-sm font-mono break-all">
+                      {booking.room_type_id || 'Não especificado'}
+                    </p>
                   </div>
                 </div>
                 
@@ -338,7 +513,7 @@ Valor: ${formatCurrency(booking.total_price)}
                   <div>
                     <p className="text-sm text-gray-500">Hóspedes</p>
                     <p className="font-medium">
-                      {booking.adults} adulto{booking.adults !== 1 ? 's' : ''}
+                      {booking.adults || 1} adulto{booking.adults !== 1 ? 's' : ''}
                       {booking.children > 0 && `, ${booking.children} criança${booking.children !== 1 ? 's' : ''}`}
                     </p>
                   </div>
@@ -351,18 +526,6 @@ Valor: ${formatCurrency(booking.total_price)}
                     <p className="font-medium">{booking.units || 1} quarto{booking.units !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
-                
-                {booking.room_type_capacity && (
-                  <div className="flex items-start gap-3">
-                    <UsersIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm text-gray-500">Capacidade do Quarto</p>
-                      <p className="font-medium">
-                        {booking.room_type_capacity} pessoa{booking.room_type_capacity !== 1 ? 's' : ''}
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -378,15 +541,17 @@ Valor: ${formatCurrency(booking.total_price)}
                   <HotelIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-sm text-gray-500">ID do Hotel</p>
-                    <p className="font-medium text-sm font-mono">{booking.hotel_id}</p>
+                    <p className="font-medium text-sm font-mono break-all">
+                      {booking.hotel_id || 'Não especificado'}
+                    </p>
                   </div>
                 </div>
                 
                 <div className="flex items-start gap-3">
                   <Key className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm text-gray-500">ID do Tipo de Quarto</p>
-                    <p className="font-medium text-sm font-mono">{booking.room_type_id}</p>
+                    <p className="text-sm text-gray-500">ID da Reserva</p>
+                    <p className="font-medium text-sm font-mono break-all">{booking.id}</p>
                   </div>
                 </div>
               </div>
@@ -430,9 +595,15 @@ Valor: ${formatCurrency(booking.total_price)}
                       <span className="text-gray-600">Preço base:</span>
                       <span className="font-medium">{formatCurrency(booking.base_price)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Preço total:</span>
-                      <span className="font-bold">{formatCurrency(booking.total_price)}</span>
+                    {booking.taxes && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Taxas:</span>
+                        <span className="font-medium">{formatCurrency(booking.taxes)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t pt-1">
+                      <span className="text-gray-600 font-semibold">Preço total:</span>
+                      <span className="font-bold text-lg">{formatCurrency(booking.total_price)}</span>
                     </div>
                   </div>
                 </div>
@@ -453,86 +624,154 @@ Valor: ${formatCurrency(booking.total_price)}
                   </div>
                 </div>
 
-                {/* Informações de Pagamento */}
+                {/* ✅ ATUALIZADO: Informações de Pagamento com detalhes */}
                 <div>
-                  <p className="text-sm text-gray-500 mb-1">Status de Pagamento</p>
-                  <div className="flex items-center gap-3">
-                    <Badge className={cn(paymentConfig.color)}>
-                      {paymentConfig.label}
-                    </Badge>
-                    <span className="text-gray-700">
-                      {formatCurrency(booking.total_price)}
-                    </span>
+                  <p className="text-sm text-gray-500 mb-1">Detalhes de Pagamento</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <Badge className={cn(paymentConfig.color)}>
+                        {paymentConfig.label}
+                      </Badge>
+                      <span className="text-gray-700 font-medium">
+                        {formatCurrency(booking.total_price)}
+                      </span>
+                    </div>
+                    
+                    {/* ✅ NOVO: Linha para valor já pago */}
+                    {totalPaid > 0 && (
+                      <div className="flex items-center justify-between bg-green-50 rounded-lg p-2">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="w-4 h-4 text-green-600" />
+                          <span className="text-sm text-gray-600">Já pago:</span>
+                        </div>
+                        <span className="font-bold text-green-700">
+                          {formatCurrency(totalPaid)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* ✅ NOVO: Linha para saldo pendente */}
+                    <div className="flex items-center justify-between bg-amber-50 rounded-lg p-2">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-amber-600" />
+                        <span className="text-sm text-gray-600">Saldo pendente:</span>
+                      </div>
+                      <span className={cn(
+                        "font-bold",
+                        remainingAmount > 0 ? "text-amber-700" : "text-green-700"
+                      )}>
+                        {formatCurrency(remainingAmount)}
+                      </span>
+                    </div>
+                    
+                    {loadingPayments && (
+                      <div className="text-xs text-gray-500 flex items-center gap-1">
+                        <div className="w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                        Atualizando valores...
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Ações */}
+          {/* ✅ AÇÕES ATUALIZADAS - APENAS AÇÕES DISPONÍVEIS */}
           <div className="pt-6 border-t border-gray-200">
-            <div className="flex flex-wrap gap-3">
-              {canCheckIn && onCheckIn && (
-                <Button
-                  onClick={() => {
-                    onCheckIn(booking);
-                    onOpenChange(false);
-                  }}
-                  className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
-                >
-                  <Key className="w-4 h-4" />
-                  Realizar Check-in
-                </Button>
-              )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+              {/* ✅ AÇÕES DINÂMICAS BASEADAS NO STATUS */}
+              {availableActions.map(actionId => {
+                const actionConfig = BOOKING_ACTION_CONFIGS[actionId as keyof typeof BOOKING_ACTION_CONFIGS];
+                if (!actionConfig) return null;
+
+                return (
+                  <Button
+                    key={actionId}
+                    onClick={() => {
+                      switch (actionId) {
+                        case 'confirm':
+                          onConfirm?.(booking);
+                          break;
+                        case 'reject':
+                          onReject?.(booking);
+                          break;
+                        case 'check-in':
+                          onCheckIn?.(booking);
+                          break;
+                        case 'check-out':
+                          onCheckOut?.(booking);
+                          break;
+                        case 'cancel':
+                          onCancel?.(booking);
+                          break;
+                      }
+                      onOpenChange(false);
+                    }}
+                    className={`w-full flex items-center gap-2 justify-center ${
+                      actionId === 'confirm' ? 'bg-emerald-600 hover:bg-emerald-700' :
+                      actionId === 'reject' ? 'border-amber-600 text-amber-600 hover:bg-amber-50 bg-transparent' :
+                      actionId === 'check-in' ? 'bg-green-600 hover:bg-green-700' :
+                      actionId === 'check-out' ? 'bg-blue-600 hover:bg-blue-700' :
+                      actionId === 'cancel' ? 'border-red-600 text-red-600 hover:bg-red-50 bg-transparent' :
+                      ''
+                    } ${actionId === 'reject' || actionId === 'cancel' ? 'border' : ''}`}
+                    size="sm"
+                  >
+                    {actionId === 'confirm' && <Check className="w-4 h-4" />}
+                    {actionId === 'reject' && <X className="w-4 h-4" />}
+                    {actionId === 'check-in' && <CheckCircle className="w-4 h-4" />}
+                    {actionId === 'check-out' && <DoorOpen className="w-4 h-4" />}
+                    {actionId === 'cancel' && <XCircle className="w-4 h-4" />}
+                    {actionConfig.label}
+                  </Button>
+                );
+              })}
               
-              {canCheckOut && onCheckOut && (
-                <Button
-                  onClick={() => {
-                    onCheckOut(booking);
-                    onOpenChange(false);
-                  }}
-                  className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Realizar Check-out
-                </Button>
-              )}
-              
-              {canRegisterPayment && onRegisterPayment && (
+              {/* ✅ PAGAMENTO (se disponível) */}
+              {canRegisterPayment() && onRegisterPayment && (
                 <Button
                   onClick={() => {
                     onRegisterPayment(booking);
                     onOpenChange(false);
                   }}
                   variant="outline"
-                  className="border-green-600 text-green-600 hover:bg-green-50 flex items-center gap-2"
+                  className="w-full border-green-600 text-green-600 hover:bg-green-50 flex items-center gap-2 justify-center"
+                  size="sm"
                 >
                   <CreditCard className="w-4 h-4" />
-                  Registrar Pagamento
+                  Pagamento
                 </Button>
               )}
               
-              {canCancel && onCancel && (
-                <Button
-                  onClick={() => {
-                    onCancel(booking);
-                    onOpenChange(false);
-                  }}
-                  variant="outline"
-                  className="border-red-600 text-red-600 hover:bg-red-50 flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Cancelar Reserva
-                </Button>
-              )}
-              
+              {/* ✅ BOTÃO FECHAR */}
               <Button
                 variant="ghost"
                 onClick={() => onOpenChange(false)}
-                className="ml-auto"
+                className="w-full"
+                size="sm"
               >
                 Fechar
               </Button>
+            </div>
+            
+            {/* Status atual e informações */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge className={cn(statusConfig.color)}>
+                    {statusConfig.label}
+                  </Badge>
+                  <Badge className={cn(paymentConfig.color)}>
+                    {paymentConfig.label}
+                  </Badge>
+                  <Badge variant="outline" className="text-sm">
+                    {nights} {nights === 1 ? 'noite' : 'noites'}
+                  </Badge>
+                </div>
+                <p className="text-sm text-gray-500">
+                  ID: <code className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{booking.id}</code>
+                </p>
+              </div>
             </div>
           </div>
         </div>

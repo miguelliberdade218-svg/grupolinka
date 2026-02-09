@@ -1,9 +1,12 @@
-// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (03/02/2026)
+// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (07/02/2026)
 // ✅ CORREÇÃO APLICADA: País sempre "Moçambique" (forçado em POST e PUT)
 // ✅ CORREÇÕES APLICADAS: Validação de available_units vs total_units e price com null/undefined
 // ✅ CORREÇÃO DO BULK UPDATE: Aceitar ambos os formatos (snake_case e camelCase) do frontend
 // ✅ CORREÇÃO CRÍTICA: Transformação automática de snake_case para camelCase no schema
 // ✅ ATUALIZADO: Adicionado campo location_id nos schemas de hotel
+// ✅ CORREÇÃO CRÍTICA: Schema de booking atualizado para aceitar camelCase e snake_case
+// ✅ CORREÇÃO CRÍTICA: Adicionado logging detalhado para debug de bookings
+// ✅ NOVO ENDPOINT: Adicionado /bookings/:bookingId/confirm (atualiza status para 'confirmed')
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -21,7 +24,7 @@ import {
   getHotelsByProvince,
   getHotelsByLocality,
   getHostDashboardSummary,
-  syncHotelLocation, // ✅ NOVO: Adicionado para sincronização de localização
+  syncHotelLocation,
 } from './hotelService';
 
 import {
@@ -46,6 +49,7 @@ import {
   getBookingsByHotel,
   getBookingsByGuestEmail,
   getUpcomingCheckIns,
+  confirmBooking,
 } from './hotelBookingService';
 
 import {
@@ -126,25 +130,59 @@ const createPromotionSchema = z.object({
 
 const updatePromotionSchema = createPromotionSchema.partial();
 
-// Schema de criação de booking (ATUALIZADO: hotelId removido pois vem da rota e validação de datas)
+// ✅ CORREÇÃO CRÍTICA: Schema de criação de booking que aceita ambos os formatos
 const createBookingSchema = z.object({
-  roomTypeId: z.string().uuid(),
-  guestName: z.string().min(2, "Nome do hóspede obrigatório"),
-  guestEmail: z.string().email("Email inválido"),
+  // ✅ ACEITAR AMBOS OS FORMATOS: camelCase e snake_case
+  roomTypeId: z.string().uuid().optional(),
+  room_type_id: z.string().uuid().optional(),
+  guestName: z.string().min(2, "Nome do hóspede obrigatório").optional(),
+  guest_name: z.string().min(2, "Nome do hóspede obrigatório").optional(),
+  guestEmail: z.string().email("Email inválido").optional(),
+  guest_email: z.string().email("Email inválido").optional(),
   guestPhone: z.string().optional().nullable(),
-  checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
-  checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
+  guest_phone: z.string().optional().nullable(),
+  checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
+  check_in: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
+  checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
+  check_out: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
   adults: z.number().int().min(1, "Pelo menos 1 adulto"),
   children: z.number().int().min(0).optional().default(0),
   units: z.number().int().min(1).optional().default(1),
   specialRequests: z.string().optional().nullable(),
+  special_requests: z.string().optional().nullable(),
   promoCode: z.string().optional().nullable(),
-  status: z.string().optional().default('confirmed'),
+  promo_code: z.string().optional().nullable(),
+  // ✅ CORREÇÃO: Alterado de 'pending' para 'pending_confirmation' para corresponder ao service
+  status: z.string().optional().default('pending_confirmation'),
   paymentStatus: z.string().optional().default('pending'),
+  user_id: z.string().optional().nullable(),
   userId: z.string().optional().nullable(),
-}).refine((data) => {
-  const checkInDate = new Date(data.checkIn);
-  const checkOutDate = new Date(data.checkOut);
+})
+.transform((data) => ({
+  // ✅ NORMALIZAR PARA camelCase (que o service espera)
+  roomTypeId: data.roomTypeId || data.room_type_id,
+  guestName: data.guestName || data.guest_name,
+  guestEmail: data.guestEmail || data.guest_email,
+  guestPhone: data.guestPhone || data.guest_phone,
+  checkIn: data.checkIn || data.check_in,
+  checkOut: data.checkOut || data.check_out,
+  specialRequests: data.specialRequests || data.special_requests,
+  promoCode: data.promoCode || data.promo_code,
+  userId: data.userId || data.user_id,
+  // Manter outros campos
+  adults: data.adults,
+  children: data.children,
+  units: data.units,
+  status: data.status,
+  paymentStatus: data.paymentStatus,
+}))
+.refine(data => data.roomTypeId && data.guestName && data.guestEmail && data.checkIn && data.checkOut, {
+  message: "Campos obrigatórios faltando após normalização",
+  path: ["roomTypeId"],
+})
+.refine((data) => {
+  const checkInDate = new Date(data.checkIn!);
+  const checkOutDate = new Date(data.checkOut!);
   return checkOutDate > checkInDate;
 }, {
   message: "Data de check-out deve ser posterior à data de check-in",
@@ -162,7 +200,7 @@ const createRoomTypeSchema = z.object({
   }),
   total_units: z.number().int().positive(),
   base_occupancy: z.number().int().positive(),
-  min_nights_default: z.number().int().positive().optional().default(1), // ✅ CORREÇÃO: min_nights_default em vez de min_nights
+  min_nights_default: z.number().int().positive().optional().default(1),
   extra_adult_price: z.string().refine(val => !isNaN(Number(val)) && Number(val) >= 0, {
     message: "extra_adult_price deve ser um número não negativo"
   }).optional(),
@@ -216,17 +254,6 @@ const syncLocationSchema = z.object({
 });
 
 // ✅ CORREÇÃO CRÍTICA: Schema para bulk update de disponibilidade com transformação automática
-// Primeiro definimos o tipo das atualizações após transformação
-const updateItemSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
-  price: z.number().positive().optional().nullable(),
-  stopSell: z.boolean().optional().nullable(),
-  availableUnits: z.number().int().min(0).optional().nullable(),
-  minNights: z.number().int().positive().optional(),
-  reset: z.boolean().optional().default(false),
-});
-
-// Schema base que aceita ambos os formatos
 const bulkAvailabilityUpdateBaseSchema = z.object({
   roomTypeId: z.string().uuid(),
   updates: z.array(z.object({
@@ -1055,7 +1082,6 @@ router.get('/:id/dashboard', requireAuth, requireHotelOwner, async (req: Request
     const today = new Date().toISOString().split('T')[0];
     const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
-    // ✅ CORREÇÃO: Usa apenas as propriedades disponíveis do retorno de checkAvailabilityForDates
     const roomTypes = await getRoomTypesByHotel(hotelId);
     const availabilitySummary = await Promise.all(
       roomTypes.map(async (roomType) => {
@@ -1066,7 +1092,6 @@ router.get('/:id/dashboard', requireAuth, requireHotelOwner, async (req: Request
             nextWeek
           );
           
-          // Retorna apenas o que está disponível no objeto
           return {
             roomTypeId: roomType.id,
             roomTypeName: roomType.name,
@@ -1074,8 +1099,6 @@ router.get('/:id/dashboard', requireAuth, requireHotelOwner, async (req: Request
             available: availability.available,
             minUnits: availability.minUnits,
             message: availability.message,
-            // Para obter mais detalhes, usaríamos getAvailabilityCalendar
-            // mas isso retorna um array completo de datas
           };
         } catch (error) {
           console.error(`Erro ao verificar disponibilidade para roomType ${roomType.id}:`, error);
@@ -1148,7 +1171,6 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
       base_price: toNumber(rawData.base_price).toString(),
       extra_adult_price: rawData.extra_adult_price ? toNumber(rawData.extra_adult_price).toString() : undefined,
       extra_child_price: rawData.extra_child_price ? toNumber(rawData.extra_child_price).toString() : undefined,
-      // ✅ CORREÇÃO: Usar min_nights_default sempre
       min_nights_default: rawData.min_nights_default ? toNumber(rawData.min_nights_default) : 
                          (rawData.min_nights ? toNumber(rawData.min_nights) : 1),
     };
@@ -1195,7 +1217,6 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
     const rawData = req.body;
     const updateData: any = { ...rawData };
     
-    // Log detalhado do que está sendo recebido
     console.log("🔍 Campos recebidos no controller:", Object.keys(rawData));
     
     // Validação básica
@@ -1227,10 +1248,8 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
     }
 
     // ✅ CORREÇÃO CRÍTICA: Converter min_nights para min_nights_default
-    // O frontend envia "min_nights" mas o campo no banco é "min_nights_default"
     if (rawData.min_nights !== undefined) {
       console.log("🔄 [CONTROLLER] Convertendo min_nights para min_nights_default:", rawData.min_nights);
-      // Converter min_nights para min_nights_default
       updateData.min_nights_default = parseInt(rawData.min_nights);
       if (isNaN(updateData.min_nights_default) || updateData.min_nights_default < 1) {
         return res.status(400).json({ 
@@ -1238,12 +1257,10 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
           message: 'min_nights deve ser um número maior que 0' 
         });
       }
-      // Remover o campo min_nights para evitar conflitos
       delete updateData.min_nights;
       console.log("✅ min_nights_default definido como:", updateData.min_nights_default);
     }
     
-    // Se o frontend enviar min_nights_default diretamente, também processar
     if (rawData.min_nights_default !== undefined) {
       console.log("🔄 [CONTROLLER] Usando min_nights_default diretamente:", rawData.min_nights_default);
       updateData.min_nights_default = parseInt(rawData.min_nights_default);
@@ -1302,7 +1319,6 @@ router.delete('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner
 });
 
 // ======================= DISPONIBILIDADE =======================
-// ✅ ATUALIZADO: Rota para verificar disponibilidade (usando o checkAvailabilityForDates)
 router.get('/:id/availability/check', async (req: Request, res: Response) => {
   try {
     const { roomTypeId, checkIn, checkOut, units = 1 } = req.query;
@@ -1314,7 +1330,6 @@ router.get('/:id/availability/check', async (req: Request, res: Response) => {
       });
     }
 
-    // Validação de datas
     const checkInDate = new Date(checkIn as string);
     const checkOutDate = new Date(checkOut as string);
     
@@ -1373,7 +1388,6 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
   try {
     console.log('📤 Received bulk payload:', JSON.stringify(req.body, null, 2));
     
-    // ✅ O schema já faz a transformação automática de snake_case para camelCase
     const validated: BulkAvailabilityUpdate = bulkAvailabilityUpdateSchema.parse(req.body);
     const { updates, roomTypeId } = validated;
     
@@ -1386,11 +1400,9 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       });
     }
 
-    // ✅ VALIDAÇÃO: Total de unidades do room type
     const maxUnits = roomType.total_units || 0;
     console.log("🏨 Validando contra total de unidades:", maxUnits);
 
-    // ✅ Processar os updates já normalizados pelo schema
     const processedUpdates = updates.map(update => {
       const processed: any = {
         date: update.date,
@@ -1400,7 +1412,7 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       // ✅ VALIDAÇÃO DE PREÇO (com suporte a reset)
       if (update.price !== undefined) {
         if (update.reset) {
-          processed.price = null; // Reset explícito
+          processed.price = null;
         } else if (update.price !== null) {
           const price = parseFloat(update.price.toString());
           if (isNaN(price) || price <= 0) {
@@ -1413,7 +1425,7 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       // ✅ VALIDAÇÃO DE UNIDADES (com suporte a reset)
       if (update.availableUnits !== undefined) {
         if (update.reset) {
-          processed.availableUnits = null; // Reset explícito
+          processed.availableUnits = null;
         } else if (update.availableUnits !== null) {
           const units = Math.max(0, update.availableUnits);
           
@@ -1435,7 +1447,7 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       // ✅ MIN_NIGHTS (com suporte a reset)
       if (update.minNights !== undefined) {
         if (update.reset) {
-          processed.minNights = 1; // Reset para padrão
+          processed.minNights = 1;
         } else if (update.minNights < 1) {
           throw new Error(`Mínimo de noites deve ser >= 1 para ${update.date}`);
         }
@@ -1473,7 +1485,6 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
       });
     }
     
-    // ✅ Erros de validação customizados
     if (error.message?.includes('excede') || error.message?.includes('inválido')) {
       return res.status(400).json({
         success: false,
@@ -1491,48 +1502,119 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
 });
 
 // ======================= RESERVAS =======================
-// ✅ CORRIGIDO: Rota de criação de booking com hotelId da rota
+// ✅ CORREÇÃO CRÍTICA: Rota de criação de booking com logging detalhado e schema corrigido
 router.post('/:id/bookings', requireAuth, async (req: Request, res: Response) => {
   try {
+    console.log('🔍 [HOTEL BOOKING] Dados recebidos do frontend:', {
+      body: req.body,
+      hotelId: req.params.id,
+      userId: (req as any).user?.id,
+      headers: req.headers['content-type'],
+      timestamp: new Date().toISOString()
+    });
+    
     const hotelId = req.params.id;
     const userId = (req as any).user?.id;
 
     const hotel = await getHotelById(hotelId);
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
 
+    // ✅ VALIDAÇÃO COM SCHEMA CORRIGIDO
+    console.log('✅ [HOTEL BOOKING] Validando dados com schema...');
     const validated = createBookingSchema.parse(req.body);
-
+    console.log('✅ [HOTEL BOOKING] Dados validados:', validated);
+    
+    // ✅ CONSTRUIR DADOS PARA O SERVICE
     const bookingData: CreateBookingData = {
       hotelId,
-      roomTypeId: validated.roomTypeId,
-      guestName: validated.guestName,
-      guestEmail: validated.guestEmail,
+      roomTypeId: validated.roomTypeId!,
+      guestName: validated.guestName!,
+      guestEmail: validated.guestEmail!,
       guestPhone: validated.guestPhone || undefined,
-      checkIn: validated.checkIn,
-      checkOut: validated.checkOut,
+      checkIn: validated.checkIn!,
+      checkOut: validated.checkOut!,
       adults: validated.adults,
       children: validated.children,
       units: validated.units,
       specialRequests: validated.specialRequests || undefined,
       promoCode: validated.promoCode || undefined,
       userId: validated.userId || userId,
+      // ✅ CORREÇÃO: Status definido no service como 'pending_confirmation' por padrão
       status: validated.status,
       paymentStatus: validated.paymentStatus,
     };
-
+    
+    console.log('📦 [HOTEL BOOKING] Booking data para service:', bookingData);
+    
+    // ✅ CHAMAR SERVICE
+    console.log('🚀 [HOTEL BOOKING] Chamando createHotelBooking...');
     const result = await createHotelBooking(bookingData, userId);
+    
+    // ✅ CORREÇÃO: Verificar a estrutura do resultado
+    let bookingResult;
+    let unitsReserved = 1;
 
+    if (result && typeof result === 'object') {
+      if ('booking' in result) {
+        // Caso 1: Service retorna { booking, unitsReserved }
+        bookingResult = result.booking;
+        unitsReserved = result.unitsReserved || 1;
+      } else if ('id' in result) {
+        // Caso 2: Service retorna o booking diretamente
+        bookingResult = result;
+      } else {
+        throw new Error('Estrutura de retorno do service desconhecida');
+      }
+    } else {
+      throw new Error('Service retornou valor inválido');
+    }
+
+    if (!bookingResult) {
+      throw new Error('Service não retornou dados da reserva');
+    }
+
+    console.log('📥 [HOTEL BOOKING] Resultado processado:', {
+      bookingId: bookingResult.id,
+      unitsReserved,
+      structure: 'booking' in result ? 'nested' : 'direct'
+    });
+
+    console.log('🎉 [HOTEL BOOKING] Reserva criada com ID:', bookingResult.id);
+    
+    // ✅ Retornar resposta
     res.status(201).json({
       success: true,
       message: 'Reserva criada com sucesso',
-      data: result,
+      data: bookingResult,
+      meta: {
+        unitsReserved: unitsReserved,
+        bookingId: bookingResult.id
+      }
     });
   } catch (error) {
+    console.error('❌ [HOTEL BOOKING] Erro:', {
+      message: error instanceof Error ? error.message : 'Erro desconhecido',
+      stack: error instanceof Error ? error.stack : undefined,
+      body: req.body,
+    });
+    
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, message: 'Dados inválidos', errors: error.errors });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Dados inválidos', 
+        errors: error.errors,
+        validationDetails: error.errors.map(err => ({
+          path: err.path.join('.'),
+          message: err.message,
+          code: err.code
+        }))
+      });
     }
-    console.error('Erro ao criar reserva:', error);
-    res.status(500).json({ success: false, message: 'Erro ao criar reserva' });
+    
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao criar reserva: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
+    });
   }
 });
 
@@ -1738,6 +1820,56 @@ router.post('/bookings/:bookingId/cancel', requireAuth, async (req: Request, res
     });
   } catch (error: any) {
     console.error('Erro ao cancelar reserva:', error);
+    res.status(400).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
+
+// ✅ NOVA ROTA: Confirmar reserva (atualiza status para 'confirmed')
+router.post('/bookings/:bookingId/confirm', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { bookingId } = req.params;
+    const userId = (req as any).user?.id;
+    
+    const booking = await getBookingById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Reserva não encontrada' 
+      });
+    }
+
+    // Verificar permissão
+    const isOwner = await isHotelOwner(booking.hotelId, userId);
+    const isAdmin = (req as any).user?.roles?.includes('admin') || false;
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Sem permissão para confirmar esta reserva',
+        error: 'PERMISSION_DENIED',
+      });
+    }
+
+    // Atualizar status para confirmed
+    const confirmed = await confirmBooking(bookingId, userId);
+    
+    if (!confirmed) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Reserva não encontrada' 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Reserva confirmada com sucesso', 
+      data: confirmed 
+    });
+  } catch (error: any) {
+    console.error('Erro ao confirmar reserva:', error);
     res.status(400).json({ 
       success: false, 
       message: error.message 

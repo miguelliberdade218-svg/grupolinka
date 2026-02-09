@@ -502,7 +502,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
 
   const handleCreateSpace = () => {
     if (hotelId) {
-      navigate(`/hotels/events/spaces/create?hotelId=${hotelId}`);
+      navigate(`/hotels-app/events/spaces/create?hotelId=${hotelId}`);
     } else {
       toast({
         title: "Erro",
@@ -691,7 +691,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
       <div className="mb-2">
         <Breadcrumb>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/hotels/manage" className="flex items-center gap-2">
+            <BreadcrumbLink href="/hotels-app/manage" className="flex items-center gap-2">
               <Home className="h-4 w-4" />
               Dashboard
             </BreadcrumbLink>
@@ -702,7 +702,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
           {activeHotel && (
             <>
               <BreadcrumbItem>
-                <BreadcrumbLink href="/hotels/manage" className="flex items-center gap-2">
+                <BreadcrumbLink href="/hotels-app/manage" className="flex items-center gap-2">
                   <Building className="h-4 w-4" />
                   {activeHotel.name}
                 </BreadcrumbLink>
@@ -716,7 +716,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             <>
               <BreadcrumbItem>
                 <BreadcrumbLink 
-                  href={`/hotels/events/spaces/${spaceDetails.id}/dashboard`}
+                  href={`/hotels-app/events/spaces/${spaceDetails.id}/dashboard`}
                   className="flex items-center gap-2"
                 >
                   <Building className="h-4 w-4" />
@@ -832,7 +832,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate(`/hotels/events/spaces/${activeEventSpace.id}/bookings`)}
+                    onClick={() => navigate(`/hotels-app/events/spaces/${activeEventSpace.id}/bookings`)}
                     className="border-blue-300 text-blue-700 hover:bg-blue-50"
                   >
                     <Eye className="h-4 w-4 mr-2" />
@@ -841,7 +841,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate(`/hotels/events/spaces/${activeEventSpace.id}/calendar`)}
+                    onClick={() => navigate(`/hotels-app/events/spaces/${activeEventSpace.id}/calendar`)}
                     className="border-green-300 text-green-700 hover:bg-green-50"
                   >
                     <Calendar className="h-4 w-4 mr-2" />
@@ -850,7 +850,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate(`/hotels/events/spaces/${activeEventSpace.id}/dashboard`)}
+                    onClick={() => navigate(`/hotels-app/events/spaces/${activeEventSpace.id}/dashboard`)}
                     className="border-violet-300 text-violet-700 hover:bg-violet-50"
                   >
                     <BarChart className="h-4 w-4 mr-2" />
@@ -913,7 +913,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
           </Button>
 
           {hotelId && !spaceDetails && (
-            <Button onClick={() => navigate('/hotels/events/spaces')}>
+            <Button onClick={() => navigate('/hotels-app/events/spaces')}>
               <Eye className="h-4 w-4 mr-2" />
               Gerir Espaços
             </Button>
@@ -1017,7 +1017,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             </div>
             <div className="text-3xl font-bold">{dashboardData.pendingBookings}</div>
             <div className="text-gray-600">Pendentes</div>
-            <div className="text-sm text-gray-500 mt-1">Aguardando aprovação</div>
+            <div className="text-sm text-gray500 mt-1">Aguardando aprovação</div>
           </Card>
 
           <Card className="p-6 hover:shadow-lg transition-shadow">
@@ -1104,7 +1104,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
               <h3 className="font-semibold text-lg">Espaços Mais Populares</h3>
             </div>
             {hotelId && (
-              <Button variant="outline" onClick={() => navigate('/hotels/events/spaces')}>
+              <Button variant="outline" onClick={() => navigate('/hotels-app/events/spaces')}>
                 Ver Todos
               </Button>
             )}
@@ -1134,21 +1134,21 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/hotels/events/spaces/${space.id}/bookings`)}
+                          onClick={() => navigate(`/hotels-app/events/spaces/${space.id}/bookings`)}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/hotels/events/spaces/${space.id}/dashboard`)}
+                          onClick={() => navigate(`/hotels-app/events/spaces/${space.id}/dashboard`)}
                         >
                           <BarChart className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/hotels/events/spaces/${space.id}/calendar`)}
+                          onClick={() => navigate(`/hotels-app/events/spaces/${space.id}/calendar`)}
                         >
                           <Calendar className="h-4 w-4" />
                         </Button>
@@ -1175,7 +1175,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             </h3>
           </div>
           {hotelId && (
-            <Button variant="outline" onClick={() => navigate('/hotels/events/bookings')}>
+            <Button variant="outline" onClick={() => navigate('/hotels-app/events/bookings')}>
               Ver Todas
             </Button>
           )}
@@ -1208,7 +1208,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => navigate(`/hotels/events/bookings/${booking.id}`)}
+                    onClick={() => navigate(`/hotels-app/events/bookings/${booking.id}`)}
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
@@ -1243,7 +1243,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             <Button 
               variant="link" 
               className="p-0 h-auto text-blue-600 mt-2"
-              onClick={() => navigate('/hotels/events/bookings?status=pending_approval')}
+              onClick={() => navigate('/hotels-app/events/bookings?status=pending_approval')}
             >
               Ver reservas pendentes →
             </Button>
@@ -1284,7 +1284,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             <Button 
               variant="link" 
               className="p-0 h-auto text-purple-600 mt-2"
-              onClick={() => navigate('/hotels/events/spaces')}
+              onClick={() => navigate('/hotels-app/events/spaces')}
             >
               Ver todos os espaços →
             </Button>
@@ -1298,7 +1298,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
           <h3 className="text-xl font-bold text-gray-900 mb-4">Ações Rápidas para {spaceDetails.name}</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer border border-blue-200 hover:border-blue-400" 
-                  onClick={() => navigate(`/hotels/events/spaces/${spaceDetails.id}/bookings`)}>
+                  onClick={() => navigate(`/hotels-app/events/spaces/${spaceDetails.id}/bookings`)}>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
                   <Calendar className="h-5 w-5 text-blue-600" />
@@ -1311,7 +1311,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             </Card>
 
             <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer border border-green-200 hover:border-green-400"
-                  onClick={() => navigate(`/hotels/events/spaces/${spaceDetails.id}/calendar`)}>
+                  onClick={() => navigate(`/hotels-app/events/spaces/${spaceDetails.id}/calendar`)}>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
                   <CalendarDays className="h-5 w-5 text-green-600" />
@@ -1324,7 +1324,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
             </Card>
 
             <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer border border-amber-200 hover:border-amber-400"
-                  onClick={() => navigate(`/hotels/events/spaces/${spaceDetails.id}/edit`)}>
+                  onClick={() => navigate(`/hotels-app/events/spaces/${spaceDetails.id}/edit`)}>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                   <Eye className="h-5 w-5 text-amber-600" />

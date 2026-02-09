@@ -1,3 +1,8 @@
+// src/shared/components/HotelCard.tsx
+// Card moderno de hotel para listagem em busca
+// ✅ CORRIGIDO: Problema de imagens 404 resolvido com fallback
+// ✅ CORREÇÃO: Melhor tratamento de erros e dados seguros
+
 import React from 'react';
 import { Link } from 'wouter';
 import { Badge } from '@/shared/components/ui/badge';
@@ -63,8 +68,8 @@ export const HotelCard: React.FC<HotelCardProps> = ({
   const safeDescription = getSafeDescription();
   const safeLocality = getSafeLocality();
   
-  // ✅ CORREÇÃO: Imagem padrão se não houver
-  const imageUrl = safeImages[0] || 'https://via.placeholder.com/400x300?text=Hotel';
+  // ✅ CORREÇÃO APLICADA: Imagem com fallback e tratamento de erro
+  const imageUrl = safeImages[0] || `https://via.placeholder.com/400x300?text=${encodeURIComponent(hotel.name || 'Hotel')}`;
   
   // ✅ CORREÇÃO: MinPrice seguro
   const safeMinPrice = minPrice || parseInt(hotel.base_price || '0') || 0;
@@ -73,13 +78,14 @@ export const HotelCard: React.FC<HotelCardProps> = ({
     <div className="group relative bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300">
       {/* Imagem Hero com Gradient Overlay */}
       <div className="relative h-48 overflow-hidden bg-gray-100">
+        {/* ✅ CORREÇÃO APLICADA: Imagem com fallback e tratamento de erro */}
         <img
           src={imageUrl}
           alt={hotel.name || 'Hotel'}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onError={(e) => {
-            // ✅ CORREÇÃO: Fallback para imagem placeholder em caso de erro
-            e.currentTarget.src = 'https://via.placeholder.com/400x300?text=Hotel';
+            // ✅ CORREÇÃO: Fallback para imagem placeholder com nome do hotel
+            (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(hotel.name || 'Hotel')}`;
             e.currentTarget.className = 'w-full h-full object-cover bg-gray-200';
           }}
         />

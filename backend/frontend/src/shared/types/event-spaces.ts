@@ -1,6 +1,6 @@
 // src/shared/types/event-spaces.ts
 // VERSÃO CORRIGIDA E ALINHADA COM REALIDADE DA APP - 26/01/2026
-// Usa camelCase para frontend, reflete exatamente o backend
+// ✅ CORREÇÃO: Resolvido erro de incompatibilidade EventSpaceDetails vs EventSpaceDetailsResponse
 
 // ==================== EVENT SPACE ====================
 export interface EventSpace {
@@ -314,9 +314,10 @@ export interface EventDashboardSummary {
   pendingApprovals: number;
 }
 
-// ==================== EVENT SPACE DETAILS ====================
-export interface EventSpaceDetails {
-  space: EventSpace;
+// ==================== ✅ CORREÇÃO: EVENT SPACE DETAILS RESPONSE ====================
+// ✅ CORREÇÃO: Nome alterado de EventSpaceDetails para EventSpaceDetailsResponse para clareza
+export interface EventSpaceDetailsResponse {
+  space: EventSpaceData;  // ✅ ALTERADO: Usa EventSpaceData em vez de EventSpace
   hotel: any;
   base_price_per_day: string;
   weekend_surcharge_percent: number;
@@ -327,6 +328,33 @@ export interface EventSpaceDetails {
   catering_discount_percent: number;
   catering_menu_urls: string[];
   security_deposit: string;
+  amenities?: string[];  // ✅ ADICIONADO: pode estar no nível raiz também
+}
+
+// ✅ NOVO: Interface específica para os dados do espaço nos detalhes
+export interface EventSpaceData extends EventSpace {
+  amenities: string[];  // ✅ ADICIONADO: campo que estava faltando
+  
+  // ✅ CORREÇÃO: Adicionando campos que podem estar na resposta detalhada
+  facilities?: string[];
+  accessibility_features?: string[];
+  nearby_attractions?: string[];
+  parking_info?: string | null;
+  public_transport_info?: string | null;
+  
+  // ✅ CORREÇÃO: Campos calculados/extras que aparecem em detalhes
+  average_rating?: number;
+  review_count?: number;
+  total_bookings?: number;
+  is_favorite?: boolean;
+  
+  // ✅ CORREÇÃO: Formatação específica para detalhes
+  formatted_base_price?: string;
+  formatted_weekend_price?: string;
+  formatted_security_deposit?: string;
+  
+  // ✅ CORREÇÃO: Campos de compatibilidade para manter o tipo original funcionando
+  amenitiesList?: string[];  // alias para amenities
 }
 
 // ==================== 🆕 NOVOS TIPOS PARA GESTÃO DE RESERVAS E PAGAMENTOS ====================
@@ -520,4 +548,19 @@ export interface PaymentCalculation {
   depositRequired: number;
   alreadyPaid: number;
   remaining: number;
+}
+
+// ✅ ADICIONADO: Tipo para busca por proximidade
+export interface NearbyEventSpaceParams {
+  lat: number;
+  lng: number;
+  radius?: number;
+  startDate?: string;
+  endDate?: string;
+  capacity?: number;
+  eventType?: string;
+  maxPricePerDay?: number;
+  amenities?: string[];
+  minRating?: number;
+  useExactLocations?: boolean;
 }

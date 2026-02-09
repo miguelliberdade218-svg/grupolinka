@@ -195,7 +195,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
   const handleBookingsClick = (space: EventSpace) => {
     setSelectedSpaceForBookings(space);
-    navigate(`/hotels/events/spaces/${space.id}/bookings`);
+    navigate(`/hotels-app/events/spaces/${space.id}/bookings`);
   };
 
   const handleReviewsClick = (space: EventSpace) => {
@@ -207,7 +207,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   // ✅ MELHORADO: Handler para dashboard específico do espaço com feedback
   const handleDashboardClick = (space: EventSpace) => {
     setLoadingDashboard(space.id);
-    navigate(`/hotels/events/spaces/${space.id}/dashboard`);
+    navigate(`/hotels-app/events/spaces/${space.id}/dashboard`);
     // Limpar após navegação
     setTimeout(() => setLoadingDashboard(null), 1000);
   };

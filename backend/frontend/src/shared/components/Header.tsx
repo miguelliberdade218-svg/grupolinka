@@ -1,3 +1,4 @@
+// src/shared/components/Header.tsx - VERSÃO CORRIGIDA
 import { useState } from "react";
 import { Link } from "wouter";
 import NotificationCenter from "./NotificationCenter";
@@ -7,8 +8,6 @@ import { Button } from "@/shared/components/ui/button";
 import { User } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUserRoles } from "../hooks/useUserRoles";
-// Logo is now served from public directory
-
 
 export default function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -33,10 +32,7 @@ export default function Header() {
             </Link>
           </div>
           
-
           <div className="flex items-center space-x-4">
-            
-            
             {/* Authentication Section */}
             {isAuthenticated ? (
               <>
@@ -66,104 +62,112 @@ export default function Header() {
                 
                   {showUserMenu && (
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2">
-                  <Link href="/dashboard">
-                    <button
-                      data-testid="nav-dashboard"
-                      className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                      onClick={() => setShowUserMenu(false)}
-                    >
-                      <i className="fas fa-calendar-alt mr-2"></i>Minhas Reservas
-                    </button>
-                  </Link>
-                  <Link href="/partnerships">
-                    <button
-                      data-testid="nav-partnerships"
-                      className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                      onClick={() => setShowUserMenu(false)}
-                    >
-                      <i className="fas fa-handshake mr-2"></i>Parcerias
-                    </button>
-                  </Link>
+                      <Link href="/reservas">
+                        <button
+                          data-testid="nav-dashboard"
+                          className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <i className="fas fa-calendar-alt mr-2"></i>Minhas Reservas
+                        </button>
+                      </Link>
+                      <Link href="/partnerships">
+                        <button
+                          data-testid="nav-partnerships"
+                          className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <i className="fas fa-handshake mr-2"></i>Parcerias
+                        </button>
+                      </Link>
 
-                  <Link href="/loyalty">
-                    <button
-                      data-testid="nav-loyalty"
-                      className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                      onClick={() => setShowUserMenu(false)}
-                    >
-                      <i className="fas fa-crown mr-2"></i>Programa Fidelidade
-                    </button>
-                  </Link>
-                  <hr className="my-2" />
-                  
-                  {/* Role Switcher Integration */}
-                  <div className="px-4 py-2">
-                    <RoleSwitcher variant="compact" showBadge={true} />
-                  </div>
-                  
-                  <hr className="my-2" />
-                  
-                  <Link href="/profile/verification">
-                    <button
-                      data-testid="nav-verification"
-                      className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50 flex items-center"
-                      onClick={() => setShowUserMenu(false)}
-                    >
-                      <i className="fas fa-shield-alt mr-2 text-blue-600"></i>
-                      <div>
-                        <div className="font-medium">Verificar Perfil</div>
-                        <div className="text-xs text-gray-500">Obrigatório para oferecer serviços</div>
+                      <Link href="/loyalty">
+                        <button
+                          data-testid="nav-loyalty"
+                          className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <i className="fas fa-crown mr-2"></i>Programa Fidelidade
+                        </button>
+                      </Link>
+                      <hr className="my-2" />
+                      
+                      {/* Role Switcher Integration */}
+                      <div className="px-4 py-2">
+                        <RoleSwitcher variant="compact" showBadge={true} />
                       </div>
-                    </button>
-                  </Link>
-                  
-                  {canAccessFeature('admin-panel') && (
-                    <Link href="/admin">
+                      
+                      <hr className="my-2" />
+                      
+                      <Link href="/profile/verification">
+                        <button
+                          data-testid="nav-verification"
+                          className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50 flex items-center"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <i className="fas fa-shield-alt mr-2 text-blue-600"></i>
+                          <div>
+                            <div className="font-medium">Verificar Perfil</div>
+                            <div className="text-xs text-gray-500">Obrigatório para oferecer serviços</div>
+                          </div>
+                        </button>
+                      </Link>
+                      
+                      {canAccessFeature('admin-panel') && (
+                        <Link href="/admin">
+                          <button
+                            data-testid="nav-admin"
+                            className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                            onClick={() => setShowUserMenu(false)}
+                          >
+                            <i className="fas fa-shield-alt mr-2"></i>Painel Admin
+                          </button>
+                        </Link>
+                      )}
+                      
+                      {canAccessFeature('manager-dashboard') && (
+                        <Link href="/hotels-app/manage"> {/* ✅ CORREÇÃO APLICADA: mudado de /hotels/manage para /hotels-app/manage */}
+                          <button
+                            data-testid="nav-hotel-manager"
+                            className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                            onClick={() => setShowUserMenu(false)}
+                          >
+                            <i className="fas fa-hotel mr-2"></i>Gestão de Hotel
+                          </button>
+                        </Link>
+                      )}
+                      
+                      <Link href="/perfil">
+                        <button
+                          data-testid="nav-profile"
+                          className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <i className="fas fa-user mr-2"></i>Perfil
+                        </button>
+                      </Link>
+                      
+                      <Link href="/ajuda">
+                        <button
+                          data-testid="nav-help"
+                          className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <i className="fas fa-question-circle mr-2"></i>Ajuda
+                        </button>
+                      </Link>
+                      
+                      <hr className="my-2" />
                       <button
-                        data-testid="nav-admin"
+                        data-testid="nav-logout"
                         className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                        onClick={() => setShowUserMenu(false)}
+                        onClick={async () => {
+                          await signOut();
+                          setShowUserMenu(false);
+                        }}
                       >
-                        <i className="fas fa-shield-alt mr-2"></i>Painel Admin
+                        <i className="fas fa-sign-out-alt mr-2"></i>Sair
                       </button>
-                    </Link>
-                  )}
-                  {canAccessFeature('manager-dashboard') && (
-                    <Link href="/hotels/manage">
-                      <button
-                        data-testid="nav-hotel-manager"
-                        className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                        onClick={() => setShowUserMenu(false)}
-                      >
-                        <i className="fas fa-hotel mr-2"></i>Gestão de Hotel
-                      </button>
-                    </Link>
-                  )}
-                  <button
-                    data-testid="nav-profile"
-                    className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    <i className="fas fa-user mr-2"></i>Perfil
-                  </button>
-                  <button
-                    data-testid="nav-help"
-                    className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                    onClick={() => setShowUserMenu(false)}
-                  >
-                    <i className="fas fa-question-circle mr-2"></i>Ajuda
-                  </button>
-                  <hr className="my-2" />
-                  <button
-                    data-testid="nav-logout"
-                    className="w-full text-left px-4 py-2 text-sm text-dark hover:bg-gray-50"
-                    onClick={async () => {
-                      await signOut();
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <i className="fas fa-sign-out-alt mr-2"></i>Sair
-                  </button>
                     </div>
                   )}
                 </div>
@@ -181,8 +185,6 @@ export default function Header() {
           </div>
         </div>
       </div>
-      
-
       
       {/* Login Modal */}
       <LoginModal

@@ -151,7 +151,8 @@ const createCompleteBookingData = (
     longStayDiscountAmount: formatDecimalForDB(discountAmount),
     specialRequests: data.specialRequests || null,
     promoCode: data.promoCode || null,
-    status: data.status || 'confirmed',
+    // ✅ CORREÇÃO CRÍTICA: Alterado de 'confirmed' para 'pending_confirmation' conforme constraint do banco
+    status: data.status || 'pending_confirmation',
     paymentStatus: data.paymentStatus || 'pending',
     paymentReference: data.paymentReference || null,
     
@@ -500,6 +501,69 @@ export const checkOutBooking = async (
   }
 };
 
+// ✅ NOVA FUNÇÃO: Confirmar reserva (atualiza status para 'confirmed')
+export const confirmBooking = async (
+  bookingId: string,
+  confirmedBy?: string
+): Promise<HotelBooking | null> => {
+  try {
+    const [booking] = await db
+      .select()
+      .from(hotelBookings)
+      .where(eq(hotelBookings.id, bookingId));
+
+    if (!booking) {
+      throw new Error("Reserva não encontrada");
+    }
+
+    // Verificar se a reserva pode ser confirmada
+    if (booking.status === 'cancelled') {
+      throw new Error("Não é possível confirmar uma reserva cancelada");
+    }
+
+    if (booking.status === 'checked_in' || booking.status === 'checked_out') {
+      throw new Error(`Reserva já está com status ${booking.status}`);
+    }
+
+    // Atualizar status para confirmed
+    const [updated] = await db
+      .update(hotelBookings)
+      .set({ 
+        status: 'confirmed',
+        confirmedAt: new Date(),
+        confirmedBy: confirmedBy || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(hotelBookings.id, bookingId))
+      .returning();
+
+    if (!updated) {
+      throw new Error("Falha ao confirmar reserva");
+    }
+
+    // Criar log da confirmação
+    await createBookingLog(
+      bookingId,
+      "booking_confirmed",
+      confirmedBy || "system",
+      `Reserva confirmada`,
+      { 
+        timestamp: new Date().toISOString(),
+        confirmedBy: confirmedBy || 'system',
+        previousStatus: booking.status,
+        newStatus: 'confirmed'
+      }
+    );
+
+    console.log(`✅ Reserva ${bookingId} confirmada por ${confirmedBy || 'system'}`);
+    return updated;
+
+  } catch (error) {
+    console.error('Erro ao confirmar reserva:', error);
+    throw new Error(`Falha na confirmação: ${(error as Error).message}`);
+  }
+};
+
 // ==================== CANCELAMENTO - VERSÃO CORRIGIDA COM DISPONIBILIDADE ETERNA ====================
 
 export const cancelBooking = async (
@@ -592,7 +656,7 @@ export const cancelBooking = async (
   }
 };
 
-// ✅ NOVA FUNÇÃO: Rejeitar reserva (similar ao cancelar, mas mantém histórico)
+// ✅ FUNÇÃO CORRIGIDA: Rejeitar reserva usando 'cancelled' em vez de 'rejected'
 export const rejectBooking = async (
   bookingId: string,
   reason: string,
@@ -613,12 +677,12 @@ export const rejectBooking = async (
     }
 
     return await db.transaction(async (tx) => {
-      // Atualizar status para rejected
+      // ✅ ALTERADO: Usar 'cancelled' em vez de 'rejected' para respeitar a constraint do banco
       const [rejected] = await tx
         .update(hotelBookings)
         .set({ 
-          status: 'rejected',
-          cancellationReason: reason,
+          status: 'cancelled',
+          cancellationReason: `Rejeitada: ${reason}`,
           cancelledAt: new Date(),
           updatedAt: new Date(),
         })
@@ -935,7 +999,8 @@ export const normalizeBookingData = (data: any): CreateBookingData => {
     specialRequests: data.specialRequests || data.special_requests,
     promoCode: data.promoCode || data.promo_code,
     userId: data.userId || data.user_id,
-    status: data.status || 'confirmed',
+    // ✅ CORREÇÃO: Alterado de 'confirmed' para 'pending_confirmation'
+    status: data.status || 'pending_confirmation',
     paymentStatus: data.paymentStatus || data.payment_status || 'pending',
   };
 };
@@ -951,6 +1016,7 @@ export default {
   getUpcomingCheckIns,
   checkInBooking,
   checkOutBooking,
+  confirmBooking, // ✅ ADICIONADA
   cancelBooking,
   rejectBooking,
   checkAvailability,

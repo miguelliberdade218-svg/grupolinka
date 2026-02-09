@@ -21,6 +21,11 @@ export const HotelDetailPage: React.FC = () => {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
 
+  const handleBookNow = () => {
+    // Navega para a página de reserva ou abre modal
+    console.log('Redirecionar para página de reserva');
+  };
+
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -165,7 +170,7 @@ export const HotelDetailPage: React.FC = () => {
                 <div>
                   <h3 className="text-xl font-semibold text-dark mb-4">Comodidades do hotel</h3>
                   <div className="grid md:grid-cols-2 gap-4">
-                                        {hotel.amenities && hotel.amenities.length > 0 ? (
+                    {hotel.amenities && hotel.amenities.length > 0 ? (
                       hotel.amenities.map((amenity: string, idx: number) => (
                         <div key={idx} className="flex items-center gap-3 p-3 bg-white rounded-lg">
                           <CheckCircle2 className="w-5 h-5 text-secondary flex-shrink-0" />
@@ -249,6 +254,23 @@ export const HotelDetailPage: React.FC = () => {
                       </p>
                     </div>
                   )}
+
+                  {/* Informações de Contacto MODIFICADA */}
+                  <div className="bg-white p-4 rounded-lg">
+                    <h4 className="font-semibold text-dark mb-2">Informações de Contacto</h4>
+                    <div className="p-4 bg-muted rounded-lg">
+                      <p className="text-sm text-muted-foreground">
+                        As informações de contacto estão disponíveis apenas após confirmação de reserva.
+                      </p>
+                      <Button 
+                        variant="link" 
+                        className="p-0 h-auto mt-2"
+                        onClick={handleBookNow}
+                      >
+                        Faça uma reserva para obter os contactos
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>
@@ -273,7 +295,10 @@ export const HotelDetailPage: React.FC = () => {
                 </div>
               )}
 
-              <Button className="w-full bg-primary hover:bg-primary/90 text-dark mb-3 h-12 text-lg font-semibold">
+              <Button 
+                className="w-full bg-primary hover:bg-primary/90 text-dark mb-3 h-12 text-lg font-semibold"
+                onClick={handleBookNow}
+              >
                 Reservar Agora
               </Button>
 

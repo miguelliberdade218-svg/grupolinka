@@ -218,6 +218,23 @@ export default function EventSpacesSearchPage() {
     }
   }, [search]);
 
+  // Função para lidar com a visualização de detalhes do espaço de evento
+  const handleViewEventSpaceDetails = (space: any) => {
+    if (!space?.id) {
+      console.error('❌ Event Space ID não encontrado:', space);
+      toast({
+        title: "Erro",
+        description: "Espaço de evento não encontrado",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Usar slug se disponível, caso contrário ID
+    const identifier = space.slug || space.id;
+    setLocation(`/event-spaces/${identifier}`);
+  };
+
   // ✅ CORREÇÃO: Buscar sugestões com conversão de tipos
   const fetchSuggestions = useCallback(
     debounce(async (query: string) => {
@@ -462,17 +479,17 @@ export default function EventSpacesSearchPage() {
     const params = new URLSearchParams();
     if (searchParams.locality) params.set('locality', searchParams.locality);
     if (searchParams.province) params.set('province', searchParams.province || '');
-    if (searchParams.startDate) params.set('startDate', searchParams.startDate);
+    if (searchParams.startDate) params.set('startDate', searchParams.startDate || '');
     if (searchParams.endDate) params.set('endDate', searchParams.endDate || '');
     if (searchParams.capacity) params.set('capacity', searchParams.capacity.toString());
     if (searchParams.eventType) params.set('eventType', searchParams.eventType || '');
-    if (searchParams.maxPricePerDay) params.set('maxPricePerDay', searchParams.maxPricePerDay.toString());
-    if (searchParams.sortBy) params.set('sortBy', searchParams.sortBy);
+    if (searchParams.maxPricePerDay) params.set('maxPricePerDay', searchParams.maxPricePerDay?.toString() || '50000');
+    if (searchParams.sortBy) params.set('sortBy', searchParams.sortBy || '');
     if (searchParams.page) params.set('page', searchParams.page.toString());
-    if (searchParams.radius) params.set('radius', searchParams.radius.toString());
-    if (searchParams.locationId) params.set('locationId', searchParams.locationId);
-    if (searchParams.lat) params.set('lat', searchParams.lat.toString());
-    if (searchParams.lng) params.set('lng', searchParams.lng.toString());
+    if (searchParams.radius) params.set('radius', searchParams.radius?.toString() || '50');
+    if (searchParams.locationId) params.set('locationId', searchParams.locationId || '');
+    if (searchParams.lat) params.set('lat', searchParams.lat?.toString() || '');
+    if (searchParams.lng) params.set('lng', searchParams.lng?.toString() || '');
     if (searchParams.amenities?.length) {
       params.set('amenities', searchParams.amenities.join(','));
     }
@@ -650,7 +667,7 @@ export default function EventSpacesSearchPage() {
                     <Input
                       type="date"
                       className="pl-10 bg-white/20 border-white/30 text-white"
-                      value={searchParams.startDate}
+                      value={searchParams.startDate || ''}
                       min={new Date().toISOString().split('T')[0]}
                       onChange={(e) => setSearchParams(prev => ({ ...prev, startDate: e.target.value }))}
                     />
@@ -717,7 +734,7 @@ export default function EventSpacesSearchPage() {
                   <div>
                     <Label className="flex items-center gap-2 mb-4">
                       <Navigation className="w-4 h-4" />
-                      Raio de busca: {searchParams.radius} km
+                      Raio de busca: {searchParams.radius || 50} km
                     </Label>
                     <Slider
                       value={[searchParams.radius || 50]}
@@ -770,7 +787,7 @@ export default function EventSpacesSearchPage() {
                         type="number"
                         min="0"
                         max="200000"
-                        value={searchParams.maxPricePerDay}
+                        value={searchParams.maxPricePerDay || 50000}
                         onChange={(e) => setSearchParams(prev => ({ 
                           ...prev, 
                           maxPricePerDay: parseInt(e.target.value) || 0

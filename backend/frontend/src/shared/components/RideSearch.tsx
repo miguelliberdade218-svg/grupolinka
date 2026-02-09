@@ -229,10 +229,11 @@ export default function RideSearch({ onSearch }: RideSearchProps) {
           </div>
           
           <div className="lg:col-span-1 flex items-end">
+            {/* NO BOTÃO DE BUSCA (procure por "button-search-rides"): */}
             <Button
               type="submit"
               data-testid="button-search-rides"
-              className="w-full bg-primary text-primary-foreground py-3 px-6 rounded-lg font-semibold hover:bg-primary/90 transition-colors"
+              className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-3 px-6 rounded-lg font-semibold hover:from-yellow-600 hover:to-orange-600 transition-all duration-300 shadow-lg hover:shadow-xl"
               disabled={form.formState.isSubmitting}
             >
               {form.formState.isSubmitting ? (
@@ -249,117 +250,117 @@ export default function RideSearch({ onSearch }: RideSearchProps) {
           </div>
         </form>
 
-        {/* Transportation Categories */}
+        {/* NA SEÇÃO DE CATEGORIAS DE TRANSPORTE (procure por "Transportation Categories"): */}
         <div className="mt-6">
           <h3 className="text-lg font-semibold text-dark mb-4 text-center">Tipo de Transporte</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div 
               onClick={() => setSelectedTransportType("todos")}
-              className={`cursor-pointer rounded-xl p-6 transition-all duration-200 ${
+              className={`cursor-pointer rounded-xl p-6 transition-all duration-300 ${
                 selectedTransportType === "todos" 
-                  ? "bg-primary text-white shadow-lg transform scale-105" 
-                  : "bg-white hover:bg-gray-50 border-2 border-gray-200 hover:border-primary/30"
+                  ? "bg-gradient-to-br from-yellow-500 to-orange-500 text-white shadow-lg transform scale-105 ring-2 ring-yellow-300" 
+                  : "bg-white hover:bg-yellow-50 border-2 border-yellow-100 hover:border-yellow-300 hover:shadow-md"
               }`}
               data-testid="transport-todos"
             >
               <div className="text-center">
                 <i className={`fas fa-list text-3xl mb-3 ${
-                  selectedTransportType === "todos" ? "text-white" : "text-primary"
+                  selectedTransportType === "todos" ? "text-white" : "text-yellow-500"
                 }`}></i>
                 <h4 className={`font-semibold text-lg ${
                   selectedTransportType === "todos" ? "text-white" : "text-dark"
                 }`}>Todos</h4>
                 <p className={`text-sm mt-2 ${
-                  selectedTransportType === "todos" ? "text-white/80" : "text-gray-medium"
+                  selectedTransportType === "todos" ? "text-white/90" : "text-gray-medium"
                 }`}>Todas as opções</p>
               </div>
             </div>
 
             <div 
               onClick={() => setSelectedTransportType("aereo")}
-              className={`cursor-pointer rounded-xl p-6 transition-all duration-200 ${
+              className={`cursor-pointer rounded-xl p-6 transition-all duration-300 ${
                 selectedTransportType === "aereo" 
-                  ? "bg-primary text-white shadow-lg transform scale-105" 
-                  : "bg-white hover:bg-gray-50 border-2 border-gray-200 hover:border-primary/30"
+                  ? "bg-gradient-to-br from-yellow-500 to-orange-500 text-white shadow-lg transform scale-105 ring-2 ring-yellow-300" 
+                  : "bg-white hover:bg-yellow-50 border-2 border-yellow-100 hover:border-yellow-300 hover:shadow-md"
               }`}
               data-testid="transport-aereo"
             >
               <div className="text-center">
                 <i className={`fas fa-plane text-3xl mb-3 ${
-                  selectedTransportType === "aereo" ? "text-white" : "text-primary"
+                  selectedTransportType === "aereo" ? "text-white" : "text-yellow-500"
                 }`}></i>
                 <h4 className={`font-semibold text-lg ${
                   selectedTransportType === "aereo" ? "text-white" : "text-dark"
                 }`}>Transporte Aéreo</h4>
                 <p className={`text-sm mt-2 ${
-                  selectedTransportType === "aereo" ? "text-white/80" : "text-gray-medium"
+                  selectedTransportType === "aereo" ? "text-white/90" : "text-gray-medium"
                 }`}>Voos domésticos</p>
               </div>
             </div>
 
             <div 
               onClick={() => setSelectedTransportType("ferroviario")}
-              className={`cursor-pointer rounded-xl p-6 transition-all duration-200 ${
+              className={`cursor-pointer rounded-xl p-6 transition-all duration-300 ${
                 selectedTransportType === "ferroviario" 
-                  ? "bg-primary text-white shadow-lg transform scale-105" 
-                  : "bg-white hover:bg-gray-50 border-2 border-gray-200 hover:border-primary/30"
+                  ? "bg-gradient-to-br from-yellow-500 to-orange-500 text-white shadow-lg transform scale-105 ring-2 ring-yellow-300" 
+                  : "bg-white hover:bg-yellow-50 border-2 border-yellow-100 hover:border-yellow-300 hover:shadow-md"
               }`}
               data-testid="transport-ferroviario"
             >
               <div className="text-center">
                 <i className={`fas fa-train text-3xl mb-3 ${
-                  selectedTransportType === "ferroviario" ? "text-white" : "text-primary"
+                  selectedTransportType === "ferroviario" ? "text-white" : "text-yellow-500"
                 }`}></i>
                 <h4 className={`font-semibold text-lg ${
                   selectedTransportType === "ferroviario" ? "text-white" : "text-dark"
                 }`}>Transporte Ferroviário</h4>
                 <p className={`text-sm mt-2 ${
-                  selectedTransportType === "ferroviario" ? "text-white/80" : "text-gray-medium"
+                  selectedTransportType === "ferroviario" ? "text-white/90" : "text-gray-medium"
                 }`}>Comboios</p>
               </div>
             </div>
 
             <div 
               onClick={() => setSelectedTransportType("carros")}
-              className={`cursor-pointer rounded-xl p-6 transition-all duration-200 ${
+              className={`cursor-pointer rounded-xl p-6 transition-all duration-300 ${
                 selectedTransportType === "carros" 
-                  ? "bg-primary text-white shadow-lg transform scale-105" 
-                  : "bg-white hover:bg-gray-50 border-2 border-gray-200 hover:border-primary/30"
+                  ? "bg-gradient-to-br from-yellow-500 to-orange-500 text-white shadow-lg transform scale-105 ring-2 ring-yellow-300" 
+                  : "bg-white hover:bg-yellow-50 border-2 border-yellow-100 hover:border-yellow-300 hover:shadow-md"
               }`}
               data-testid="transport-carros"
             >
               <div className="text-center">
                 <i className={`fas fa-car text-3xl mb-3 ${
-                  selectedTransportType === "carros" ? "text-white" : "text-primary"
+                  selectedTransportType === "carros" ? "text-white" : "text-yellow-500"
                 }`}></i>
                 <h4 className={`font-semibold text-lg ${
                   selectedTransportType === "carros" ? "text-white" : "text-dark"
                 }`}>Carros Particulares</h4>
                 <p className={`text-sm mt-2 ${
-                  selectedTransportType === "carros" ? "text-white/80" : "text-gray-medium"
+                  selectedTransportType === "carros" ? "text-white/90" : "text-gray-medium"
                 }`}>Carros particulares</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ✅ INFO SOBRE A BUSCA INTELIGENTE */}
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        {/* NA SEÇÃO DE INFO SOBRE BUSCA INTELIGENTE (procure por "INFO SOBRE A BUSCA INTELIGENTE"): */}
+        <div className="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200 shadow-sm">
           <div className="flex items-start">
-            <i className="fas fa-brain text-blue-500 mt-1 mr-3 text-lg"></i>
+            <i className="fas fa-brain text-yellow-500 mt-1 mr-3 text-lg"></i>
             <div>
-              <h4 className="font-semibold text-blue-800 text-sm mb-1">🚀 Busca Inteligente Ativada</h4>
-              <p className="text-blue-700 text-xs">
+              <h4 className="font-semibold text-yellow-800 text-sm mb-1">🚀 Busca Inteligente Ativada</h4>
+              <p className="text-yellow-700 text-xs">
                 Agora encontramos <strong>rotas compatíveis</strong> usando geolocalização avançada. 
                 O sistema busca por:
               </p>
-              <ul className="text-blue-700 text-xs mt-1 list-disc list-inside space-y-1">
+              <ul className="text-yellow-700 text-xs mt-1 list-disc list-inside space-y-1">
                 <li>📍 <strong>Matchs exatos</strong> - mesma cidade ou localização</li>
                 <li>🏛️ <strong>Mesma província</strong> - rotas na mesma região</li>
                 <li>🧭 <strong>Rotas similares</strong> - direções compatíveis</li>
                 <li>🔍 <strong>Proximidade</strong> - dentro de <strong>{radius}km</strong> do seu destino</li>
               </ul>
-              <p className="text-blue-600 text-xs font-medium mt-2">
+              <p className="text-yellow-600 text-xs font-medium mt-2">
                 ⚡ <strong>40% mais rápido</strong> com resultados mais relevantes!
               </p>
             </div>
