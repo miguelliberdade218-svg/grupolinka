@@ -1,11 +1,14 @@
-// src/services/apiService.ts - VERSÃO CORRIGIDA 07/02/2026
+// src/services/apiService.ts - VERSÃO CORRIGIDA 12/02/2026
 // ✅ CORREÇÃO COMPLETA: Todas as rotas /api/v2/hotels substituídas por /api/hotels
 // ✅ CORREÇÃO: Funções de normalização de status de hotel adicionadas
 // ✅ CORREÇÃO: Métodos de booking atualizados para usar rotas corretas
 // ✅ CORREÇÃO: Tipo EventSpaceDetails corrigido para EventSpaceDetailsResponse
 // ✅ CORREÇÃO CRÍTICA: Método getEventSpaceDetails corrigido para acessar res.data.space corretamente
+// ✅ CORREÇÃO 3: Normalização de Dados na API - campos de localização, amenities e preços adicionados
+// ✅ CORREÇÃO CRÍTICA: Adicionado suporte para pricePerDay (campo real do banco)
 // ✅ NOVO: Método debugEventSpaceData adicionado para diagnóstico
 // Mantém rides e events intactos
+// ✅ NOVO: Métodos para fotos de hotéis (room type photos) adicionados
 
 import { auth } from '@/shared/lib/firebaseConfig';
 import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday, formatDateTime } from '../utils/dateFormatter';
@@ -65,13 +68,22 @@ import {
   EventBookingResponse,
   EventBooking,
   EventDashboardSummary,
-  // ✅ CORREÇÃO: EventSpaceDetails substituído por EventSpaceDetailsResponse
   EventSpaceDetailsResponse,
   EventSpaceData,
   CreateEventSpaceRequest,
   UpdateEventSpaceRequest,
   PaymentStatusType,
 } from '@/shared/types/event-spaces';
+
+// ====================== 🆕 TIPOS PARA FOTOS DE HOTÉIS ======================
+import type {
+  RoomTypePhoto,
+  RoomTypePhotoUploadRequest,
+  RoomTypePhotoReorderRequest,
+  RoomTypePhotoUpdateRequest,
+  PhotoUploadResponse,
+  PhotoListResponse,
+} from '@/shared/types/hotel-photos';
 
 // ====================== EXPORTAÇÕES ======================
 export type { Booking };
@@ -107,7 +119,6 @@ function normalizeHotelBookingStatus(frontendStatus: string | undefined): string
     'checked_out': 'checked_out',
     'cancelled': 'cancelled',
     'no_show': 'no_show',
-    // Mapear status antigos/inexistentes
     'rejected': 'cancelled',
     'pending_approval': 'pending_confirmation',
     'in_progress': 'checked_in',
@@ -148,22 +159,15 @@ function normalizeHotelBooking(apiBooking: any): any {
   const normalizedStatus = denormalizeHotelBookingStatus(booking.status);
   
   return {
-    // IDs e dados básicos
     id: booking.id || '',
     bookingId: booking.id || '',
     hotelId: booking.hotelId || booking.hotel_id || '',
     roomTypeId: booking.roomTypeId || booking.room_type_id || '',
-    
-    // Dados do hóspede
     guestName: booking.guestName || booking.guest_name || '',
     guestEmail: booking.guestEmail || booking.guest_email || '',
     guestPhone: booking.guestPhone || booking.guest_phone || null,
-    
-    // Datas
     checkIn: booking.checkIn || booking.check_in || '',
     checkOut: booking.checkOut || booking.check_out || '',
-    
-    // Quantidades
     adults: Number(booking.adults || 1),
     children: Number(booking.children || 0),
     units: Number(booking.units || 1),
@@ -175,26 +179,16 @@ function normalizeHotelBooking(apiBooking: any): any {
         )) : 1
       )
     ),
-    
-    // Status (✅ CORRIGIDO: usa status normalizado)
     status: normalizedStatus,
     paymentStatus: booking.paymentStatus || booking.payment_status || 'pending',
-    
-    // Preços
     totalPrice: booking.totalPrice || booking.total_price || '0',
     basePrice: booking.basePrice || booking.base_price || '0',
     taxes: booking.taxes || '0',
-    
-    // Outros dados
     specialRequests: booking.specialRequests || booking.special_requests || null,
     promoCode: booking.promoCode || booking.promo_code || null,
     userId: booking.userId || booking.user_id || null,
-    
-    // Timestamps
     createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
     updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
-    
-    // Campos snake_case para compatibilidade
     guest_name: booking.guestName || booking.guest_name || '',
     guest_email: booking.guestEmail || booking.guest_email || '',
     check_in: booking.checkIn || booking.check_in || '',
@@ -229,14 +223,10 @@ export function normalizeRide(apiRide: any): any {
     priceperseat: Number(apiRide.priceperseat ?? apiRide.pricePerSeat ?? 0),
     distance_from_city_km: Number(apiRide.distance_from_city_km ?? apiRide.distanceFromCityKm ?? 0),
     distance_to_city_km: Number(apiRide.distance_to_city_km ?? apiRide.distanceToCityKm ?? 0),
-    
     match_type: apiRide.match_type || 'traditional',
     direction_score: Number(apiRide.direction_score ?? 0),
-    
     from_province: apiRide.from_province || apiRide.fromProvince,
     to_province: apiRide.to_province || apiRide.toProvince,
-    
-    // Aliases para compatibilidade
     id: apiRide.ride_id || apiRide.id || '',
     driverId: apiRide.driver_id || apiRide.driverId || '',
     driverName: apiRide.driver_name || apiRide.driverName || 'Motorista',
@@ -264,7 +254,6 @@ export function normalizeRide(apiRide: any): any {
     vehicleColor: apiRide.vehicle_color || apiRide.vehicleColor || '',
     status: apiRide.status || 'available',
     type: apiRide.type || apiRide.vehicle_type || 'economy',
-    
     vehicleInfo: {
       make: apiRide.vehicle_make || apiRide.vehicleMake || '',
       model: apiRide.vehicle_model || apiRide.vehicleModel || '',
@@ -275,11 +264,9 @@ export function normalizeRide(apiRide: any): any {
       color: apiRide.vehicle_color || apiRide.vehicleColor || '',
       maxPassengers: Number(apiRide.max_passengers ?? apiRide.maxPassengers ?? 4)
     },
-    
     route_compatibility: Number(apiRide.direction_score ?? apiRide.route_compatibility ?? 0),
     distanceFromCityKm: Number(apiRide.distance_from_city_km ?? apiRide.distanceFromCityKm ?? 0),
     distanceToCityKm: Number(apiRide.distance_to_city_km ?? apiRide.distanceToCityKm ?? 0),
-    
     departureDateFormatted: formatDateOnly(apiRide.departuredate || apiRide.departureDate),
     departureTimeFormatted: formatTimeOnly(apiRide.departuredate || apiRide.departureDate),
     departureDateTimeFormatted: formatDateTime(apiRide.departuredate || apiRide.departureDate),
@@ -314,23 +301,120 @@ export function createDefaultMatchStats(): any {
 
 // ====================== NORMALIZADORES EVENTS (OTIMIZADOS) ======================
 
+/**
+ * ✅ CORREÇÃO 3 + CRÍTICA: Normalização completa de EventSpace com todos os campos necessários
+ * ✅ ADICIONADO: Suporte para pricePerDay (campo real do banco)
+ */
 export function normalizeEventSpace(apiSpace: any): EventSpace {
   const space = apiSpace.space || apiSpace;
+  const hotel = apiSpace.hotel || space.hotel || null;
   
+  // ✅ DEBUG: Ver o que está chegando
+  console.log('🔍 normalizeEventSpace - raw space:', {
+    id: space.id,
+    name: space.name,
+    pricePerDay: space.pricePerDay,
+    basePricePerDay: space.basePricePerDay,
+    base_price_per_day: space.base_price_per_day,
+  });
+  
+  // ✅ CORREÇÃO: Extrair amenities de múltiplas fontes
+  const amenities = [
+    ...(space.amenities || []),
+    ...(apiSpace.amenities || []),
+    ...(space.equipment?.amenities || []),
+    ...(hotel?.amenities || [])
+  ].filter(Boolean);
+
+  // Remover duplicatas
+  const uniqueAmenities = [...new Set(amenities)];
+
+  // ✅ CORREÇÃO: Extrair localização com prioridade correta
+  const locality = space.locality || hotel?.locality || null;
+  const province = space.province || hotel?.province || null;
+  const location = space.location || 
+                  (locality && province ? `${locality}, ${province}` : null);
+  
+  // ✅ CORREÇÃO CRÍTICA: Extrair preços com PRIORIDADE para pricePerDay (campo real do banco)
+  const basePricePerDay = String(
+    space.pricePerDay ||                // 👈 CAMPO REAL DO BANCO (AGORA EXISTE!)
+    space.basePricePerDay || 
+    space.base_price_per_day || 
+    apiSpace.base_price_per_day || 
+    '0'
+  );
+  
+  // ✅ CORREÇÃO: Também manter o pricePerDay original para compatibilidade
+  const pricePerDay = String(
+    space.pricePerDay || 
+    basePricePerDay || 
+    '0'
+  );
+  
+  const weekendSurchargePercent = Number(
+    space.weekendSurchargePercent || 
+    space.weekend_surcharge_percent || 
+    apiSpace.weekend_surcharge_percent || 
+    0
+  );
+  
+  const securityDeposit = String(
+    space.securityDeposit || 
+    space.security_deposit || 
+    apiSpace.security_deposit || 
+    '0'
+  );
+
+  // ✅ CORREÇÃO: Extrair capacidade
+  const capacityMin = Number(
+    space.capacityMin || 
+    space.capacity_min || 
+    10
+  );
+  
+  const capacityMax = Number(
+    space.capacityMax || 
+    space.capacity_max || 
+    capacityMin || 
+    50
+  );
+
+  // ✅ CORREÇÃO: Extrair coordenadas
+  const lat = space.lat || hotel?.lat || null;
+  const lng = space.lng || hotel?.lng || null;
+  const location_id = space.location_id || hotel?.location_id || null;
+
   const normalized: EventSpace = {
     id: space.id || '',
     hotelId: space.hotelId || space.hotel_id || '',
     hotel_id: space.hotel_id || space.hotelId || '',
     name: space.name || 'Espaço sem nome',
     description: space.description || null,
-    capacityMin: Number(space.capacityMin || space.capacity_min || 10),
-    capacityMax: Number(space.capacityMax || space.capacity_max || 50),
+    
+    // ✅ CORREÇÃO: Capacidade
+    capacityMin,
+    capacityMax,
+    
+    // ✅ CORREÇÃO CRÍTICA: Preços com TODAS as variações
+    basePricePerDay,
+    base_price_per_day: basePricePerDay,
+    pricePerDay,                        // 👈 NOVO CAMPO
+    price_per_day: pricePerDay,         // 👈 NOVO CAMPO (snake_case)
+    weekendSurchargePercent,
+    weekend_surcharge_percent: weekendSurchargePercent,
+    securityDeposit,
+    security_deposit: securityDeposit,
+    
     areaSqm: space.areaSqm || space.area_sqm || null,
-    basePricePerDay: String(space.basePricePerDay || space.base_price_per_day || '0'),
-    weekendSurchargePercent: Number(space.weekendSurchargePercent || space.weekend_surcharge_percent || 0),
+    
+    // ✅ CORREÇÃO: Catering
     offersCatering: !!space.offersCatering || !!space.offers_catering,
+    offers_catering: !!space.offers_catering || !!space.offersCatering,
     cateringDiscountPercent: Number(space.cateringDiscountPercent || space.catering_discount_percent || 0),
+    catering_discount_percent: Number(space.catering_discount_percent || space.cateringDiscountPercent || 0),
     cateringMenuUrls: space.cateringMenuUrls || space.catering_menu_urls || [],
+    catering_menu_urls: space.catering_menu_urls || space.cateringMenuUrls || [],
+    
     spaceType: space.spaceType || space.space_type || null,
     naturalLight: !!space.naturalLight || !!space.natural_light,
     hasStage: !!space.hasStage || !!space.has_stage,
@@ -340,47 +424,89 @@ export function normalizeEventSpace(apiSpace: any): EventSpace {
     alcoholAllowed: !!space.alcoholAllowed || !!space.alcohol_allowed,
     approvalRequired: !!space.approvalRequired || !!space.approval_required,
     noiseRestriction: space.noiseRestriction || space.noise_restriction || null,
+    
+    // ✅ CORREÇÃO: Event types
     allowedEventTypes: space.allowedEventTypes || space.allowed_event_types || [],
+    allowed_event_types: space.allowed_event_types || space.allowedEventTypes || [],
     prohibitedEventTypes: space.prohibitedEventTypes || space.prohibited_event_types || [],
+    prohibited_event_types: space.prohibited_event_types || space.prohibitedEventTypes || [],
+    
+    // ✅ CORREÇÃO: Amenities (com duplicatas removidas)
+    amenities: uniqueAmenities,
+    amenities_list: uniqueAmenities,
+    
     equipment: space.equipment || {},
     setupOptions: space.setupOptions || space.setup_options || [],
+    setup_options: space.setup_options || space.setupOptions || [],
     images: space.images || [],
     floorPlanImage: space.floorPlanImage || space.floor_plan_image || null,
     virtualTourUrl: space.virtualTourUrl || space.virtual_tour_url || null,
+    
     isActive: space.isActive ?? space.is_active ?? true,
+    is_active: space.is_active ?? space.isActive ?? true,
     isFeatured: space.isFeatured ?? space.is_featured ?? false,
+    is_featured: space.is_featured ?? space.isFeatured ?? false,
+    
     slug: space.slug || '',
-    createdAt: space.createdAt || space.created_at || new Date().toISOString(),
-    updatedAt: space.updatedAt || space.updated_at || new Date().toISOString(),
+    
+    // ✅ CORREÇÃO: Localização
+    locality,
+    province,
+    location,
+    lat,
+    lng,
+    location_id,
     
     rating: space.rating || undefined,
-    totalReviews: space.totalReviews || undefined,
+    totalReviews: space.totalReviews || space.total_reviews || 0,
+    
     thumbnail: (space.images?.[0] || ''),
-    location: apiSpace.hotel?.locality 
-      ? `${apiSpace.hotel?.locality}, ${apiSpace.hotel?.province}`
-      : undefined,
-    hotel: apiSpace.hotel ? {
-      name: apiSpace.hotel.name,
-      locality: apiSpace.hotel.locality,
-      province: apiSpace.hotel.province,
+    hotel: hotel ? {
+      id: hotel.id,
+      name: hotel.name,
+      locality: hotel.locality,
+      province: hotel.province,
+      lat: hotel.lat || null,
+      lng: hotel.lng || null,
+      location_id: hotel.location_id || null,
     } : null,
+    
+    createdAt: space.createdAt || space.created_at || new Date().toISOString(),
+    created_at: space.created_at || space.createdAt || new Date().toISOString(),
+    updatedAt: space.updatedAt || space.updated_at || new Date().toISOString(),
+    updated_at: space.updated_at || space.updatedAt || new Date().toISOString(),
   };
   
+  // Configurações de capacidade alternativas
   if (space.capacityTheater !== undefined || space.capacity_theater !== undefined) {
     normalized.capacityTheater = Number(space.capacityTheater || space.capacity_theater);
+    normalized.capacity_theater = Number(space.capacity_theater || space.capacityTheater);
   }
   if (space.capacityClassroom !== undefined || space.capacity_classroom !== undefined) {
     normalized.capacityClassroom = Number(space.capacityClassroom || space.capacity_classroom);
+    normalized.capacity_classroom = Number(space.capacity_classroom || space.capacityClassroom);
   }
   if (space.capacityBanquet !== undefined || space.capacity_banquet !== undefined) {
     normalized.capacityBanquet = Number(space.capacityBanquet || space.capacity_banquet);
+    normalized.capacity_banquet = Number(space.capacity_banquet || space.capacityBanquet);
   }
   if (space.capacityStanding !== undefined || space.capacity_standing !== undefined) {
     normalized.capacityStanding = Number(space.capacityStanding || space.capacity_standing);
+    normalized.capacity_standing = Number(space.capacity_standing || space.capacityStanding);
   }
   if (space.capacityCocktail !== undefined || space.capacity_cocktail !== undefined) {
     normalized.capacityCocktail = Number(space.capacityCocktail || space.capacity_cocktail);
+    normalized.capacity_cocktail = Number(space.capacity_cocktail || space.capacityCocktail);
   }
+  
+  // ✅ DEBUG: Mostrar resultado da normalização
+  console.log('✅ normalizeEventSpace - resultado:', {
+    id: normalized.id,
+    name: normalized.name,
+    pricePerDay: normalized.pricePerDay,
+    basePricePerDay: normalized.basePricePerDay,
+    base_price_per_day: normalized.base_price_per_day,
+  });
   
   return normalized;
 }
@@ -429,18 +555,14 @@ export function normalizeEventBooking(apiBooking: any): EventBooking {
     basePrice: String(basePrice),
     totalPrice: String(totalPrice),
     securityDeposit: String(securityDeposit),
-    
     depositPaid: String(depositPaid),
     balanceDue: String(balanceDue),
-    
     status: (booking.status || 'pending_approval') as 'pending_approval' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'rejected',
     paymentStatus: paymentStatus as PaymentStatusType,
     createdAt: booking.createdAt || booking.created_at || new Date().toISOString(),
     updatedAt: booking.updatedAt || booking.updated_at || new Date().toISOString(),
-    
     dateRange: `${booking.startDate || booking.start_date} - ${booking.endDate || booking.end_date}`,
     statusDisplay: getEventStatusDisplay(booking.status),
-    
     deposit_paid: String(depositPaid),
     balance_due: String(balanceDue),
     payment_status: paymentStatus,
@@ -523,7 +645,7 @@ class ApiService {
   }
 
   private async request<T>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     endpoint: string,
     data?: unknown,
     customHeaders?: Record<string, string>
@@ -599,6 +721,10 @@ class ApiService {
 
   async put<T>(url: string, body?: any, customHeaders?: Record<string, string>): Promise<T> {
     return this.request<T>('PUT', url, body, customHeaders);
+  }
+
+  async patch<T>(url: string, body?: any, customHeaders?: Record<string, string>): Promise<T> {
+    return this.request<T>('PATCH', url, body, customHeaders);
   }
 
   async delete<T>(url: string, customHeaders?: Record<string, string>): Promise<T> {
@@ -701,99 +827,51 @@ class ApiService {
     try {
       console.group('🔧 DEBUG EVENT SPACE DATA - ANÁLISE COMPLETA');
       
-      // 1. Buscar dados brutos SEM normalização
       const response = await fetch(`${this.baseURL}/api/events/spaces/${spaceId}`, {
         headers: await this.getAuthHeaders()
       });
       
       const rawText = await response.text();
-      console.log('📦 Resposta bruta (texto):', rawText);
+      console.log('📦 Resposta bruta (texto):', rawText.substring(0, 500) + '...');
       
       const rawJson = JSON.parse(rawText);
-      console.log('📦 JSON parseado:', JSON.stringify(rawJson, null, 2));
-      
-      // 2. Análise estrutural detalhada
-      console.log('🔍 ANÁLISE ESTRUTURAL:');
-      console.log('- Status:', response.status);
-      console.log('- Success:', rawJson.success);
+      console.log('📦 JSON parseado:', JSON.stringify(rawJson, null, 2).substring(0, 1000) + '...');
       
       if (rawJson.success && rawJson.data) {
         console.log('📊 DATA OBJECT ANALYSIS:');
         console.log('  1. Keys em data:', Object.keys(rawJson.data));
         console.log('  2. Tem space?', !!rawJson.data.space);
-        console.log('  3. Tipo de space:', typeof rawJson.data.space);
-        console.log('  4. Tem hotel?', !!rawJson.data.hotel);
-        console.log('  5. Tipo de hotel:', typeof rawJson.data.hotel);
         
         if (rawJson.data.space) {
-          console.log('  6. Keys em space:', Object.keys(rawJson.data.space));
-          console.log('  7. base_price_per_day em space?', 'base_price_per_day' in rawJson.data.space);
-          console.log('  8. Valor de base_price_per_day em space:', rawJson.data.space.base_price_per_day);
+          console.log('  3. Keys em space:', Object.keys(rawJson.data.space));
+          console.log('  4. pricePerDay em space?', 'pricePerDay' in rawJson.data.space);
+          console.log('  5. Valor pricePerDay:', rawJson.data.space.pricePerDay);
+          console.log('  6. base_price_per_day em space?', 'base_price_per_day' in rawJson.data.space);
+          console.log('  7. Valor base_price_per_day:', rawJson.data.space.base_price_per_day);
         }
         
-        console.log('  9. base_price_per_day em data (nível superior)?', 'base_price_per_day' in rawJson.data);
-        console.log('  10. Valor de base_price_per_day em data:', rawJson.data.base_price_per_day);
-        
-        if (rawJson.data.hotel) {
-          console.log('  11. Keys em hotel:', Object.keys(rawJson.data.hotel));
-          console.log('  12. locality em hotel?', 'locality' in rawJson.data.hotel);
-          console.log('  13. locality valor:', rawJson.data.hotel.locality);
-          console.log('  14. province em hotel?', 'province' in rawJson.data.hotel);
-          console.log('  15. province valor:', rawJson.data.hotel.province);
-        }
+        console.log('  8. base_price_per_day em data:', rawJson.data.base_price_per_day);
       }
       
-      // 3. Testar normalização atual
-      console.log('🧪 TESTE DE NORMALIZAÇÃO:');
       let normalizedSpace;
       if (rawJson.data) {
-        // Tentativa 1: Passar data.space (CORRETO)
         normalizedSpace = normalizeEventSpace(rawJson.data.space);
-        console.log('  Tentativa 1 (com data.space):', normalizedSpace?.basePricePerDay);
-        
-        // Tentativa 2: Passar data inteiro (errado, mas é o que estava sendo feito)
-        const wrongNormalized = normalizeEventSpace(rawJson.data);
-        console.log('  Tentativa 2 (com data inteiro):', wrongNormalized?.basePricePerDay);
+        console.log('🧪 TESTE DE NORMALIZAÇÃO:', {
+          pricePerDay: normalizedSpace?.pricePerDay,
+          basePricePerDay: normalizedSpace?.basePricePerDay,
+          base_price_per_day: normalizedSpace?.base_price_per_day,
+        });
       }
-      
-      // 4. Construir objeto final como deveria ser
-      console.log('🏗️  OBJETO FINAL CORRETO:');
-      const correctResponse = {
-        success: true,
-        data: {
-          space: normalizedSpace,
-          hotel: rawJson.data?.hotel || null,
-          base_price_per_day: rawJson.data?.base_price_per_day || "0",
-          weekend_surcharge_percent: rawJson.data?.weekend_surcharge_percent || 0,
-          available_for_immediate_booking: rawJson.data?.available_for_immediate_booking || false,
-          alcohol_allowed: rawJson.data?.alcohol_allowed || false,
-          max_capacity: rawJson.data?.max_capacity || 0,
-          offers_catering: rawJson.data?.offers_catering || false,
-          catering_discount_percent: rawJson.data?.catering_discount_percent || 0,
-          catering_menu_urls: rawJson.data?.catering_menu_urls || [],
-          security_deposit: rawJson.data?.security_deposit || "0",
-        }
-      };
-      
-      console.log('✅ Estrutura correta:', correctResponse.data?.space?.basePricePerDay);
-      console.log('📍 Localização:', 
-        rawJson.data?.hotel?.locality && rawJson.data?.hotel?.province 
-          ? `${rawJson.data.hotel.locality}, ${rawJson.data.hotel.province}`
-          : 'Não disponível'
-      );
       
       console.groupEnd();
       
       return { 
         rawResponse: rawJson, 
-        normalizedSpace, 
-        correctStructure: correctResponse,
+        normalizedSpace,
         analysis: {
-          hasPrice: !!rawJson.data?.base_price_per_day,
-          hasLocation: !!(rawJson.data?.hotel?.locality && rawJson.data?.hotel?.province),
-          priceValue: rawJson.data?.base_price_per_day,
-          locationValue: rawJson.data?.hotel ? 
-            `${rawJson.data.hotel.locality}, ${rawJson.data.hotel.province}` : null
+          hasPricePerDay: !!(rawJson.data?.space?.pricePerDay),
+          hasBasePricePerDay: !!(rawJson.data?.space?.basePricePerDay),
+          priceValue: rawJson.data?.space?.pricePerDay || rawJson.data?.space?.basePricePerDay,
         }
       };
     } catch (error) {
@@ -837,7 +915,7 @@ class ApiService {
     }
   }
 
-  // ✅ CORREÇÃO CRÍTICA: Método getEventSpaceDetails corrigido para acessar res.data.space corretamente
+  // ✅ CORREÇÃO CRÍTICA: Método getEventSpaceDetails com suporte a pricePerDay
   async getEventSpaceDetails(spaceId: string): Promise<ApiResponse<EventSpaceDetailsResponse>> {
     try {
       const res = await this.get<any>(`/api/events/spaces/${spaceId}`);
@@ -849,26 +927,33 @@ class ApiService {
       // ✅ CORREÇÃO CRÍTICA: Passar res.data.space, não res.data
       const normalizedSpace = normalizeEventSpace(res.data.space);
       
+      // ✅ DEBUG: Verificar preços
+      console.log('💰 getEventSpaceDetails - preços normalizados:', {
+        pricePerDay: normalizedSpace.pricePerDay,
+        basePricePerDay: normalizedSpace.basePricePerDay,
+        base_price_per_day: normalizedSpace.base_price_per_day,
+      });
+      
       return {
         success: true,
         data: {
           space: normalizedSpace,
           hotel: res.data.hotel || null,
-          base_price_per_day: res.data.base_price_per_day || "0",
-          weekend_surcharge_percent: res.data.weekend_surcharge_percent || 0,
+          base_price_per_day: res.data.base_price_per_day || normalizedSpace.basePricePerDay || normalizedSpace.pricePerDay || "0",
+          weekend_surcharge_percent: res.data.weekend_surcharge_percent || normalizedSpace.weekendSurchargePercent || 0,
           available_for_immediate_booking: res.data.available_for_immediate_booking || false,
-          alcohol_allowed: res.data.alcohol_allowed || false,
+          alcohol_allowed: res.data.alcohol_allowed || normalizedSpace.alcoholAllowed || false,
           max_capacity: res.data.max_capacity || normalizedSpace.capacityMax || 0,
-          offers_catering: res.data.offers_catering || false,
-          catering_discount_percent: res.data.catering_discount_percent || 0,
-          catering_menu_urls: res.data.catering_menu_urls || [],
-          security_deposit: res.data.security_deposit || "0",
+          offers_catering: res.data.offers_catering || normalizedSpace.offersCatering || false,
+          catering_discount_percent: res.data.catering_discount_percent || normalizedSpace.cateringDiscountPercent || 0,
+          catering_menu_urls: res.data.catering_menu_urls || normalizedSpace.cateringMenuUrls || [],
+          security_deposit: res.data.security_deposit || normalizedSpace.securityDeposit || "0",
+          amenities: res.data.amenities || normalizedSpace.amenities || [],
         } as EventSpaceDetailsResponse,
       };
     } catch (err) {
       console.error('[getEventSpaceDetails]', err);
       
-      // Debug automático em caso de erro
       try {
         await this.debugEventSpaceData(spaceId);
       } catch (debugError) {
@@ -992,7 +1077,6 @@ class ApiService {
   async confirmEventBooking(bookingId: string): Promise<ApiResponse<EventBooking>> {
     try {
       console.log('🎯 [confirmEventBooking] Chamado com bookingId:', bookingId);
-      console.log('📤 [confirmEventBooking] Payload sendo enviado: {}');
       
       const res = await this.post<any>(`/api/events/bookings/${bookingId}/confirm`, {});
       
@@ -1664,7 +1748,6 @@ class ApiService {
   
   async searchHotels(params: SearchParams): Promise<HotelSearchResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<HotelSearchResponse>('/api/hotels', params);
     } catch (error) {
       return {
@@ -1687,7 +1770,6 @@ class ApiService {
         throw new Error(`Problema de CORS: ${corsTest.message}`);
       }
       
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<HotelListResponse>('/api/hotels', params);
     } catch (error) {
       console.error('❌ Erro ao buscar hotéis:', error);
@@ -1703,7 +1785,6 @@ class ApiService {
 
   async getHotelById(hotelId: string): Promise<HotelByIdResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<HotelByIdResponse>(`/api/hotels/${hotelId}`);
     } catch (error) {
       return {
@@ -1722,7 +1803,6 @@ class ApiService {
     promoCode?: string;
   }): Promise<AvailabilityResponse> {
     try {
-      // ✅ CORREÇÃO: Usar rota correta conforme backend
       return await this.get<AvailabilityResponse>(`/api/hotels/${params.hotelId}/availability/check`, {
         roomTypeId: params.roomTypeId,
         checkIn: params.checkIn,
@@ -1740,7 +1820,6 @@ class ApiService {
 
   async createHotelBooking(bookingData: HotelBookingRequest): Promise<HotelBookingResponse> {
     try {
-      // ✅ CORREÇÃO: Rota correta conforme backend - POST /api/hotels/:id/bookings
       const { hotelId, ...bookingPayload } = bookingData;
       
       return await this.post<HotelBookingResponse>(
@@ -1757,7 +1836,6 @@ class ApiService {
 
   async createHotel(data: HotelCreateRequest): Promise<HotelOperationResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.post<HotelOperationResponse>('/api/hotels', data);
     } catch (error) {
       return {
@@ -1769,7 +1847,6 @@ class ApiService {
 
   async updateHotel(hotelId: string, data: HotelUpdateRequest): Promise<HotelOperationResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.put<HotelOperationResponse>(`/api/hotels/${hotelId}`, data);
     } catch (error) {
       return {
@@ -1781,7 +1858,6 @@ class ApiService {
 
   async deleteHotel(hotelId: string): Promise<ApiResponse<{ message: string }>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.delete<ApiResponse<{ message: string }>>(`/api/hotels/${hotelId}`);
     } catch (error) {
       return {
@@ -1793,7 +1869,6 @@ class ApiService {
 
   async getHotelStatsDetailed(hotelId: string): Promise<ApiResponse<HotelStatistics>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<ApiResponse<HotelStatistics>>(`/api/hotels/${hotelId}/stats`);
     } catch (error) {
       return {
@@ -1815,7 +1890,6 @@ class ApiService {
     error?: string;
   }> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       const response = await this.get<AvailabilityResponse>('/api/hotels/availability/quick', params);
       return {
         success: response.success || false,
@@ -1833,7 +1907,6 @@ class ApiService {
 
   async getBookingsByEmail(email: string, status?: BookingStatus): Promise<MyHotelBookingsResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<MyHotelBookingsResponse>('/api/hotels/my-bookings', { email, status });
     } catch (error) {
       return {
@@ -1845,7 +1918,6 @@ class ApiService {
 
   async getBookingDetails(bookingId: string): Promise<ApiResponse<HotelBookingData>> {
     try {
-      // ✅ CORREÇÃO: Usar rota correta
       const response = await this.get<ApiResponse<any>>(`/api/hotels/bookings/${bookingId}`);
       
       if (response.success && response.data) {
@@ -1866,7 +1938,6 @@ class ApiService {
 
   async cancelBooking(bookingId: string): Promise<ApiResponse<{ message: string }>> {
     try {
-      // ✅ CORREÇÃO: Usar rota correta do backend
       return await this.post<ApiResponse<{ message: string }>>(`/api/hotels/bookings/${bookingId}/cancel`);
     } catch (error) {
       return {
@@ -1878,7 +1949,6 @@ class ApiService {
 
   async createRoomType(hotelId: string, data: RoomTypeCreateRequest): Promise<HotelOperationResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.post<HotelOperationResponse>(`/api/hotels/${hotelId}/room-types`, data);
     } catch (error) {
       return {
@@ -1890,7 +1960,6 @@ class ApiService {
 
   async updateRoomType(roomTypeId: string, data: RoomTypeUpdateRequest): Promise<HotelOperationResponse> {
     try {
-      // ✅ CORREÇÃO: Usar rota correta (sem v2)
       return await this.put<HotelOperationResponse>(`/api/hotels/room-types/${roomTypeId}`, data);
     } catch (error) {
       return {
@@ -1902,7 +1971,6 @@ class ApiService {
 
   async getRoomTypeById(roomTypeId: string): Promise<ApiResponse<RoomType>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<ApiResponse<RoomType>>(`/api/hotels/room-types/${roomTypeId}`);
     } catch (error) {
       return {
@@ -1930,7 +1998,6 @@ class ApiService {
 
     try {
       const headers = await this.getAuthHeaders();
-      // ✅ CORREÇÃO: Removido /v2
       return await this.delete<ApiResponse<{ message: string }>>(
         `/api/hotels/room-types/${roomTypeId}`,
         headers
@@ -1972,7 +2039,6 @@ class ApiService {
     checkOut?: string;
   }): Promise<RoomTypeListResponse> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<RoomTypeListResponse>(`/api/hotels/${hotelId}/room-types`, params);
     } catch (error) {
       return {
@@ -1984,7 +2050,6 @@ class ApiService {
 
   async getRoomTypeDetails(hotelId: string, roomTypeId: string): Promise<ApiResponse<RoomType>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<ApiResponse<RoomType>>(`/api/hotels/${hotelId}/room-types/${roomTypeId}`);
     } catch (error) {
       try {
@@ -2010,7 +2075,6 @@ class ApiService {
 
   async bulkUpdateAvailability(hotelId: string, data: BulkAvailabilityUpdate): Promise<ApiResponse<{ updated: number; message: string }>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.post<ApiResponse<{ updated: number; message: string }>>(`/api/hotels/${hotelId}/availability/bulk`, data);
     } catch (error) {
       return {
@@ -2026,12 +2090,314 @@ class ApiService {
     period?: 'day' | 'week' | 'month' | 'year';
   }): Promise<ApiResponse<HotelPerformance>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<ApiResponse<HotelPerformance>>(`/api/hotels/${hotelId}/performance`, params);
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro ao obter performance'
+      };
+    }
+  }
+
+  // ====================== 🆕 FOTOS DOS HOTÉIS (ROOM TYPE PHOTOS) ======================
+
+  /**
+   * Upload de uma foto para um room type
+   */
+  async uploadRoomTypePhoto(
+    roomTypeId: string,
+    file: File,
+    data?: { alt_text?: string; is_featured?: boolean; is_primary?: boolean }
+  ): Promise<ApiResponse<RoomTypePhoto>> {
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      if (data?.alt_text) formData.append('alt_text', data.alt_text);
+      if (data?.is_featured !== undefined) formData.append('is_featured', String(data.is_featured));
+      if (data?.is_primary !== undefined) formData.append('is_primary', String(data.is_primary));
+
+      const headers = await this.getAuthHeaders();
+      // Remove Content-Type para que o browser defina com boundary correto
+      delete headers['Content-Type'];
+
+      const response = await fetch(`${this.baseURL}/api/hotels/room-types/${roomTypeId}/photos`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include',
+        mode: 'cors',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      return {
+        success: result.success ?? true,
+        data: result.data,
+        error: result.error,
+      };
+    } catch (error) {
+      console.error('[uploadRoomTypePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao fazer upload',
+      };
+    }
+  }
+
+  /**
+   * Upload de múltiplas fotos
+   */
+  async uploadMultipleRoomTypePhotos(
+    roomTypeId: string,
+    files: File[],
+    options?: { is_featured?: boolean }
+  ): Promise<ApiResponse<RoomTypePhoto[]>> {
+    try {
+      const formData = new FormData();
+      files.forEach(file => formData.append('photos', file));
+      if (options?.is_featured !== undefined) formData.append('is_featured', String(options.is_featured));
+
+      const headers = await this.getAuthHeaders();
+      delete headers['Content-Type'];
+
+      const response = await fetch(
+        `${this.baseURL}/api/hotels/room-types/${roomTypeId}/photos/multiple`,
+        {
+          method: 'POST',
+          headers,
+          body: formData,
+          credentials: 'include',
+          mode: 'cors',
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      return {
+        success: result.success ?? true,
+        data: result.data,
+        error: result.error,
+      };
+    } catch (error) {
+      console.error('[uploadMultipleRoomTypePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao fazer upload',
+      };
+    }
+  }
+
+  /**
+   * Listar fotos de um room type
+   */
+  async getRoomTypePhotos(roomTypeId: string): Promise<ApiResponse<RoomTypePhoto[]>> {
+    try {
+      return await this.get<ApiResponse<RoomTypePhoto[]>>(
+        `/api/hotels/room-types/${roomTypeId}/photos`
+      );
+    } catch (error) {
+      console.error('[getRoomTypePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao listar fotos',
+      };
+    }
+  }
+
+  /**
+   * Obter uma foto específica
+   */
+  async getRoomTypePhoto(roomTypeId: string, photoId: string): Promise<ApiResponse<RoomTypePhoto>> {
+    try {
+      return await this.get<ApiResponse<RoomTypePhoto>>(
+        `/api/hotels/room-types/${roomTypeId}/photos/${photoId}`
+      );
+    } catch (error) {
+      console.error('[getRoomTypePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar foto',
+      };
+    }
+  }
+
+  /**
+   * Atualizar meta-dados de uma foto
+   */
+  async updateRoomTypePhoto(
+    roomTypeId: string,
+    photoId: string,
+    updates: RoomTypePhotoUpdateRequest
+  ): Promise<ApiResponse<RoomTypePhoto>> {
+    try {
+      return await this.put<ApiResponse<RoomTypePhoto>>(
+        `/api/hotels/room-types/${roomTypeId}/photos/${photoId}`,
+        updates
+      );
+    } catch (error) {
+      console.error('[updateRoomTypePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao atualizar foto',
+      };
+    }
+  }
+
+  /**
+   * Alternar status featured de uma foto
+   */
+  async toggleRoomTypePhotoFeatured(
+    roomTypeId: string,
+    photoId: string
+  ): Promise<ApiResponse<RoomTypePhoto>> {
+    try {
+      return await this.patch<ApiResponse<RoomTypePhoto>>(
+        `/api/hotels/room-types/${roomTypeId}/photos/${photoId}/toggle-featured`,
+        {}
+      );
+    } catch (error) {
+      console.error('[toggleRoomTypePhotoFeatured]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao alternar destaque',
+      };
+    }
+  }
+
+  /**
+   * Deletar uma foto
+   */
+  async deleteRoomTypePhoto(roomTypeId: string, photoId: string): Promise<ApiResponse<null>> {
+    try {
+      return await this.delete<ApiResponse<null>>(
+        `/api/hotels/room-types/${roomTypeId}/photos/${photoId}`
+      );
+    } catch (error) {
+      console.error('[deleteRoomTypePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao deletar foto',
+      };
+    }
+  }
+
+  /**
+   * Reordenar fotos de um room type
+   */
+  async reorderRoomTypePhotos(
+    roomTypeId: string,
+    photoIds: string[]
+  ): Promise<ApiResponse<RoomTypePhoto[]>> {
+    try {
+      return await this.put<ApiResponse<RoomTypePhoto[]>>(
+        `/api/hotels/room-types/${roomTypeId}/photos/reorder`,
+        { photoIds }
+      );
+    } catch (error) {
+      console.error('[reorderRoomTypePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao reordenar fotos',
+      };
+    }
+  }
+
+  /**
+   * Obter todas as fotos de um hotel
+   */
+  async getHotelPhotos(hotelId: string): Promise<ApiResponse<RoomTypePhoto[]>> {
+    try {
+      return await this.get<ApiResponse<RoomTypePhoto[]>>(`/api/hotels/${hotelId}/photos`);
+    } catch (error) {
+      console.error('[getHotelPhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar fotos do hotel',
+      };
+    }
+  }
+
+  /**
+   * Obter apenas fotos destacadas de um hotel
+   */
+  async getHotelFeaturedPhotos(hotelId: string): Promise<ApiResponse<RoomTypePhoto[]>> {
+    try {
+      return await this.get<ApiResponse<RoomTypePhoto[]>>(`/api/hotels/${hotelId}/photos/featured`);
+    } catch (error) {
+      console.error('[getHotelFeaturedPhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar fotos destacadas',
+      };
+    }
+  }
+
+  /**
+   * Obter foto principal de um hotel
+   */
+  async getHotelPrimaryPhoto(hotelId: string): Promise<ApiResponse<RoomTypePhoto | null>> {
+    try {
+      return await this.get<ApiResponse<RoomTypePhoto | null>>(`/api/hotels/${hotelId}/photos/primary`);
+    } catch (error) {
+      console.error('[getHotelPrimaryPhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar foto principal',
+      };
+    }
+  }
+
+  /**
+   * Obter hotel com fotos (para search results)
+   */
+  async getHotelWithPhotos(hotelId: string): Promise<ApiResponse<any>> {
+    try {
+      return await this.get<ApiResponse<any>>(`/api/hotels/${hotelId}/with-photos`);
+    } catch (error) {
+      console.error('[getHotelWithPhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar hotel com fotos',
+      };
+    }
+  }
+
+  /**
+   * Obter room type com fotos (para details page)
+   */
+  async getRoomTypeWithPhotos(roomTypeId: string): Promise<ApiResponse<any>> {
+    try {
+      return await this.get<ApiResponse<any>>(`/api/hotels/room-types/${roomTypeId}/with-photos`);
+    } catch (error) {
+      console.error('[getRoomTypeWithPhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar room type com fotos',
+      };
+    }
+  }
+
+  /**
+   * Contar fotos de um hotel
+   */
+  async countHotelPhotos(hotelId: string): Promise<ApiResponse<{ total: number; featured: number; withPrimary: boolean }>> {
+    try {
+      return await this.get<ApiResponse<{ total: number; featured: number; withPrimary: boolean }>>(
+        `/api/hotels/${hotelId}/photos/count`
+      );
+    } catch (error) {
+      console.error('[countHotelPhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao contar fotos',
       };
     }
   }
@@ -2091,17 +2457,14 @@ class ApiService {
   }
 
   async getHotelStats(hotelId: string) {
-    // ✅ CORREÇÃO: Removido /v2
     return this.get(`/api/hotels/${hotelId}/stats`);
   }
 
   async getHotelEvents(hotelId: string, params?: { status?: BookingStatus; upcoming?: boolean }) {
-    // ✅ CORREÇÃO: Removido /v2
     return this.get(`/api/hotels/${hotelId}/events`, params);
   }
 
   async getChat(hotelId: string, params?: { threadId?: string; limit?: number }) {
-    // ✅ CORREÇÃO: Removido /v2
     return this.get(`/api/hotels/${hotelId}/chat`, params);
   }
 
@@ -2110,12 +2473,10 @@ class ApiService {
   }
 
   async checkInHotelBooking(bookingId: string) {
-    // ✅ CORREÇÃO: Usar rota correta do backend
     return this.post(`/api/hotels/bookings/${bookingId}/check-in`);
   }
 
   async checkOutHotelBooking(bookingId: string) {
-    // ✅ CORREÇÃO: Usar rota correta do backend
     return this.post(`/api/hotels/bookings/${bookingId}/check-out`);
   }
 
@@ -2129,7 +2490,6 @@ class ApiService {
 
   async testHotelsV2(): Promise<ApiResponse<{ message: string; count?: number }>> {
     try {
-      // ✅ CORREÇÃO: Testar rota correta (sem v2)
       const response = await fetch(`${this.baseURL}/api/hotels?location=Maputo&limit=1`, {
         mode: 'cors'
       });
@@ -2160,7 +2520,6 @@ class ApiService {
     units?: number;
   }): Promise<ApiResponse<NightlyPrice[]>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<ApiResponse<NightlyPrice[]>>('/api/hotels/availability/nightly-prices', params);
     } catch (error) {
       return {
@@ -2172,7 +2531,6 @@ class ApiService {
 
   async getBookingStatus(bookingId: string): Promise<ApiResponse<{ status: BookingStatus; paymentStatus: PaymentStatus }>> {
     try {
-      // ✅ CORREÇÃO: Removido /v2
       return await this.get<ApiResponse<{ status: BookingStatus; paymentStatus: PaymentStatus }>>(`/api/hotels/bookings/${bookingId}/status`);
     } catch (error) {
       return {
@@ -2238,7 +2596,6 @@ class ApiService {
         return { success: true, data: result.data };
         
       } else if (type === 'hotel') {
-        // ✅ CORREÇÃO: Normalizar status antes de enviar
         const normalizedBookingData = {
           ...bookingData,
           status: normalizeHotelBookingStatus(bookingData.status),

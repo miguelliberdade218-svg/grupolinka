@@ -1,10 +1,8 @@
 // src/services/eventSpaceService.ts
-// VERSÃO CORRIGIDA - COM SUPORTE A BUSCA POR PROXIMIDADE
-// ✅ CORREÇÃO: Resolvido erro de tipo EventSpaceDetails vs EventSpaceDetailsResponse
-// ✅ CORREÇÃO: Funções getEventSpaceDetails e createEventBooking adicionadas
-// ✅ ADIÇÃO: Método getBookingById adicionado para consistência
-// ✅ CORREÇÃO: Retorno de tipos corrigidos para consistência com ApiResponse
-// ✅ CORREÇÃO: Estrutura de retorno consistente - getEventSpaceDetails retorna ServiceResponse<EventSpaceDetailsResponse>
+// VERSÃO FINAL CORRIGIDA - COM SUPORTE A EMAIL NA QUERY STRING
+// ✅ CORREÇÃO CRÍTICA: Preservar durationDays e weekendSurcharge do backend
+// ✅ CORREÇÃO: Normalização correta do número de noites
+// ✅ CORREÇÃO: getBookingById agora requer email do organizador para validação
 
 import { apiService } from './api';
 import type {
@@ -17,8 +15,8 @@ import type {
   EventDashboardSummary,
   CreateEventSpaceRequest,
   UpdateEventSpaceRequest,
-  EventSpaceDetailsResponse, // ✅ ALTERADO: usar o tipo correto
-  EventSpaceData, // ✅ ADICIONADO
+  EventSpaceDetailsResponse,
+  EventSpaceData,
   PaymentStatusType,
   BookingPayment,
   PaymentDetailsResponse,
@@ -45,7 +43,6 @@ export interface ServiceResponse<T = any> {
 
 /**
  * Converte objeto camelCase para snake_case para envio ao backend
- * ✅ ATUALIZADO: Preserva campos de localização especiais
  */
 const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<string, any> => {
   if (depth > 5 || obj === null || typeof obj !== 'object') {
@@ -59,7 +56,6 @@ const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<
       return;
     }
     
-    // ✅ EXCEÇÃO: Campos de localização especiais - preservar como estão
     const locationFields = [
       'location_id', 'lat', 'lng', 'locality', 'province',
       'inherits_hotel_location'
@@ -67,12 +63,10 @@ const toSnakeCaseForEventSpaces = (obj: Record<string, any>, depth = 0): Record<
     
     let snakeKey = key;
     
-    // Se não for um campo de localização especial, converter camelCase para snake_case
     if (!locationFields.includes(key) && /[A-Z]/.test(key)) {
       snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
     }
     
-    // ✅ Campos que devem ser mantidos como objetos sem conversão
     if (['equipment', 'additionalServices', 'equipmentValue'].includes(key) && 
         typeof value === 'object' && value !== null) {
       result[snakeKey] = value;
@@ -154,12 +148,11 @@ const processEquipmentField = (equipment: any): any => {
 };
 
 /**
- * ✅ NOVA FUNÇÃO: Prepara dados de localização para envio à API
+ * Prepara dados de localização para envio à API
  */
 const prepareLocationData = (data: any): any => {
   const prepared = { ...data };
   
-  // ✅ Converte números para strings se necessário (para lat/lng)
   if (prepared.lat !== undefined && prepared.lat !== null) {
     prepared.lat = String(prepared.lat);
   }
@@ -167,14 +160,12 @@ const prepareLocationData = (data: any): any => {
     prepared.lng = String(prepared.lng);
   }
   
-  // ✅ Remove campos vazios (string vazia)
   if (prepared.lat === '') delete prepared.lat;
   if (prepared.lng === '') delete prepared.lng;
   if (prepared.location_id === '') delete prepared.location_id;
   if (prepared.locality === '') delete prepared.locality;
   if (prepared.province === '') delete prepared.province;
   
-  // ✅ Garante que inherits_hotel_location seja booleano
   if (prepared.inherits_hotel_location !== undefined) {
     prepared.inherits_hotel_location = Boolean(prepared.inherits_hotel_location);
   }
@@ -184,7 +175,6 @@ const prepareLocationData = (data: any): any => {
 
 /**
  * Processa string de localização que pode conter vírgula
- * ✅ NOVA FUNÇÃO: Separa "Costa do Sol, Cidade de Maputo" em locality e province
  */
 const parseLocationString = (location: string): { locality: string; province?: string } => {
   if (!location) return { locality: '' };
@@ -192,14 +182,12 @@ const parseLocationString = (location: string): { locality: string; province?: s
   const parts = location.split(',').map(part => part.trim());
   
   if (parts.length > 1) {
-    // Ex: "Costa do Sol, Cidade de Maputo"
     return {
       locality: parts[0],
       province: parts[1]
     };
   }
   
-  // Se não há vírgula, assume que é apenas a localidade
   return { locality: parts[0] };
 };
 
@@ -221,28 +209,37 @@ const extractEventSpace = (data: any): EventSpace | null => {
 };
 
 /**
- * ✅ NOVA FUNÇÃO: Extrai EventSpaceData dos detalhes (com amenities)
+ * Extrai EventSpaceData dos dados da resposta
  */
 const extractEventSpaceData = (data: any): EventSpaceData | null => {
   if (!data) return null;
   
-  // Se data já é um EventSpaceData (com amenities)
   if (data.id && data.name) {
     const spaceData = data as any;
-    // Garantir que amenities existam
-    if (!Array.isArray(spaceData.amenities)) {
-      spaceData.amenities = spaceData.amenities || [];
+    
+    if (!Array.isArray(spaceData.amenities) || spaceData.amenities.length === 0) {
+      spaceData.amenities = 
+        (Array.isArray(data.amenities) ? data.amenities : null) ||
+        (spaceData.equipment?.amenities && Array.isArray(spaceData.equipment.amenities) ? spaceData.equipment.amenities : null) ||
+        (Array.isArray(spaceData.amenities_list) ? spaceData.amenities_list : null) ||
+        [];
     }
+    
     return spaceData as EventSpaceData;
   }
   
-  // Se data é um EventSpaceDetailsResponse
   if (data.space && typeof data.space === 'object' && data.space.id) {
     const spaceData = data.space as any;
-    // Garantir que amenities existam
-    if (!Array.isArray(spaceData.amenities)) {
-      spaceData.amenities = data.amenities || spaceData.amenities || [];
+    
+    if (!Array.isArray(spaceData.amenities) || spaceData.amenities.length === 0) {
+      spaceData.amenities = 
+        (Array.isArray(data.amenities) ? data.amenities : null) ||
+        (Array.isArray(spaceData.amenities) ? spaceData.amenities : null) ||
+        (spaceData.equipment?.amenities && Array.isArray(spaceData.equipment.amenities) ? spaceData.equipment.amenities : null) ||
+        (Array.isArray(spaceData.amenities_list) ? spaceData.amenities_list : null) ||
+        [];
     }
+    
     return spaceData as EventSpaceData;
   }
   
@@ -250,29 +247,24 @@ const extractEventSpaceData = (data: any): EventSpaceData | null => {
 };
 
 /**
- * Normaliza EventBooking para formato do frontend
- * ✅ ATUALIZADO: Garante balanceDue correto
+ * ✅ CORREÇÃO CRÍTICA: Normaliza EventBooking para formato do frontend
+ * ✅ PRESERVA: durationDays, weekendSurcharge, totalPrice do backend
  */
 const normalizeEventBooking = (data: any): EventBooking => {
   if (!data) return data as EventBooking;
   
-  // ✅ Verificar se o apiService tem uma função de normalização própria
-  if ((apiService as any).normalizeEventBooking) {
-    return (apiService as any).normalizeEventBooking(data);
-  }
-  
-  // ✅ Extrair datas corretamente com ambos formatos
   const startDate = data.startDate || data.start_date || data.startDatetime || '';
   const endDate = data.endDate || data.end_date || data.endDatetime || '';
   
-  // ✅ Extrair campos financeiros corretamente
+  // ✅ CRÍTICO: Usar o valor REAL do backend, NÃO usar default 1!
+  const durationDays = data.durationDays ?? data.duration_days ?? 1;
+  const weekendSurcharge = String(data.weekendSurcharge || data.weekend_surcharge || '0');
   const totalPrice = String(data.totalPrice || data.total_price || data.totalPriceAmount || '0');
   const depositPaid = String(data.depositPaid || data.deposit_paid || data.depositPaidAmount || '0');
+  const basePrice = String(data.basePrice || data.base_price || '0');
   
-  // ✅ CORREÇÃO CRÍTICA: Calcular balanceDue corretamente
   let balanceDue = String(data.balanceDue || data.balance_due || data.balanceDueAmount || '0');
   
-  // ✅ Se balanceDue não estiver definido, calcular com base em pagamentos
   if (balanceDue === '0' || balanceDue === '0.00') {
     if (data.payments && Array.isArray(data.payments) && data.payments.length > 0) {
       const totalPaid = data.payments.reduce((sum: number, payment: any) => {
@@ -282,12 +274,23 @@ const normalizeEventBooking = (data: any): EventBooking => {
       const calculatedBalance = Math.max(0, totalPriceNum - totalPaid);
       balanceDue = String(calculatedBalance);
     } else if (data.deposit_paid || data.depositPaid) {
-      // Se houver depósito pago, calcular saldo
       const totalPriceNum = Number(totalPrice) || 0;
       const depositPaidNum = Number(depositPaid) || 0;
       balanceDue = String(Math.max(0, totalPriceNum - depositPaidNum));
     }
   }
+  
+  // ✅ DEBUG: Verificar o que está a ser normalizado
+  console.log('🔄 Normalizando booking:', {
+    id: data.id,
+    durationDays_original: data.durationDays,
+    duration_days_original: data.duration_days,
+    durationDays_normalized: durationDays,
+    weekendSurcharge_original: data.weekendSurcharge,
+    weekend_surcharge_original: data.weekend_surcharge,
+    weekendSurcharge_normalized: weekendSurcharge,
+    totalPrice_normalized: totalPrice
+  });
   
   return {
     id: data.id || data.booking_id || '',
@@ -299,52 +302,39 @@ const normalizeEventBooking = (data: any): EventBooking => {
     eventTitle: data.eventTitle || data.event_title || '',
     eventDescription: data.eventDescription || data.event_description || null,
     eventType: data.eventType || data.event_type || '',
-    
-    // ✅ Datas com ambos formatos para compatibilidade
     startDate: startDate,
     start_date: data.start_date || startDate,
     endDate: endDate,
     end_date: data.end_date || endDate,
-    
-    durationDays: Number(data.durationDays || data.duration_days || 1),
+    // ✅ CORREÇÃO: Usar o valor REAL do backend!
+    durationDays: Number(durationDays),
     expectedAttendees: Number(data.expectedAttendees || data.expected_attendees || 0),
     cateringRequired: !!data.cateringRequired || !!data.catering_required || false,
     specialRequests: data.specialRequests || data.special_requests || null,
     additionalServices: data.additionalServices || data.additional_services || {},
-    basePrice: String(data.basePrice || data.base_price || '0'),
-    
-    // ✅ Campos financeiros completos
+    basePrice: basePrice,
+    // ✅ CORREÇÃO: Incluir weekendSurcharge!
+    weekendSurcharge: weekendSurcharge,
     totalPrice: totalPrice,
     total_price: totalPrice,
     securityDeposit: String(data.securityDeposit || data.security_deposit || '0'),
     depositPaid: depositPaid,
     balanceDue: balanceDue,
-    balance_due: balanceDue, // ✅ Garantir que ambos formatos existem
-    
-    // ✅ Status atualizados
+    balance_due: balanceDue,
     status: (data.status || 'pending_approval') as EventBooking['status'],
     paymentStatus: (data.paymentStatus || data.payment_status || 'pending') as PaymentStatusType,
-    
     createdAt: data.createdAt || data.created_at || new Date().toISOString(),
     updatedAt: data.updatedAt || data.updated_at || new Date().toISOString(),
-    
-    // Campos calculados/display
     dateRange: data.dateRange,
     statusDisplay: data.statusDisplay,
-    
-    // ✅ Campos do backend (snake_case para compatibilidade)
     deposit_paid: data.deposit_paid || depositPaid,
     payment_status: data.payment_status || data.paymentStatus,
     created_at: data.created_at || data.createdAt,
     updated_at: data.updated_at || data.updatedAt,
-    
-    // ✅ Campos de compatibilidade adicionais
     event_title: data.event_title || data.eventTitle,
     organizer_name: data.organizer_name || data.organizerName,
     organizer_email: data.organizer_email || data.organizerEmail,
     expected_attendees: data.expected_attendees || data.expectedAttendees,
-    
-    // Campo para compatibilidade com getFullBookingDetails
     payments: data.payments || [],
   };
 };
@@ -356,7 +346,6 @@ interface EventBookingWithPayments extends EventBooking {
 
 /**
  * Buscar espaços de eventos por proximidade
- * ✅ NOVA FUNÇÃO: Similar ao getNearbyHotels
  */
 async function searchNearbyEventSpaces(
   lat: number, 
@@ -374,14 +363,12 @@ async function searchNearbyEventSpaces(
   }
 ): Promise<ServiceResponse<EventSpace[]>> {
   try {
-    // Construir parâmetros
     const params = new URLSearchParams({
       lat: lat.toString(),
       lng: lng.toString(),
       radius: radius.toString(),
     });
     
-    // Adicionar filtros opcionais
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
     if (filters?.capacity) params.append('capacity', filters.capacity.toString());
@@ -400,7 +387,6 @@ async function searchNearbyEventSpaces(
       return { success: false, error: res.error || 'Erro na busca por proximidade' };
     }
     
-    // Extrair espaços da resposta
     const eventSpaces = Array.isArray(res.data) 
       ? res.data.map((item: any) => extractEventSpace(item.space) || item.space || item)
       : [];
@@ -412,70 +398,9 @@ async function searchNearbyEventSpaces(
   }
 }
 
-// src/shared/services/eventSpaceService.ts - FUNÇÕES ADICIONADAS E CORRIGIDAS
-/**
- * ✅ CORREÇÃO: Obter detalhes do espaço de eventos
- * Retorna EventSpaceDetailsResponse que inclui EventSpaceData com amenities
- */
-const getEventSpaceDetails = async (spaceId: string): Promise<ServiceResponse<EventSpaceDetailsResponse>> => {
-  try {
-    const response = await apiService.get<ApiResponse<EventSpaceDetailsResponse>>(`/api/events/spaces/${spaceId}`);
-    
-    if (!response.success) {
-      return { success: false, error: response.error || 'Erro ao buscar detalhes do espaço' };
-    }
-    
-    return { 
-      success: true, 
-      data: response.data 
-    };
-  } catch (err: any) {
-    console.error('[getEventSpaceDetails]', err);
-    return { 
-      success: false, 
-      error: err.message || 'Falha ao buscar detalhes do espaço' 
-    };
-  }
-};
-
-/**
- * ✅ CORREÇÃO: Criar reserva de evento
- */
-const createEventBooking = async (spaceId: string, bookingData: any): Promise<ServiceResponse<EventBooking>> => {
-  try {
-    const response = await apiService.post<ApiResponse<EventBooking>>(`/api/events/spaces/${spaceId}/bookings`, bookingData);
-    
-    if (!response.success) {
-      return { success: false, error: response.error || 'Erro ao criar reserva' };
-    }
-    
-    return { 
-      success: true, 
-      data: response.data 
-    };
-  } catch (err: any) {
-    console.error('[createEventBooking]', err);
-    return { 
-      success: false, 
-      error: err.message || 'Falha ao criar reserva' 
-    };
-  }
-};
-
 class EventSpaceService {
   /**
-   * ✅ CORREÇÃO: Obter detalhes do espaço de eventos com estrutura consistente
-   * Retorna ServiceResponse<EventSpaceDetailsResponse> onde data contém:
-   * - space: EventSpaceData (com amenities)
-   * - hotel: detalhes do hotel
-   * - amenities: lista de amenities (também disponíveis em space.amenities)
-   * - reviews: reviews do espaço
-   * 
-   * USO CORRETO NAS PÁGINAS:
-   * const { data: spaceDetailsResponse } = useQuery({...});
-   * const spaceDetails = spaceDetailsResponse?.data; // EventSpaceDetailsResponse
-   * const space = spaceDetails?.space; // EventSpaceData
-   * const hotel = spaceDetails?.hotel;
+   * Obter detalhes do espaço de eventos
    */
   async getEventSpaceDetails(spaceId: string): Promise<ServiceResponse<EventSpaceDetailsResponse>> {
     try {
@@ -499,10 +424,7 @@ class EventSpaceService {
   }
 
   /**
-   * ✅ FUNÇÃO AUXILIAR: Obter apenas os dados do espaço (EventSpaceData) dos detalhes
-   * Útil quando você só precisa do objeto space com amenities
-   * USO: const { data: spaceDataResponse } = useQuery({...});
-   * const space = spaceDataResponse?.data; // EventSpaceData (com amenities)
+   * Obter apenas os dados do espaço
    */
   async getEventSpaceData(spaceId: string): Promise<ServiceResponse<EventSpaceData>> {
     try {
@@ -538,15 +460,21 @@ class EventSpaceService {
 
   /**
    * Criar reserva de evento
-   * ✅ ADICIONADO: Nova função para criar reserva em espaço específico
-   * Retorna ServiceResponse<EventBooking> onde data contém o booking criado
+   * Endpoint: POST /api/events/spaces/:spaceId/bookings
    */
   async createEventBooking(spaceId: string, bookingData: any): Promise<ServiceResponse<EventBooking>> {
     try {
+      console.log('📤 Enviando reserva para o backend:', {
+        url: `/api/events/spaces/${spaceId}/bookings`,
+        data: bookingData
+      });
+      
       const response = await apiService.post<ApiResponse<EventBooking>>(
         `/api/events/spaces/${spaceId}/bookings`, 
         bookingData
       );
+      
+      console.log('📥 Resposta do backend:', response);
       
       if (!response.success) {
         return { 
@@ -555,27 +483,148 @@ class EventSpaceService {
         };
       }
       
+      if (!response.data) {
+        return { 
+          success: false, 
+          error: 'Resposta do backend não contém dados' 
+        };
+      }
+      
+      const normalizedBooking = normalizeEventBooking(response.data);
+      
+      console.log('✅ Booking normalizado:', {
+        id: normalizedBooking.id,
+        durationDays: normalizedBooking.durationDays,
+        totalPrice: normalizedBooking.totalPrice
+      });
+      
       return { 
         success: true, 
-        data: normalizeEventBooking(response.data), 
-        message: 'Reserva criada com sucesso' 
+        data: normalizedBooking, 
+        message: response.message || 'Reserva criada com sucesso' 
       };
     } catch (err: any) {
-      console.error('[createEventBooking]', err);
+      console.error('[createEventBooking] ERRO CRÍTICO:', err);
+      
+      if (err.response) {
+        console.error('Status:', err.response.status);
+        console.error('Dados:', err.response.data);
+        console.error('Headers:', err.response.headers);
+      }
+      
       return { 
         success: false, 
-        error: err.message || 'Erro ao criar reserva' 
+        error: err.message || 'Erro ao criar reserva',
+        details: err.response?.data || err
+      };
+    }
+  }
+
+  /**
+   * ✅ BUSCAR RESERVA POR ID - COM VALIDAÇÃO DE EMAIL
+   * Endpoint: GET /api/events/bookings/:bookingId?email=cliente@email.com
+   */
+  async getBookingById(bookingId: string, organizerEmail?: string): Promise<ServiceResponse<EventBooking>> {
+    try {
+      if (!organizerEmail) {
+        console.warn('[getBookingById] Email do organizador não fornecido. A tentar buscar sem validação...');
+      }
+      
+      let url = `/api/events/bookings/${bookingId}`;
+      if (organizerEmail) {
+        url += `?email=${encodeURIComponent(organizerEmail)}`;
+      }
+      
+      console.log(`🔍 Buscando reserva de evento: ${url}`);
+      
+      const response = await apiService.get<ApiResponse<any>>(url);
+      
+      console.log('📥 Resposta getBookingById:', {
+        success: response.success,
+        hasData: !!response.data,
+        error: response.error
+      });
+      
+      if (!response.success) {
+        return { 
+          success: false, 
+          error: response.error || 'Reserva não encontrada' 
+        };
+      }
+      
+      if (!response.data) {
+        return { 
+          success: false, 
+          error: 'Dados da reserva não retornados' 
+        };
+      }
+
+      let bookingData = response.data;
+      if (response.data.booking) {
+        bookingData = response.data.booking;
+      }
+      
+      // ✅ DEBUG: Verificar o que o backend enviou
+      console.log('📦 Dados brutos do backend:', {
+        id: bookingData.id,
+        durationDays: bookingData.durationDays,
+        duration_days: bookingData.duration_days,
+        weekendSurcharge: bookingData.weekendSurcharge,
+        weekend_surcharge: bookingData.weekend_surcharge,
+        totalPrice: bookingData.totalPrice,
+        startDate: bookingData.startDate,
+        endDate: bookingData.endDate
+      });
+      
+      const normalizedBooking = normalizeEventBooking(bookingData);
+      
+      // ✅ DEBUG: Verificar o que foi normalizado
+      console.log('✅ Booking normalizado:', {
+        id: normalizedBooking.id,
+        durationDays: normalizedBooking.durationDays,
+        weekendSurcharge: normalizedBooking.weekendSurcharge,
+        totalPrice: normalizedBooking.totalPrice,
+        nights: normalizedBooking.durationDays
+      });
+      
+      return { 
+        success: true, 
+        data: normalizedBooking,
+        message: response.message 
+      };
+      
+    } catch (err: any) {
+      console.error('[getBookingById] ERRO:', err);
+      
+      if (err.response?.status === 403) {
+        return { 
+          success: false, 
+          error: 'Acesso negado. Esta reserva não pertence a este email.',
+          details: err.response?.data
+        };
+      }
+      
+      if (err.response?.status === 404) {
+        return { 
+          success: false, 
+          error: 'Reserva não encontrada',
+          details: err.response?.data
+        };
+      }
+      
+      return { 
+        success: false, 
+        error: err.message || 'Erro ao buscar reserva',
+        details: err.response?.data || err
       };
     }
   }
 
   /**
    * Criar novo espaço de eventos
-   * ✅ ATUALIZADO: Inclui preparação de dados de localização
    */
   async createEventSpace(data: CreateEventSpaceRequest): Promise<ServiceResponse<EventSpace>> {
     try {
-      // ✅ CORREÇÃO: Prepara dados de localização
       const locationPreparedData = prepareLocationData(data);
       
       const preparedData = {
@@ -586,19 +635,10 @@ class EventSpaceService {
         prohibitedEventTypes: Array.isArray(data.prohibitedEventTypes) ? data.prohibitedEventTypes : [],
         cateringMenuUrls: Array.isArray(data.cateringMenuUrls) ? data.cateringMenuUrls : [],
         images: Array.isArray(data.images) ? data.images : [],
+        amenities: Array.isArray(data.amenities) ? data.amenities : [],
       };
       
-      // ✅ Aplicar conversão para snake_case (exceto campos de localização já tratados)
       const backendData = toSnakeCaseForEventSpaces(preparedData);
-      
-      console.log('📤 Criando espaço com dados:', {
-        locality: backendData.locality,
-        province: backendData.province,
-        lat: backendData.lat,
-        lng: backendData.lng,
-        location_id: backendData.location_id,
-        inherits_hotel_location: backendData.inherits_hotel_location
-      });
       
       const res = await apiService.post<ApiResponse<EventSpace>>('/api/events/spaces', backendData);
       
@@ -633,11 +673,9 @@ class EventSpaceService {
 
   /**
    * Atualizar espaço de eventos
-   * ✅ ATUALIZADO: Inclui preparação de dados de localização
    */
   async updateEventSpace(spaceId: string, data: UpdateEventSpaceRequest): Promise<ServiceResponse<EventSpace>> {
     try {
-      // ✅ CORREÇÃO: Prepara dados de localização
       const locationPreparedData = prepareLocationData(data);
       
       const preparedData: any = { ...locationPreparedData };
@@ -666,6 +704,10 @@ class EventSpaceService {
         preparedData.images = Array.isArray(data.images) ? data.images : [];
       }
       
+      if (data.amenities !== undefined) {
+        preparedData.amenities = Array.isArray(data.amenities) ? data.amenities : [];
+      }
+      
       const cleanData: any = {};
       Object.entries(preparedData).forEach(([key, value]) => {
         if (value !== undefined && key !== 'id') {
@@ -673,18 +715,7 @@ class EventSpaceService {
         }
       });
       
-      // ✅ Aplicar conversão para snake_case
       const backendData = toSnakeCaseForEventSpaces(cleanData);
-      
-      console.log('📤 Atualizando espaço com dados de localização:', {
-        spaceId,
-        locality: backendData.locality,
-        province: backendData.province,
-        lat: backendData.lat,
-        lng: backendData.lng,
-        location_id: backendData.location_id,
-        inherits_hotel_location: backendData.inherits_hotel_location
-      });
       
       const res = await apiService.put<ApiResponse<EventSpace>>(`/api/events/spaces/${spaceId}`, backendData);
       
@@ -718,8 +749,7 @@ class EventSpaceService {
   }
 
   /**
-   * Obter espaço por ID (alternativa ao getEventSpaceDetails)
-   * Retorna apenas o EventSpace básico
+   * Obter espaço por ID
    */
   async getEventSpaceById(spaceId: string): Promise<ServiceResponse<EventSpace>> {
     try {
@@ -763,14 +793,11 @@ class EventSpaceService {
 
   /**
    * Pesquisar espaços
-   * ✅ CORREÇÃO APLICADA: Filtrar parâmetros undefined
    */
   async searchEventSpaces(filters: EventSpaceSearchParams): Promise<ServiceResponse<EventSpace[]>> {
     try {
-      // ✅ CORREÇÃO: Criar objeto limpo sem undefined e tratar localização com vírgula
       const cleanFilters: Record<string, any> = {};
       
-      // ✅ Tratar localização (locality) que pode conter vírgula
       if (filters.locality) {
         const parsedLocation = parseLocationString(filters.locality);
         if (parsedLocation.locality) {
@@ -781,7 +808,6 @@ class EventSpaceService {
         }
       }
       
-      // ✅ Adicionar outros filtros se não forem undefined
       if (filters.province && !filters.locality?.includes(filters.province)) {
         cleanFilters.province = filters.province;
       }
@@ -794,7 +820,6 @@ class EventSpaceService {
       if (filters.hotelId) cleanFilters.hotelId = filters.hotelId;
       if (filters.amenities?.length) cleanFilters.amenities = filters.amenities;
       
-      console.log('🔍 Buscando espaços com filtros:', cleanFilters);
       const res = await apiService.searchEventSpaces(cleanFilters);
       
       if (!res.success) {
@@ -814,7 +839,6 @@ class EventSpaceService {
 
   /**
    * Buscar espaços por proximidade
-   * ✅ ADICIONADO: Nova função de busca por proximidade (similar à dos hotéis)
    */
   async searchNearbyEventSpaces(
     lat: number, 
@@ -882,18 +906,15 @@ class EventSpaceService {
 
   /**
    * Criar reserva (método genérico)
-   * ✅ CORREÇÃO: Preparar dados para garantir compatibilidade
    */
   async createBooking(bookingData: EventBookingRequest): Promise<ServiceResponse<EventBooking>> {
     try {
-      // ✅ CORREÇÃO: Preparar dados para garantir compatibilidade
       const preparedData = {
         ...bookingData,
-        // Garantir que ambos formatos de data estejam presentes
         startDate: bookingData.startDate,
-        start_date: bookingData.startDate, // snake_case também
+        start_date: bookingData.startDate,
         endDate: bookingData.endDate,
-        end_date: bookingData.endDate, // snake_case também
+        end_date: bookingData.endDate,
       };
       
       const res = await apiService.createEventBooking(preparedData);
@@ -932,45 +953,11 @@ class EventSpaceService {
   }
 
   /**
-   * ✅ NOVO: Buscar reserva por ID (nome consistente com hotelService)
-   * Retorna ServiceResponse<EventBooking> onde data contém o booking
-   */
-  async getBookingById(bookingId: string): Promise<ServiceResponse<EventBooking>> {
-    try {
-      // Usa a rota: GET /api/events/bookings/:bookingId
-      const response = await apiService.get<ApiResponse<EventBooking>>(`/api/events/bookings/${bookingId}`);
-      
-      if (!response.success) {
-        return { 
-          success: false, 
-          error: response.error || 'Reserva não encontrada' 
-        };
-      }
-      
-      return { 
-        success: true, 
-        data: normalizeEventBooking(response.data) 
-      };
-    } catch (err: any) {
-      console.error('[getBookingById]', err);
-      return { 
-        success: false, 
-        error: err.message || 'Erro ao buscar reserva' 
-      };
-    }
-  }
-
-  /**
    * Confirmar reserva
-   * ✅ CORREÇÃO CRÍTICA: Método confirmBooking atualizado com logs de debug
    */
   async confirmBooking(bookingId: string): Promise<ServiceResponse<EventBooking>> {
     try {
-      console.log('🔍 [eventSpaceService.confirmBooking] Chamado com bookingId:', bookingId);
-      
       const res = await apiService.confirmEventBooking(bookingId);
-      
-      console.log('✅ [confirmBooking] Resposta do apiService:', res);
       
       if (!res.success) {
         return { 
@@ -1002,14 +989,12 @@ class EventSpaceService {
 
   /**
    * Cancelar reserva
-   * ✅ CORREÇÃO: Função cancelBooking atualizada para enviar apenas reason
    */
   async cancelBooking(
     bookingId: string, 
     reason?: string
   ): Promise<ServiceResponse<{ message: string }>> {
     try {
-      // ✅ CORREÇÃO: O backend já trata reembolso automaticamente
       const res = await apiService.cancelEventBooking(bookingId, { reason });
       
       if (!res.success) {
@@ -1037,7 +1022,6 @@ class EventSpaceService {
         return { success: false, error: res.error || 'Erro ao buscar minhas reservas' };
       }
       
-      // ✅ CORREÇÃO: Normalizar todos os bookings
       const bookings = Array.isArray(res.data) 
         ? res.data.map(booking => normalizeEventBooking(booking))
         : [];
@@ -1062,7 +1046,6 @@ class EventSpaceService {
         return { success: false, error: res.error || 'Erro ao listar reservas' };
       }
       
-      // ✅ CORREÇÃO: Normalizar todos os bookings
       const bookings = Array.isArray(res.data) 
         ? res.data.map(booking => normalizeEventBooking(booking))
         : [];
@@ -1278,7 +1261,6 @@ class EventSpaceService {
 
   /**
    * Atualizar status da reserva
-   * ✅ CORREÇÃO: Método updateBookingStatus atualizado para todos os status
    */
   async updateBookingStatus(
     bookingId: string,

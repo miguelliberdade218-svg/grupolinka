@@ -15,9 +15,10 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { 
   Loader2, Plus, Edit, Trash, AlertCircle, Wifi, Users, Star, 
   DoorOpen, Calendar as CalendarIcon, Building2, X, RefreshCw, Info,
-  ChevronRight
+  ChevronRight, ChevronLeft
 } from 'lucide-react';
 import { hotelService } from '@/services/hotelService';
+import { getRoomTypePhotos } from '@/services/photoGalleryService';
 import { useToast } from '@/shared/hooks/use-toast';
 import CreateRoomTypeFormModern from './CreateRoomTypeFormModern';
 import {
@@ -55,6 +56,136 @@ interface CalendarEvent {
   };
 }
 
+// Componente Carrossel de Fotos
+const PhotoCarousel = ({ 
+  photos, 
+  roomName, 
+  loading,
+  fallbackImage 
+}: { 
+  photos: string[]; 
+  roomName: string; 
+  loading: boolean;
+  fallbackImage?: string;
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [showControls, setShowControls] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  const handlePrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
+    setImageError(false);
+  };
+
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentIndex((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
+    setImageError(false);
+  };
+
+  const handleDotClick = (index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCurrentIndex(index);
+    setImageError(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-100 animate-pulse">
+        <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (photos.length === 0 && fallbackImage) {
+    return (
+      <img
+        src={fallbackImage}
+        alt={roomName}
+        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        onError={(e) => {
+          e.currentTarget.src = 'https://via.placeholder.com/300x200?text=Sem+imagem';
+        }}
+      />
+    );
+  }
+
+  if (photos.length === 0) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <DoorOpen className="w-16 h-16 text-gray-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="relative w-full h-full"
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
+    >
+      {/* Imagem atual */}
+      <img
+        src={imageError ? 'https://via.placeholder.com/300x200?text=Erro+ao+carregar' : photos[currentIndex]}
+        alt={`${roomName} - foto ${currentIndex + 1}`}
+        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        onError={() => setImageError(true)}
+      />
+
+      {/* Controles do carrossel (aparecem no hover) */}
+      {photos.length > 1 && showControls && (
+        <>
+          {/* Setas de navegação */}
+          <button
+            onClick={handlePrev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 transition-all duration-200 backdrop-blur-sm z-20"
+            aria-label="Foto anterior"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          
+          <button
+            onClick={handleNext}
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5 transition-all duration-200 backdrop-blur-sm z-20"
+            aria-label="Próxima foto"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+
+          {/* Indicadores de posição (dots) */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
+            {photos.map((_, index) => (
+              <button
+                key={index}
+                onClick={(e) => handleDotClick(index, e)}
+                className={`w-2 h-2 rounded-full transition-all duration-200 ${
+                  index === currentIndex 
+                    ? 'bg-white w-4' 
+                    : 'bg-white/50 hover:bg-white/80'
+                }`}
+                aria-label={`Ir para foto ${index + 1}`}
+              />
+            ))}
+          </div>
+
+          {/* Contador de fotos */}
+          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full backdrop-blur-sm z-20">
+            {currentIndex + 1}/{photos.length}
+          </div>
+        </>
+      )}
+
+      {/* Indicador simples quando não está em hover (mostra que há múltiplas fotos) */}
+      {photos.length > 1 && !showControls && (
+        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full z-10">
+          {photos.length} fotos
+        </div>
+      )}
+    </div>
+  );
+};
+
 /**
  * Componente para gerenciar room types (quartos) do hotel
  * VERSÃO FINAL 100% - COMPLETA E PROFISSIONAL COM LAZY LOADING
@@ -66,6 +197,7 @@ interface CalendarEvent {
  * UX perfeita: toasts, loading, validações, recarregamento automático
  * Sistema de promoções completo e profissional
  * CORREÇÕES APLICADAS: Lógica mais clara e cores distintas para preços relativos
+ * FOTOS CORRIGIDAS: Agora usando o novo sistema room_type_photos com carrossel integrado
  */
 export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelId }) => {
   const [activeSubTab, setActiveSubTab] = useState('list');
@@ -75,6 +207,10 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Estados para fotos dos room types
+  const [roomPhotos, setRoomPhotos] = useState<Record<string, string[]>>({});
+  const [loadingPhotos, setLoadingPhotos] = useState<Record<string, boolean>>({});
 
   // Estados do calendário com LAZY LOADING
   const [selectedRoomTypeId, setSelectedRoomTypeId] = useState<string | null>(null);
@@ -138,12 +274,39 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
     'Campo de Ténis', 'Campo de Golfe', 'Mergulho', 'Passeios a Cavalo', 'Ginásio 24h', 'Aulas de Ioga',
   ];
 
+  // Função para carregar fotos de um room type
+  const loadRoomPhotos = async (roomTypeId: string) => {
+    if (roomPhotos[roomTypeId] || loadingPhotos[roomTypeId]) return;
+    
+    setLoadingPhotos(prev => ({ ...prev, [roomTypeId]: true }));
+    try {
+      const photos = await getRoomTypePhotos(roomTypeId);
+      const photoUrls = photos.map(p => p.url);
+      setRoomPhotos(prev => ({ ...prev, [roomTypeId]: photoUrls }));
+      console.log(`📸 Fotos carregadas para ${roomTypeId}:`, photoUrls.length);
+    } catch (error) {
+      console.error(`Erro ao carregar fotos para ${roomTypeId}:`, error);
+      setRoomPhotos(prev => ({ ...prev, [roomTypeId]: [] }));
+    } finally {
+      setLoadingPhotos(prev => ({ ...prev, [roomTypeId]: false }));
+    }
+  };
+
   // Carregar room types
   useEffect(() => {
     if (hotelId) {
       loadRoomTypes();
     }
   }, [hotelId]);
+
+  // Carregar fotos quando os room types forem carregados
+  useEffect(() => {
+    if (roomTypes.length > 0) {
+      roomTypes.forEach(room => {
+        loadRoomPhotos(room.id);
+      });
+    }
+  }, [roomTypes]);
 
   // Carregar promoções quando abrir a aba
   useEffect(() => {
@@ -1061,34 +1224,31 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
             </Card>
           )}
 
-          {/* Grid de quartos */}
+          {/* Grid de quartos COM CARROSSEL DE FOTOS */}
           {!loading && roomTypes.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {roomTypes.map((room) => {
                 const basePrice = parseFloat(room.base_price || '0');
                 const occupancy = room.base_occupancy || room.capacity;
+                const photos = roomPhotos[room.id] || [];
+                const loadingPhoto = loadingPhotos[room.id];
 
                 return (
                   <Card
                     key={room.id}
                     className="overflow-hidden hover:shadow-xl transition-all duration-300 border-0 group"
                   >
-                    {/* Imagem com overlay */}
+                    {/* Imagem com carrossel */}
                     <div className="relative overflow-hidden bg-gradient-to-br from-gray-200 to-gray-300 h-48">
-                      {room.images && room.images[0] ? (
-                        <img
-                          src={room.images[0]}
-                          alt={room.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <DoorOpen className="w-16 h-16 text-gray-400" />
-                        </div>
-                      )}
-
+                      <PhotoCarousel
+                        photos={photos}
+                        roomName={room.name}
+                        loading={loadingPhoto}
+                        fallbackImage={room.images?.[0]}
+                      />
+                      
                       {/* Badge de status e unidades */}
-                      <div className="absolute top-3 right-3 flex gap-2">
+                      <div className="absolute top-3 right-3 flex gap-2 z-30">
                         <Badge className={`text-xs font-semibold ${
                           room.is_active
                             ? 'bg-green-500 hover:bg-green-600'
@@ -1103,7 +1263,7 @@ export const RoomTypesManagement: React.FC<RoomTypesManagementProps> = ({ hotelI
 
                       {/* Rating (se disponível) */}
                       {room.rating && (
-                        <div className="absolute bottom-3 left-3 bg-white rounded-lg px-3 py-1 flex items-center gap-1 shadow-md">
+                        <div className="absolute bottom-3 left-3 bg-white rounded-lg px-3 py-1 flex items-center gap-1 shadow-md z-30">
                           <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                           <span className="font-bold text-gray-800">{room.rating}</span>
                         </div>

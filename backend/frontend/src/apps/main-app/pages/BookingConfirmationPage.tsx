@@ -57,11 +57,26 @@ interface BookingData {
 }
 
 const BookingConfirmationPage = () => {
-  const { id, type } = useParams<{ id: string; type: string }>();
+  const params = useParams<{ id?: string; type?: string; bookingId?: string }>();
+  const [location] = useLocation();
   const [, setLocation] = useLocation();
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ✅ CORREÇÃO: Detectar qual rota está sendo usada baseado na URL
+  const isEventRoute = location.includes('/event-spaces/') && location.includes('/booking-confirmation');
+  
+  // Para rota /event-spaces/:id/booking-confirmation
+  let id = isEventRoute ? params.id : params.bookingId;
+  let type = isEventRoute ? 'event' : (params.type || 'hotel');
+
+  // Se não encontrar id pela rota, tentar extrair dos query params
+  if (!id && location.includes('?')) {
+    const queryString = location.split('?')[1];
+    const queryParams = new URLSearchParams(queryString);
+    id = queryParams.get('bookingId') || undefined;
+  }
 
   // ✅ CORREÇÃO: Determinar o tipo de booking
   const bookingType = (type || '').toLowerCase() as BookingType;
@@ -350,6 +365,13 @@ const BookingConfirmationPage = () => {
     }
   };
 
+  // ✅ NOVA SEGURANÇA: Verificar se pode mostrar dados de contato (só após confirmação)
+  const canShowContactInfo = (bookingStatus: string): boolean => {
+    // Mostrar contato apenas quando a reserva está confirmada
+    const visibleStatuses = ['confirmed', 'checked_in', 'checked_out', 'in_progress', 'completed'];
+    return visibleStatuses.includes(bookingStatus.toLowerCase());
+  };
+
   const getStatusColor = (status: string, type: BookingType) => {
     if (type === 'hotel') {
       if (status.includes('pending')) return 'bg-yellow-100 text-yellow-800';
@@ -624,16 +646,27 @@ const BookingConfirmationPage = () => {
                         {hotel.locality}{hotel.province ? `, ${hotel.province}` : ''}
                       </span>
                     </div>
-                    {hotel.contact_phone && (
-                      <div>
-                        <span className="text-gray-500">Telefone:</span>{' '}
-                        <span className="font-medium">{hotel.contact_phone}</span>
-                      </div>
-                    )}
-                    {hotel.contact_email && (
-                      <div>
-                        <span className="text-gray-500">Email:</span>{' '}
-                        <span className="font-medium">{hotel.contact_email}</span>
+                    {/* ✅ SEGURANÇA: Mostrar contato apenas após confirmação */}
+                    {canShowContactInfo(bookingData?.booking?.status || '') ? (
+                      <>
+                        {hotel.contact_phone && (
+                          <div>
+                            <span className="text-gray-500">Telefone:</span>{' '}
+                            <span className="font-medium">{hotel.contact_phone}</span>
+                          </div>
+                        )}
+                        {hotel.contact_email && (
+                          <div>
+                            <span className="text-gray-500">Email:</span>{' '}
+                            <span className="font-medium">{hotel.contact_email}</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="col-span-full">
+                        <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded">
+                          ⚠️ Os dados de contato estarão disponíveis após a confirmação da reserva.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -645,7 +678,7 @@ const BookingConfirmationPage = () => {
           <CardFooter className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
             <Button 
               onClick={handlePrint} 
-              variant="outline" 
+              variant="outline"
               className="flex items-center gap-2"
             >
               <Printer className="h-4 w-4" />
@@ -823,7 +856,12 @@ const BookingConfirmationPage = () => {
                 <p>✅ A sua reserva foi confirmada com sucesso.</p>
                 <p>📧 Enviamos um email de confirmação para <strong>{hotelBooking.guest_email}</strong>.</p>
                 <p>🏨 Chegue no horário de check-in: {hotel?.check_in_time || '14:00'}.</p>
-                <p>📞 Em caso de dúvidas, contacte o hotel: <strong>{hotel?.contact_phone || 'N/A'}</strong>.</p>
+                {/* ✅ SEGURANÇA: Mostrar contato apenas após confirmação */}
+                {canShowContactInfo(hotelBooking?.status || '') ? (
+                  <p>📞 Em caso de dúvidas, contacte o hotel: <strong>{hotel?.contact_phone || 'N/A'}</strong>.</p>
+                ) : (
+                  <p className="text-amber-700 text-sm">⚠️ Os dados de contato estarão disponíveis após a confirmação da sua reserva.</p>
+                )}
               </div>
             ) : null}
           </CardContent>

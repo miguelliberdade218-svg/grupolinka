@@ -1,4 +1,9 @@
-// src/modules/events/eventBookingService.ts - VERSÃO FINAL (SISTEMA DE DIÁRIAS) - TOTALMENTE CORRIGIDO E OTIMIZADO
+// src/modules/events/eventBookingService.ts - VERSÃO FINAL CORRIGIDA
+// ✅ CORREÇÃO CRÍTICA 1: Validação de tipos de evento usa dados do banco!
+// ✅ CORREÇÃO CRÍTICA 2: ALLOWED_EVENT_TYPES inclui TODOS os tipos do frontend!
+// ✅ CORREÇÃO: Removido campo cateringPrice (não existe no schema)
+// ✅ CORREÇÃO: Catering NÃO afeta o preço (apenas indicação)
+// ✅ CORREÇÃO: Cálculo de dias IGUAL aos hotéis (check-out NÃO conta)
 
 import { db } from "../../../db";
 import {
@@ -9,13 +14,11 @@ import {
 } from "../../../shared/schema";
 import { eq, and, sql, desc, inArray, or } from "drizzle-orm";
 import { isEventSpaceAvailable, getEventSpaceById } from "./eventSpaceService";
-import { calculateEventBasePrice } from "./eventService";
 
 // ==================== TIPOS ====================
 export type EventBooking = typeof eventBookings.$inferSelect;
 export type EventBookingInsert = typeof eventBookings.$inferInsert;
 
-// ✅ CORRIGIDO: Removidos status e paymentStatus do input - sempre controlados pelo backend
 export type CreateEventBookingInput = {
   eventSpaceId: string;
   hotelId: string;
@@ -25,14 +28,13 @@ export type CreateEventBookingInput = {
   eventTitle: string;
   eventDescription?: string;
   eventType: string;
-  startDate: string;  // YYYY-MM-DD
-  endDate: string;    // YYYY-MM-DD
+  startDate: string;  // YYYY-MM-DD (check-in)
+  endDate: string;    // YYYY-MM-DD (check-out)
   expectedAttendees: number;
   specialRequests?: string;
   additionalServices?: any;
   cateringRequired?: boolean;
   userId?: string;
-  // ✅ REMOVIDO: status e paymentStatus - sempre controlados pelo backend
 };
 
 // ==================== CONSTANTES ====================
@@ -45,13 +47,26 @@ const VALID_BOOKING_STATUSES = [
 
 type BookingStatus = typeof VALID_BOOKING_STATUSES[number];
 
-const VALID_PAYMENT_STATUSES = [
-  'pending',
-  'partially_paid',
-  'paid',
-  'refunded',
-  'failed',
-  'cancelled'
+// ✅ CORREÇÃO CRÍTICA: Array COMPLETO com todos os tipos do frontend!
+export const ALLOWED_EVENT_TYPES = [
+  'Casamento',
+  'Conferência',
+  'Cerimônia',
+  'Lançamento',
+  'Festa Corporativa',  // ✅ ADICIONADO!
+  'Festa',
+  'Workshop',
+  'Reunião',
+  'Formação/Treinamento',
+  'Evento Corporativo',
+  'Seminário',
+  'Exposição',
+  'Concerto',
+  'Networking',
+  'Team Building',
+  'Aniversário',
+  'Show',              // ✅ ADICIONADO!
+  'Outro'              // ✅ ADICIONADO!
 ] as const;
 
 // ==================== FUNÇÕES HELPER ====================
@@ -102,10 +117,85 @@ const ymdToDateStart = (dateStr: string): Date => {
   return new Date(dateStr + 'T00:00:00');
 };
 
-// ✅ Converter string para Date no final do dia
-const ymdToDateEnd = (dateStr: string): Date => {
-  return new Date(dateStr + 'T23:59:59');
+// ✅ CORREÇÃO CRÍTICA: Calcular dias de estadia (check-out NÃO conta)
+const calculateNights = (checkInDate: string, checkOutDate: string): number => {
+  const checkIn = new Date(checkInDate + 'T00:00:00');
+  const checkOut = new Date(checkOutDate + 'T00:00:00');
+  
+  checkIn.setHours(0, 0, 0, 0);
+  checkOut.setHours(0, 0, 0, 0);
+  
+  // ⚠️ HOTEL LOGIC: check-out NÃO conta como noite
+  // Exemplo: 21 a 22 = 1 noite, 21 a 23 = 2 noites
+  const diffTime = checkOut.getTime() - checkIn.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return diffDays;
 };
+
+// ✅ Contar fins de semana APENAS nos dias de estadia
+const countWeekendDays = (checkInDate: string, checkOutDate: string): number => {
+  const checkIn = new Date(checkInDate + 'T00:00:00');
+  const checkOut = new Date(checkOutDate + 'T00:00:00');
+  
+  checkIn.setHours(0, 0, 0, 0);
+  checkOut.setHours(0, 0, 0, 0);
+  
+  let weekendCount = 0;
+  const currentDate = new Date(checkIn);
+  
+  // ⚠️ Só contar os dias de estadia (check-out NÃO conta)
+  const lastNight = new Date(checkOut);
+  lastNight.setDate(lastNight.getDate() - 1);
+  
+  while (currentDate <= lastNight) {
+    const dayOfWeek = currentDate.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      weekendCount++;
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return weekendCount;
+};
+
+// ==================== FUNÇÃO DE VALIDAÇÃO DE TIPO DE EVENTO ====================
+// ✅ CORREÇÃO CRÍTICA: Esta função BUSCA DO BANCO os tipos permitidos!
+async function validateEventType(eventSpaceId: string, eventType: string): Promise<void> {
+  // Buscar o espaço com os tipos permitidos
+  const space = await db
+    .select({
+      allowedEventTypes: eventSpaces.allowedEventTypes
+    })
+    .from(eventSpaces)
+    .where(eq(eventSpaces.id, eventSpaceId))
+    .limit(1);
+
+  if (!space || space.length === 0) {
+    throw new Error('Espaço não encontrado');
+  }
+
+  const allowedTypes = space[0].allowedEventTypes || [];
+
+  // 1. Primeiro valida se o tipo é válido globalmente
+  if (!ALLOWED_EVENT_TYPES.includes(eventType as any)) {
+    throw new Error(`Tipo de evento "${eventType}" não é um tipo válido. Tipos permitidos: ${ALLOWED_EVENT_TYPES.join(', ')}`);
+  }
+
+  // 2. Depois valida as restrições específicas do espaço
+  // Se não há restrições, qualquer tipo globalmente válido é permitido
+  if (allowedTypes.length === 0) {
+    return;
+  }
+
+  // Validar se o tipo é permitido neste espaço específico
+  if (!allowedTypes.includes(eventType)) {
+    throw new Error(
+      `Tipo de evento "${eventType}" não permitido neste espaço. ` +
+      `Tipos permitidos: ${allowedTypes.join(', ')}`
+    );
+  }
+}
 
 // ==================== CRIAÇÃO DE RESERVA (SISTEMA DE DIÁRIAS) ====================
 
@@ -131,7 +221,6 @@ export const createEventBooking = async (
         additionalServices,
         cateringRequired = false,
         userId,
-        // ✅ REMOVIDO: paymentStatus - sempre 'pending' na criação
       } = data;
 
       console.log('📝 Criando reserva (sistema diárias):', { 
@@ -141,8 +230,8 @@ export const createEventBooking = async (
         organizerEmail,
         eventTitle,
         eventType,
-        startDate,
-        endDate,
+        checkIn: startDate,
+        checkOut: endDate,
         cateringRequired
       });
 
@@ -152,7 +241,7 @@ export const createEventBooking = async (
         throw new Error("Espaço de evento inválido ou inativo");
       }
 
-      // ✅ CORREÇÃO: Validar catering
+      // ✅ Validar catering (apenas se o espaço oferece)
       if (cateringRequired && !space.offersCatering) {
         throw new Error("Este espaço não oferece serviço de catering");
       }
@@ -165,12 +254,8 @@ export const createEventBooking = async (
         throw new Error(`Número de participantes deve estar entre ${capacityMin} e ${capacityMax}`);
       }
 
-      // 3. Validar tipo de evento
-      if (space.allowedEventTypes && space.allowedEventTypes.length > 0) {
-        if (!space.allowedEventTypes.includes(eventType)) {
-          throw new Error(`Tipo de evento "${eventType}" não permitido neste espaço. Tipos permitidos: ${space.allowedEventTypes.join(', ')}`);
-        }
-      }
+      // 3. ✅ CORREÇÃO CRÍTICA: Validar tipo de evento usando dados do banco!
+      await validateEventType(eventSpaceId, eventType);
 
       // 4. Verificar disponibilidade (sistema de diárias)
       const { available, message } = await isEventSpaceAvailable(
@@ -203,26 +288,52 @@ export const createEventBooking = async (
         throw new Error("Espaço já reservado para este período");
       }
 
-      // 6. Calcular durationDays
-      const calculatedDurationDays = Math.ceil(
-        (ymdToDateEnd(endDate).getTime() - ymdToDateStart(startDate).getTime()) / 86400000
-      );
+      // ✅ Calcular número de noites (check-out NÃO conta)
+      const nights = calculateNights(startDate, endDate);
 
-      if (calculatedDurationDays < 1) {
-        throw new Error("A data final deve ser posterior à data inicial");
+      if (nights < 1) {
+        throw new Error("A estadia deve ter pelo menos 1 noite (check-out deve ser após check-in)");
       }
 
-      // 7. Calcular preço (diárias + surcharge + catering)
-      const totalPrice = await calculateEventBasePrice(
-        eventSpaceId,
-        startDate,
-        endDate,
-        cateringRequired
-      );
+      // ✅ Contar fins de semana APENAS nas noites de estadia
+      const weekendNights = countWeekendDays(startDate, endDate);
 
-      const basePriceStr = totalPrice.toFixed(2);
+      // ✅ Calcular preço - SEM incluir catering!
+      const spaceBasePrice = toNumber(space.basePricePerDay || space.pricePerDay);
+      
+      if (spaceBasePrice <= 0) {
+        throw new Error("Preço do espaço não configurado");
+      }
 
-      // 8. Preparar dados da reserva
+      // Subtotal = preço base × número de noites
+      const subtotal = spaceBasePrice * nights;
+      
+      // Adicional de fim de semana = preço base × % surcharge × noites de fim de semana
+      let weekendSurcharge = 0;
+      if (space.weekendSurchargePercent && space.weekendSurchargePercent > 0 && weekendNights > 0) {
+        weekendSurcharge = spaceBasePrice * (space.weekendSurchargePercent / 100) * weekendNights;
+      }
+      
+      // ✅ PREÇO TOTAL = subtotal + surcharge (catering NÃO entra no cálculo!)
+      const totalPrice = subtotal + weekendSurcharge;
+
+      console.log('💰 Cálculo de preço:', {
+        basePricePerNight: spaceBasePrice,
+        nights,
+        subtotal,
+        weekendNights,
+        surchargePercent: space.weekendSurchargePercent,
+        weekendSurcharge,
+        totalPrice,
+        cateringRequired: cateringRequired ? 'Sim (apenas indicação)' : 'Não'
+      });
+
+      // ✅ Garantir campos obrigatórios para o check constraint
+      const depositAmount = toNumber(space.securityDeposit);
+      const depositPaid = 0;
+      const balanceDue = totalPrice - depositPaid;
+
+      // 8. Preparar dados da reserva - SEM cateringPrice!
       const bookingData: EventBookingInsert = {
         eventSpaceId,
         hotelId,
@@ -234,26 +345,34 @@ export const createEventBooking = async (
         eventType,
         startDate: startDate,
         endDate: endDate,
-        durationDays: calculatedDurationDays,
+        durationDays: nights, // ✅ Número correto de noites
         expectedAttendees,
         specialRequests: specialRequests || null,
         additionalServices: additionalServices || {},
-        cateringRequired,
-        basePrice: basePriceStr,
+        cateringRequired, // ✅ APENAS flag, não afeta preço
+        basePrice: subtotal.toFixed(2),
+        weekendSurcharge: weekendSurcharge.toFixed(2),
         totalPrice: totalPrice.toFixed(2),
-        securityDeposit: space.securityDeposit || "0",
-        status: 'pending_approval', // ✅ SEMPRE pendente na criação
-        paymentStatus: 'pending',   // ✅ SEMPRE pendente na criação
+        securityDeposit: depositAmount.toFixed(2),
+        depositPaid: depositPaid.toFixed(2),
+        balanceDue: balanceDue.toFixed(2),
+        status: 'pending_approval',
+        paymentStatus: 'pending',
         userId: userId || null,
       };
 
       console.log('📤 Inserindo booking (diárias):', { 
-        startDate, 
-        endDate, 
-        durationDays: calculatedDurationDays,
+        checkIn: startDate, 
+        checkOut: endDate, 
+        nights,
+        weekendNights,
         status: 'pending_approval',
         paymentStatus: 'pending',
+        subtotal: subtotal.toFixed(2),
+        weekendSurcharge: weekendSurcharge.toFixed(2),
         totalPrice: totalPrice.toFixed(2),
+        depositPaid: depositPaid.toFixed(2),
+        balanceDue: balanceDue.toFixed(2),
         eventType,
         cateringRequired
       });
@@ -268,9 +387,14 @@ export const createEventBooking = async (
           booking.id,
           "booking_created",
           {
-            durationDays: calculatedDurationDays,
+            nights,
+            weekendNights,
             attendees: expectedAttendees,
+            subtotal: subtotal.toFixed(2),
+            weekendSurcharge: weekendSurcharge.toFixed(2),
             totalPrice: totalPrice.toFixed(2),
+            depositPaid: depositPaid.toFixed(2),
+            balanceDue: balanceDue.toFixed(2),
             eventType,
             cateringRequired,
             status: 'pending_approval',
@@ -306,7 +430,6 @@ export const confirmEventBooking = async (
       .returning();
 
     if (updated) {
-      // Log com helper
       await db.insert(eventBookingLogs).values(
         createSafeLogEntry(
           bookingId,
@@ -356,7 +479,6 @@ export const cancelEventBooking = async (
         .where(eq(eventBookings.id, bookingId))
         .returning();
 
-      // Log com helper
       await tx.insert(eventBookingLogs).values(
         createSafeLogEntry(
           bookingId,
@@ -410,7 +532,6 @@ export const rejectEventBooking = async (
         .where(eq(eventBookings.id, bookingId))
         .returning();
 
-      // Log específico de rejeição
       await tx.insert(eventBookingLogs).values(
         createSafeLogEntry(
           bookingId,
@@ -445,13 +566,11 @@ export const updateEventBookingDates = async (
       const booking = await getEventBookingById(bookingId);
       if (!booking) throw new Error("Reserva não encontrada");
 
-      // Validar novas datas
-      const newDurationDays = Math.ceil(
-        (ymdToDateEnd(newEndDate).getTime() - ymdToDateStart(newStartDate).getTime()) / 86400000
-      );
+      // Validar novas datas com cálculo correto de noites
+      const newNights = calculateNights(newStartDate, newEndDate);
 
-      if (newDurationDays < 1) {
-        throw new Error("A nova data final deve ser posterior à data inicial");
+      if (newNights < 1) {
+        throw new Error("A estadia deve ter pelo menos 1 noite");
       }
 
       // Verificar conflitos com novas datas
@@ -475,23 +594,36 @@ export const updateEventBookingDates = async (
         throw new Error("Novo período já está reservado");
       }
 
-      // ✅ CORREÇÃO: Recalcular preço corretamente com cateringRequired do booking
-      const cateringRequired = booking.cateringRequired || false;
-      const newTotalPrice = await calculateEventBasePrice(
-        booking.eventSpaceId,
-        newStartDate,
-        newEndDate,
-        cateringRequired
-      );
+      // Buscar espaço para recalcular preço
+      const space = await getEventSpaceById(booking.eventSpaceId);
+      if (!space) throw new Error("Espaço não encontrado");
 
-      // Atualizar booking
+      const spaceBasePrice = toNumber(space.basePricePerDay || space.pricePerDay);
+      const weekendNights = countWeekendDays(newStartDate, newEndDate);
+
+      // Recalcular preços - SEM catering
+      const subtotal = spaceBasePrice * newNights;
+      
+      let weekendSurcharge = 0;
+      if (space.weekendSurchargePercent && space.weekendSurchargePercent > 0 && weekendNights > 0) {
+        weekendSurcharge = spaceBasePrice * (space.weekendSurchargePercent / 100) * weekendNights;
+      }
+      
+      const newTotalPrice = subtotal + weekendSurcharge;
+      const depositPaid = toNumber(booking.depositPaid);
+      const newBalanceDue = newTotalPrice - depositPaid;
+
+      // Atualizar booking - SEM cateringPrice
       const [updated] = await tx
         .update(eventBookings)
         .set({
           startDate: newStartDate,
           endDate: newEndDate,
-          durationDays: newDurationDays,
+          durationDays: newNights,
+          basePrice: subtotal.toFixed(2),
+          weekendSurcharge: weekendSurcharge.toFixed(2),
           totalPrice: newTotalPrice.toFixed(2),
+          balanceDue: newBalanceDue.toFixed(2),
           updatedAt: new Date()
         })
         .where(eq(eventBookings.id, bookingId))
@@ -503,11 +635,18 @@ export const updateEventBookingDates = async (
           bookingId,
           "booking_dates_updated",
           {
-            oldDates: { start: booking.startDate, end: booking.endDate },
-            newDates: { start: newStartDate, end: newEndDate },
-            newDurationDays,
+            oldDates: { 
+              checkIn: booking.startDate, 
+              checkOut: booking.endDate,
+              nights: booking.durationDays 
+            },
+            newDates: { 
+              checkIn: newStartDate, 
+              checkOut: newEndDate,
+              nights: newNights,
+              weekendNights
+            },
             newTotalPrice: newTotalPrice.toFixed(2),
-            cateringRequired,
             timestamp: new Date().toISOString(),
             updatedBy
           },
@@ -577,6 +716,9 @@ export const updateEventBookingPaymentStatus = async (
 ): Promise<EventBooking | null> => {
   return await db.transaction(async (tx) => {
     try {
+      const booking = await getEventBookingById(bookingId);
+      if (!booking) throw new Error("Reserva não encontrada");
+
       const updateData: any = {
         paymentStatus,
         updatedAt: new Date()
@@ -584,6 +726,12 @@ export const updateEventBookingPaymentStatus = async (
 
       if (paymentReference) {
         updateData.paymentReference = paymentReference;
+      }
+
+      if (paymentStatus === 'paid') {
+        const totalPrice = toNumber(booking.totalPrice);
+        updateData.depositPaid = totalPrice.toFixed(2);
+        updateData.balanceDue = '0.00';
       }
 
       const [updated] = await tx
@@ -598,8 +746,11 @@ export const updateEventBookingPaymentStatus = async (
             bookingId,
             "payment_status_updated",
             {
-              fromStatus: paymentStatus,
+              fromStatus: booking.paymentStatus,
+              toStatus: paymentStatus,
               paymentReference,
+              depositPaid: updateData.depositPaid,
+              balanceDue: updateData.balanceDue,
               timestamp: new Date().toISOString(),
               updatedBy
             },
@@ -631,9 +782,12 @@ export const updateEventBooking = async (
         updateData.status = validateBookingStatus(updateData.status);
       }
       
-      // Converter campos de preço
+      // Converter campos de preço - SEM cateringPrice
       if (updateData.basePrice !== undefined) {
         updateData.basePrice = toRequiredString(updateData.basePrice as number | string);
+      }
+      if (updateData.weekendSurcharge !== undefined) {
+        updateData.weekendSurcharge = toNullableString(updateData.weekendSurcharge);
       }
       if (updateData.totalPrice !== undefined) {
         updateData.totalPrice = toRequiredString(updateData.totalPrice as number | string);
@@ -821,14 +975,11 @@ export const validateBookingData = async (
     };
   }
 
-  // Validar tipo de evento
-  if (space.allowedEventTypes && space.allowedEventTypes.length > 0) {
-    if (!space.allowedEventTypes.includes(eventType)) {
-      return { 
-        valid: false, 
-        message: `Tipo de evento "${eventType}" não permitido neste espaço. Tipos permitidos: ${space.allowedEventTypes.join(', ')}` 
-      };
-    }
+  // ✅ CORREÇÃO CRÍTICA: Usar a mesma validação de tipo de evento
+  try {
+    await validateEventType(eventSpaceId, eventType);
+  } catch (error: any) {
+    return { valid: false, message: error.message };
   }
 
   // Validar catering
@@ -836,6 +987,15 @@ export const validateBookingData = async (
     return { 
       valid: false, 
       message: "Este espaço não oferece serviço de catering" 
+    };
+  }
+
+  // Validar número de noites
+  const nights = calculateNights(startDate, endDate);
+  if (nights < 1) {
+    return { 
+      valid: false, 
+      message: "A estadia deve ter pelo menos 1 noite" 
     };
   }
 
@@ -864,4 +1024,8 @@ export default {
   checkBookingConflicts,
   validateBookingStatus,
   validateBookingData,
+  calculateNights,
+  countWeekendDays,
+  validateEventType,
+  ALLOWED_EVENT_TYPES,
 };

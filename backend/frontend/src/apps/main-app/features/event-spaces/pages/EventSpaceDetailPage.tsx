@@ -87,6 +87,409 @@ export const EventSpaceDetailPage: React.FC = () => {
   const isLoading = isLoadingDetails || isLoadingData;
   const error = detailsError;
 
+  // ============================================
+  // ✅ CORREÇÃO 1: Type Guards
+  // ============================================
+  
+  const isEventSpaceData = (obj: any): obj is any => {
+    return obj && Array.isArray(obj.amenities);
+  };
+
+  const hasEquipmentAmenities = (obj: any): boolean => {
+    return obj?.equipment && Array.isArray(obj.equipment.amenities);
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 2: getBasePrice() - COMPLETA
+  // ============================================
+  const getBasePrice = (): number => {
+    // 0. PRIORIDADE MÁXIMA: price_per_day (campo REAL do backend)
+    if ((spaceDetails as any)?.price_per_day) {
+      const price = parseFloat((spaceDetails as any).price_per_day);
+      if (!isNaN(price) && price > 0) return price;
+    }
+    
+    // 0b. Tentar space.price_per_day
+    if ((space as any)?.price_per_day) {
+      const price = parseFloat((space as any).price_per_day);
+      if (!isNaN(price) && price > 0) return price;
+    }
+    
+    // 1. Tentar spaceDetails.base_price_per_day
+    if ((spaceDetails as any)?.base_price_per_day) {
+      const price = parseFloat((spaceDetails as any).base_price_per_day);
+      if (!isNaN(price) && price > 0) return price;
+    }
+    
+    // 2. Tentar space.basePricePerDay
+    if ((space as any)?.basePricePerDay) {
+      const price = parseFloat((space as any).basePricePerDay);
+      if (!isNaN(price) && price > 0) return price;
+    }
+    
+    // 3. Tentar space.base_price_per_day
+    if ((space as any)?.base_price_per_day) {
+      const price = parseFloat((space as any).base_price_per_day);
+      if (!isNaN(price) && price > 0) return price;
+    }
+    
+    // 4. Tentar spaceDetailsResponse?.data?.base_price_per_day
+    if ((spaceDetailsResponse as any)?.data?.base_price_per_day) {
+      const price = parseFloat((spaceDetailsResponse as any).data.base_price_per_day);
+      if (!isNaN(price) && price > 0) return price;
+    }
+    
+    return 0;
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 3: getWeekendSurcharge()
+  // ============================================
+  const getWeekendSurcharge = (): number => {
+    // 1. Tentar spaceDetails.weekend_surcharge_percent
+    if ((spaceDetails as any)?.weekend_surcharge_percent !== undefined) {
+      return Number((spaceDetails as any).weekend_surcharge_percent);
+    }
+    
+    // 2. Tentar space.weekendSurchargePercent
+    if ((space as any)?.weekendSurchargePercent !== undefined) {
+      return Number((space as any).weekendSurchargePercent);
+    }
+    
+    // 3. Tentar space.weekend_surcharge_percent
+    if ((space as any)?.weekend_surcharge_percent !== undefined) {
+      return Number((space as any).weekend_surcharge_percent);
+    }
+    
+    return 0;
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 4: getSecurityDeposit()
+  // ============================================
+  const getSecurityDeposit = (): number => {
+    // 1. Tentar spaceDetails.security_deposit
+    if ((spaceDetails as any)?.security_deposit) {
+      const deposit = parseFloat((spaceDetails as any).security_deposit);
+      if (!isNaN(deposit) && deposit > 0) return deposit;
+    }
+    
+    // 2. Tentar space.securityDeposit
+    if ((space as any)?.securityDeposit) {
+      const deposit = parseFloat((space as any).securityDeposit);
+      if (!isNaN(deposit) && deposit > 0) return deposit;
+    }
+    
+    // 3. Tentar space.security_deposit
+    if ((space as any)?.security_deposit) {
+      const deposit = parseFloat((space as any).security_deposit);
+      if (!isNaN(deposit) && deposit > 0) return deposit;
+    }
+    
+    return 0;
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 5: getLocation() - COMPLETA
+  // ============================================
+  const getLocation = (): string => {
+    // 1. Tentar localização direta do espaço (prioridade máxima)
+    if ((space as any)?.location) {
+      return (space as any).location;
+    }
+    
+    // 2. Tentar localidade + província do espaço
+    if ((space as any)?.locality && (space as any)?.province) {
+      return `${(space as any).locality}, ${(space as any).province}`;
+    }
+    
+    // 3. Tentar localização do hotel
+    if (hotel?.locality && hotel?.province) {
+      return `${hotel.locality}, ${hotel.province}`;
+    }
+    
+    // 4. Tentar nome do hotel + cidade
+    if (hotel?.name && hotel?.locality) {
+      return `${hotel.name}, ${hotel.locality}`;
+    }
+    
+    // 5. Tentar apenas localidade do hotel
+    if (hotel?.locality) {
+      return hotel.locality;
+    }
+    
+    // 6. Tentar apenas localidade do espaço
+    if ((space as any)?.locality) {
+      return (space as any).locality;
+    }
+    
+    return 'Localização não disponível';
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 6: getCapacity()
+  // ============================================
+  const getCapacity = (): { min: number; max: number } => {
+    // Tentar extrair valores válidos
+    const min = Number((space as any)?.capacityMin || (space as any)?.capacity_min || 0);
+    const max = Number((space as any)?.capacityMax || (space as any)?.capacity_max || 0);
+    
+    // Se max for menor que min, usar max como padrão
+    return { 
+      min: min > 0 ? min : 0, 
+      max: max > 0 ? max : min 
+    };
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 7: getImages() - MELHORADA
+  // ============================================
+  const getImages = (): string[] => {
+    // 1. Tentar space.images
+    if ((space as any)?.images) {
+      if (Array.isArray((space as any).images)) {
+        if (typeof (space as any).images[0] === 'string') {
+          return (space as any).images as string[];
+        }
+        if ((space as any).images[0]?.url) {
+          return (space as any).images.map((img: any) => img.url);
+        }
+      }
+    }
+    
+    // 2. Tentar spaceDetails.images
+    if ((spaceDetails as any)?.images) {
+      if (Array.isArray((spaceDetails as any).images)) {
+        if (typeof (spaceDetails as any).images[0] === 'string') {
+          return (spaceDetails as any).images as string[];
+        }
+        if ((spaceDetails as any).images[0]?.url) {
+          return (spaceDetails as any).images.map((img: any) => img.url);
+        }
+      }
+    }
+    
+    // 3. Tentar spaceDetailsResponse?.data?.images
+    if ((spaceDetailsResponse as any)?.data?.images) {
+      if (Array.isArray((spaceDetailsResponse as any).data.images)) {
+        if (typeof (spaceDetailsResponse as any).data.images[0] === 'string') {
+          return (spaceDetailsResponse as any).data.images as string[];
+        }
+      }
+    }
+    
+    // Fallback
+    return ['https://via.placeholder.com/1200x400?text=Espaço+para+Eventos'];
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 8: getAmenities() - COMPLETA (5 PRIORIDADES)
+  // ============================================
+  const getAmenities = (): string[] => {
+    // 1. PRIMEIRA PRIORIDADE: spaceDetails.amenities
+    if ((spaceDetails as any)?.amenities && Array.isArray((spaceDetails as any).amenities) && (spaceDetails as any).amenities.length > 0) {
+      const amenities = (spaceDetails as any).amenities;
+      if (typeof amenities[0] === 'string') {
+        return amenities as string[];
+      }
+      if (amenities[0]?.name) {
+        return amenities.map((a: any) => a.name);
+      }
+    }
+    
+    // 2. SEGUNDA PRIORIDADE: space.amenities
+    if ((space as any)?.amenities && Array.isArray((space as any).amenities) && (space as any).amenities.length > 0) {
+      const amenities = (space as any).amenities;
+      if (typeof amenities[0] === 'string') {
+        return amenities as string[];
+      }
+      if (amenities[0]?.name) {
+        return amenities.map((a: any) => a.name);
+      }
+    }
+    
+    // 3. TERCEIRA PRIORIDADE: equipment.amenities
+    if ((space as any)?.equipment?.amenities && Array.isArray((space as any).equipment.amenities) && (space as any).equipment.amenities.length > 0) {
+      const equipmentAmenities = (space as any).equipment.amenities;
+      if (typeof equipmentAmenities[0] === 'string') {
+        return equipmentAmenities as string[];
+      }
+      if (equipmentAmenities[0]?.name) {
+        return equipmentAmenities.map((a: any) => a.name);
+      }
+    }
+    
+    // 4. QUARTA PRIORIDADE: spaceDetailsResponse?.data?.amenities
+    if ((spaceDetailsResponse as any)?.data?.amenities && Array.isArray((spaceDetailsResponse as any).data.amenities) && (spaceDetailsResponse as any).data.amenities.length > 0) {
+      const amenities = (spaceDetailsResponse as any).data.amenities;
+      if (typeof amenities[0] === 'string') {
+        return amenities as string[];
+      }
+    }
+    
+    // 5. QUINTA PRIORIDADE: amenities_list
+    if ((space as any)?.amenities_list && Array.isArray((space as any).amenities_list) && (space as any).amenities_list.length > 0) {
+      return (space as any).amenities_list as string[];
+    }
+    
+    return [];
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 9: getEquipmentItems() - MELHORADA
+  // ============================================
+  const getEquipmentItems = (): string[] => {
+    const equipment = (space as any)?.equipment || (spaceDetails as any)?.equipment;
+    
+    if (!equipment) return [];
+    
+    // Caso 1: Array de strings
+    if (Array.isArray(equipment) && typeof equipment[0] === 'string') {
+      return equipment as string[];
+    }
+    
+    // Caso 2: Array de objetos com name
+    if (Array.isArray(equipment) && equipment[0]?.name) {
+      return equipment.map((item: any) => item.name);
+    }
+    
+    // Caso 3: Objeto com propriedade items
+    if (typeof equipment === 'object' && equipment.items && Array.isArray(equipment.items)) {
+      return equipment.items.map((item: any) => 
+        typeof item === 'string' ? item : item.name || JSON.stringify(item)
+      );
+    }
+    
+    // Caso 4: Objeto chave-valor
+    if (typeof equipment === 'object' && !Array.isArray(equipment)) {
+      return Object.entries(equipment)
+        .filter(([_, value]) => Boolean(value))
+        .map(([key, value]) => {
+          if (typeof value === 'boolean') return key;
+          if (typeof value === 'string') return `${key}: ${value}`;
+          return `${key}: ${JSON.stringify(value)}`;
+        });
+    }
+    
+    return [];
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 10: getRating()
+  // ============================================
+  const getRating = (): number => {
+    // 1. Tentar rating no espaço
+    if ((space as any)?.rating) return Number((space as any).rating);
+    if ((space as any)?.average_rating) return Number((space as any).average_rating);
+    
+    // 2. Tentar rating no spaceDetails
+    if ((spaceDetails as any)?.space?.rating) return Number((spaceDetails as any).space.rating);
+    
+    // 3. Calcular a partir das reviews
+    if (reviews.length > 0) {
+      const total = reviews.reduce((acc: number, review: any) => {
+        const rating = review.overallRating || review.rating || 0;
+        return acc + Number(rating);
+      }, 0);
+      return total / reviews.length;
+    }
+    
+    return 0;
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 11: getOffersCatering()
+  // ============================================
+  const getOffersCatering = (): boolean => {
+    return Boolean(
+      (space as any)?.offersCatering || 
+      (space as any)?.offers_catering || 
+      (spaceDetails as any)?.offers_catering ||
+      (spaceDetailsResponse as any)?.data?.offers_catering ||
+      false
+    );
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 12: getCateringDiscount()
+  // ============================================
+  const getCateringDiscount = (): number => {
+    return Number(
+      (space as any)?.cateringDiscountPercent || 
+      (space as any)?.catering_discount_percent || 
+      (spaceDetails as any)?.catering_discount_percent ||
+      (spaceDetailsResponse as any)?.data?.catering_discount_percent ||
+      0
+    );
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 13: getAvailableForImmediateBooking()
+  // ============================================
+  const getAvailableForImmediateBooking = (): boolean => {
+    return Boolean(
+      (space as any)?.available_for_immediate_booking || 
+      (spaceDetails as any)?.available_for_immediate_booking ||
+      (spaceDetailsResponse as any)?.data?.available_for_immediate_booking ||
+      false
+    );
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 14: getHotelName()
+  // ============================================
+  const getHotelName = (): string => {
+    return hotel?.name || (space as any)?.hotelName || 'Hotel não especificado';
+  };
+
+  // ============================================
+  // ✅ APLICAR TODAS AS CORREÇÕES
+  // ============================================
+  const basePrice = getBasePrice();
+  const formattedBasePrice = formatPrice(basePrice);
+  
+  const weekendSurchargePercent = getWeekendSurcharge();
+  const weekendPrice = basePrice * (1 + weekendSurchargePercent / 100);
+  const formattedWeekendPrice = formatPrice(weekendPrice);
+  
+  const securityDeposit = getSecurityDeposit();
+  const formattedSecurityDeposit = formatPrice(securityDeposit);
+  
+  const location = getLocation();
+  const images = getImages();
+  const amenities = getAmenities();
+  const equipmentItems = getEquipmentItems();
+  const rating = getRating();
+  const offersCatering = getOffersCatering();
+  const cateringDiscountPercent = getCateringDiscount();
+  const availableForImmediateBooking = getAvailableForImmediateBooking();
+  const hotelName = getHotelName();
+  const { min: capacityMin, max: capacityMax } = getCapacity();
+
+  // ✅ DEBUG: Verificar dados
+  console.log('🔍 DEBUG - EventSpaceDetailPage:', {
+    spaceId,
+    spaceDetails,
+    space,
+    hotel,
+    basePrice,
+    location,
+    amenitiesCount: amenities.length,
+    equipmentCount: equipmentItems.length,
+    rating,
+    offersCatering,
+    cateringDiscountPercent,
+    // Campos adicionais para debug
+    price_per_day_space: (space as any)?.price_per_day,
+    price_per_day_details: (spaceDetails as any)?.price_per_day,
+    amenities_source: {
+      from_details: (spaceDetails as any)?.amenities?.length,
+      from_space: (space as any)?.amenities?.length,
+      from_equipment: (space as any)?.equipment?.amenities?.length,
+      from_list: (space as any)?.amenities_list?.length
+    }
+  });
+
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -110,181 +513,6 @@ export const EventSpaceDetailPage: React.FC = () => {
     );
   }
 
-  // ✅ CORREÇÃO: Acessar propriedades de forma segura
-  const basePrice = parseFloat(
-    (space as any).basePricePerDay || 
-    (space as any).base_price_per_day || 
-    (spaceDetails as any)?.base_price_per_day || 
-    '0'
-  );
-  const formattedBasePrice = formatPrice(basePrice);
-  
-  const weekendSurchargePercent = 
-    (space as any).weekendSurchargePercent || 
-    (space as any).weekend_surcharge_percent || 
-    (spaceDetails as any)?.weekend_surcharge_percent || 
-    0;
-  
-  const weekendPrice = basePrice * (1 + weekendSurchargePercent / 100);
-  const formattedWeekendPrice = formatPrice(weekendPrice);
-  
-  const securityDeposit = parseFloat(
-    (space as any).securityDeposit || 
-    (space as any).security_deposit || 
-    (spaceDetails as any)?.security_deposit || 
-    '0'
-  );
-  const formattedSecurityDeposit = formatPrice(securityDeposit);
-
-  // ✅ CORREÇÃO: Localização
-  const location = 
-    (space as any).location || 
-    ((space as any).locality && (space as any).province ? 
-      `${(space as any).locality}, ${(space as any).province}` : 
-      (hotel?.locality && hotel?.province ? 
-        `${hotel.locality}, ${hotel.province}` : 
-        'Localização não disponível'
-      )
-    );
-
-  // ✅ CORREÇÃO: Images - lidar com diferentes formatos
-  const getImages = (): string[] => {
-    // Tentar space.images primeiro
-    if ((space as any).images) {
-      if (Array.isArray((space as any).images)) {
-        // Se for array de strings
-        if (typeof (space as any).images[0] === 'string') {
-          return (space as any).images as string[];
-        }
-        // Se for array de objetos com url
-        if ((space as any).images[0]?.url) {
-          return (space as any).images.map((img: any) => img.url);
-        }
-      }
-    }
-    
-    // Tentar spaceDetails.images
-    if ((spaceDetails as any)?.images) {
-      if (Array.isArray((spaceDetails as any).images)) {
-        if (typeof (spaceDetails as any).images[0] === 'string') {
-          return (spaceDetails as any).images as string[];
-        }
-        if ((spaceDetails as any).images[0]?.url) {
-          return (spaceDetails as any).images.map((img: any) => img.url);
-        }
-      }
-    }
-    
-    // Fallback para placeholder
-    return ['https://via.placeholder.com/1200x400'];
-  };
-
-  const images = getImages();
-
-  // ✅ CORREÇÃO: Amenities
-  const getAmenities = (): string[] => {
-    if ((space as any).amenities) {
-      if (Array.isArray((space as any).amenities)) {
-        if (typeof (space as any).amenities[0] === 'string') {
-          return (space as any).amenities as string[];
-        }
-        if ((space as any).amenities[0]?.name) {
-          return (space as any).amenities.map((a: any) => a.name);
-        }
-      }
-    }
-    
-    if ((spaceDetails as any)?.amenities) {
-      if (Array.isArray((spaceDetails as any).amenities)) {
-        if (typeof (spaceDetails as any).amenities[0] === 'string') {
-          return (spaceDetails as any).amenities as string[];
-        }
-        if ((spaceDetails as any).amenities[0]?.name) {
-          return (spaceDetails as any).amenities.map((a: any) => a.name);
-        }
-      }
-    }
-    
-    return [];
-  };
-
-  const amenities = getAmenities();
-
-  // ✅ CORREÇÃO: Equipment
-  const getEquipmentItems = (): string[] => {
-    const equipment = (space as any).equipment || (spaceDetails as any)?.equipment;
-    
-    if (!equipment) return [];
-    
-    if (Array.isArray(equipment)) {
-      // Se for array de strings
-      if (typeof equipment[0] === 'string') {
-        return equipment as string[];
-      }
-      // Se for array de objetos
-      if (equipment[0]?.name) {
-        return equipment.map((item: any) => item.name);
-      }
-    }
-    
-    if (typeof equipment === 'object') {
-      // Se for objeto com propriedades
-      if (equipment.items && Array.isArray(equipment.items)) {
-        return equipment.items.map((item: any) => 
-          typeof item === 'string' ? item : item.name || JSON.stringify(item)
-        );
-      }
-      
-      // Se for objeto chave-valor
-      return Object.entries(equipment)
-        .filter(([_, value]) => Boolean(value))
-        .map(([key, value]) => {
-          if (typeof value === 'boolean') return key;
-          if (typeof value === 'string') return `${key}: ${value}`;
-          return `${key}: ${JSON.stringify(value)}`;
-        });
-    }
-    
-    return [];
-  };
-
-  const equipmentItems = getEquipmentItems();
-
-  // ✅ CORREÇÃO: Rating
-  const getRating = (): number => {
-    if ((space as any).rating) return (space as any).rating;
-    if ((spaceDetails as any)?.space?.rating) return (spaceDetails as any).space.rating;
-    
-    if (reviews.length > 0) {
-      const total = reviews.reduce((acc: number, review: any) => 
-        acc + (review.overallRating || review.rating || 0), 0);
-      return total / reviews.length;
-    }
-    
-    return 0;
-  };
-
-  const rating = getRating();
-
-  // ✅ CORREÇÃO: Catering
-  const offersCatering = 
-    (space as any).offersCatering || 
-    (space as any).offers_catering || 
-    (spaceDetails as any)?.offers_catering || 
-    false;
-  
-  const cateringDiscountPercent = 
-    (space as any).cateringDiscountPercent || 
-    (space as any).catering_discount_percent || 
-    (spaceDetails as any)?.catering_discount_percent || 
-    0;
-
-  // ✅ CORREÇÃO: Available for immediate booking
-  const availableForImmediateBooking = 
-    (space as any).available_for_immediate_booking || 
-    (spaceDetails as any)?.available_for_immediate_booking || 
-    false;
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Image */}
@@ -293,6 +521,9 @@ export const EventSpaceDetailPage: React.FC = () => {
           src={images[0]}
           alt={(space as any).name}
           className="w-full h-full object-cover"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = 'https://via.placeholder.com/1200x400?text=Espaço+para+Eventos';
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
 
@@ -322,9 +553,9 @@ export const EventSpaceDetailPage: React.FC = () => {
                     <Badge className="bg-secondary text-dark capitalize">
                       {(space as any).spaceType || 'Espaço para Eventos'}
                     </Badge>
-                    {hotel?.name && (
+                    {hotelName && (
                       <Badge variant="outline" className="border-secondary text-secondary">
-                        {hotel.name}
+                        {hotelName}
                       </Badge>
                     )}
                   </div>
@@ -340,7 +571,7 @@ export const EventSpaceDetailPage: React.FC = () => {
               <div className="flex items-center gap-3 text-muted-foreground mb-4 py-4 border-y border-gray-200">
                 <div className="flex items-center gap-1">
                   <Users className="w-5 h-5" />
-                  <span>Capacidade: {(space as any).capacityMin}-{(space as any).capacityMax} pessoas</span>
+                  <span>Capacidade: {capacityMin}-{capacityMax} pessoas</span>
                 </div>
                 {(space as any).areaSqm && (
                   <div className="flex items-center gap-1">
@@ -655,7 +886,7 @@ export const EventSpaceDetailPage: React.FC = () => {
                     <span className="text-sm font-medium">Capacidade máxima</span>
                     <div className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
-                      <span className="font-bold">{(space as any).capacityMax} pessoas</span>
+                      <span className="font-bold">{capacityMax} pessoas</span>
                     </div>
                   </div>
                 </div>

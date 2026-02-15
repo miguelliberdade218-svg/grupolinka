@@ -63,14 +63,14 @@ interface SearchQuery {
 const RidesList = ({ rides, user }: { rides: RideHighlight[], user: any }) => (
   <>
     {rides.slice(0, 6).map((ride, index) => (
-      <Card key={index} className="border-l-4 border-l-blue-500 overflow-hidden hover:shadow-lg transition-shadow">
-        <div className="h-40 bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center border-b relative">
+      <Card key={index} className="border-l-4 border-l-orange-500 overflow-hidden hover:shadow-lg transition-shadow">
+        <div className="h-40 bg-gradient-to-br from-orange-100 to-orange-50 flex items-center justify-center border-b relative">
           <div className="text-center">
-            <Car className="w-12 h-12 text-blue-600 mb-2" />
+            <Car className="w-12 h-12 text-orange-600 mb-2" />
             <span className="text-xs text-gray-600">Foto do veículo</span>
           </div>
           <div className="absolute top-2 right-2">
-            <Badge className="bg-blue-500 text-white text-xs">Popular</Badge>
+            <Badge className="bg-orange-500 text-white text-xs">Popular</Badge>
           </div>
         </div>
         <CardContent className="pt-4">
@@ -106,7 +106,7 @@ const RidesList = ({ rides, user }: { rides: RideHighlight[], user: any }) => (
           </div>
           
           {user ? (
-            <Button className="w-full bg-blue-600 hover:bg-blue-700" size="sm" data-testid={`button-book-ride-${index}`}>
+            <Button className="w-full bg-orange-600 hover:bg-orange-700" size="sm" data-testid={`button-book-ride-${index}`}>
               Ver Detalhes & Reservar
             </Button>
           ) : (
@@ -635,7 +635,7 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Seção de Busca Melhorada */}
         <div className="mb-8">
-          <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 text-white py-8 rounded-xl shadow-lg">
+          <div className="bg-gradient-to-r from-orange-600 via-orange-500 to-orange-400 text-white py-8 rounded-xl shadow-lg">
             <div className="max-w-7xl mx-auto px-4">
               <h2 className="text-3xl font-bold mb-2">Encontre a sua próxima viagem</h2>
               <p className="text-lg opacity-90 mb-6">
@@ -656,7 +656,7 @@ export default function Home() {
                       variant={searchType === "rides" ? "default" : "outline"}
                       onClick={() => setSearchType("rides")}
                       data-testid="button-search-rides"
-                      className={`font-semibold ${searchType === "rides" ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}
+                      className={`font-semibold ${searchType === "rides" ? "bg-orange-600 hover:bg-orange-700 text-white" : "border-orange-300 text-orange-700 hover:bg-orange-50"}`}
                     >
                       <Car className="w-4 h-4 mr-2" />
                       Boleias

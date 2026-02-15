@@ -7,6 +7,8 @@
 // CORRIGIDO: Removido método .refine() que não existe no Drizzle
 // CORRIGIDO: Adicionado campo cateringRequired em eventBookings
 // ✅ ADICIONADO: Campo location_id na tabela hotels para referência a mozambique_locations
+// ✅ ADICIONADO: Campo pricePerDay na tabela eventSpaces (compatibilidade com frontend)
+// ✅ ADICIONADO: Tabela roomTypePhotos para fotos de tipos de quarto
 
 import { sql } from "drizzle-orm";
 import {
@@ -366,6 +368,20 @@ export const roomTypes = pgTable("room_types", {
   priceIdx: index("room_types_price_idx").on(table.base_price),
 }));
 
+// ==================== FOTOS DE TIPOS DE QUARTO (ADICIONADO) ====================
+export const roomTypePhotos = pgTable('room_type_photos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  room_type_id: uuid('room_type_id').notNull().references(() => roomTypes.id, { onDelete: 'cascade' }),
+  url: varchar('url', { length: 500 }).notNull(),
+  alt_text: varchar('alt_text', { length: 255 }),
+  order: integer('order').default(0),
+  is_featured: boolean('is_featured').default(false),
+  is_primary: boolean('is_primary').default(false),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+  deleted_at: timestamp('deleted_at'),
+});
+
 // ==================== DISPONIBILIDADE DE QUARTOS ====================
 export const roomAvailability = pgTable("roomAvailability", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -565,7 +581,11 @@ export const eventSpaces = pgTable("eventSpaces", {
   description: text("description"),
   capacityMin: integer("capacityMin").notNull().default(10),
   capacityMax: integer("capacityMax").notNull().default(100),
+  
+  // ✅ ADICIONADO: Campo pricePerDay (já existe no banco)
+  pricePerDay: numeric("pricePerDay", { precision: 10, scale: 2 }),
   basePricePerDay: numeric("basePricePerDay", { precision: 10, scale: 2 }).notNull().default("0"),
+  
   weekendSurchargePercent: integer("weekendSurchargePercent").default(0),
   eventTypes: text("eventTypes").array().default(sql`ARRAY[]::text[]`),
   amenities: text("amenities").array().default(sql`ARRAY[]::text[]`),
@@ -615,6 +635,7 @@ export const eventSpaces = pgTable("eventSpaces", {
   hotelIdx: index("eventSpaces_hotelId_idx").on(table.hotelId),
   activeIdx: index("eventSpaces_isActive_idx").on(table.isActive),
   slugIdx: uniqueIndex("eventSpaces_slug_key").on(table.slug),
+  priceIdx: index("eventSpaces_price_idx").on(table.pricePerDay, table.basePricePerDay),
 }));
 
 // VIEW para compatibilidade com snake_case
@@ -1598,6 +1619,21 @@ export const insertRoomTypeSchema = createInsertSchema(roomTypes, {
   extra_night_price: true,
 });
 
+// ✅ ADICIONADO: Schema para inserção de fotos de tipos de quarto
+export const insertRoomTypePhotoSchema = createInsertSchema(roomTypePhotos, {
+  room_type_id: z.string().uuid(),
+  url: z.string().url(),
+  alt_text: z.string().max(255).optional(),
+  order: z.number().int().default(0),
+  is_featured: z.boolean().default(false),
+  is_primary: z.boolean().default(false),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  deleted_at: true,
+});
+
 export const insertRoomAvailabilitySchema = createInsertSchema(roomAvailability, {
   date: z.date(),
   price: z.number().positive(),
@@ -1618,6 +1654,7 @@ export const insertEventSpaceSchema = createInsertSchema(eventSpaces, {
   description: z.string().optional(),
   capacityMin: z.number().int().positive(),
   capacityMax: z.number().int().positive(),
+  pricePerDay: z.number().positive().optional(), // ✅ ADICIONADO
   basePricePerDay: z.number().positive().default(0),
   weekendSurchargePercent: z.number().int().min(0).optional(),
   isActive: z.boolean().default(true),
@@ -1702,6 +1739,10 @@ export type RoomType = typeof roomTypes.$inferSelect;
 export type RoomTypeInsert = typeof roomTypes.$inferInsert;
 export type RoomAvailability = typeof roomAvailability.$inferSelect;
 export type RoomAvailabilityInsert = typeof roomAvailability.$inferInsert;
+
+// ✅ ADICIONADO: Tipos para roomTypePhotos
+export type RoomTypePhoto = typeof roomTypePhotos.$inferSelect;
+export type NewRoomTypePhoto = typeof roomTypePhotos.$inferInsert;
 
 // Tipos para as tabelas de reservas hoteleiras
 export type HotelBooking = typeof hotelBookings.$inferSelect;
@@ -1977,4 +2018,5 @@ export interface CompleteHotelSystem {
   user_roles: UserRole[];
   advance_payment_promotions: AdvancePaymentPromotion[];
   payment_options: PaymentOption[];
+  room_type_photos: RoomTypePhoto[]; // ✅ ADICIONADO
 };

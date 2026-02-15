@@ -8,6 +8,13 @@ console.log('DEBUG INICIAL - DATABASE_URL do .env:', process.env.DATABASE_URL?.r
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+// ✅ CORREÇÃO: Criar __dirname e __rootDir para ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ===== ROTAS COMPARTILHADAS =====
 import sharedHealthRoutes from './shared/health';
@@ -165,6 +172,55 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   }));
   console.log('CORS configurado com sucesso');
 
+  // ✅ CORREÇÃO DEFINITIVA: Usar o caminho absoluto que sabemos que funciona
+  const uploadsPath = '/mnt/c/Users/User/Downloads/LinkA/linka-fullstack-mainzip/linka-fullstack-main/backend/backend/public/uploads';
+  console.log('📁 Servindo arquivos estáticos de:', uploadsPath);
+  
+  // ✅ DEBUG: Verificar se o diretório existe
+  try {
+    if (fs.existsSync(uploadsPath)) {
+      console.log('✅ Diretório uploads encontrado!');
+      
+      const hotelsPath = path.join(uploadsPath, 'hotels');
+      if (fs.existsSync(hotelsPath)) {
+        const hotelFiles = fs.readdirSync(hotelsPath);
+        console.log('📁 Arquivos em uploads/hotels:', hotelFiles.length);
+        console.log('📁 Exemplos:', hotelFiles.slice(0, 3));
+      } else {
+        console.log('❌ Subdiretório hotels não encontrado em:', hotelsPath);
+      }
+    } else {
+      console.log('❌ Diretório uploads NÃO encontrado em:', uploadsPath);
+    }
+  } catch (err) {
+    console.error('❌ Erro ao ler diretório uploads:', err);
+  }
+
+  // ✅ CORREÇÃO: Configurar servidor estático
+  app.use('/uploads', express.static(uploadsPath, {
+    setHeaders: (res, filePath) => {
+      res.setHeader('Cache-Control', 'public, max-age=31557600');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      console.log('📸 Servindo arquivo:', filePath);
+    },
+    fallthrough: false
+  }));
+
+  // Rota de teste
+  app.get('/uploads-test', (req, res) => {
+    res.json({
+      success: true,
+      message: 'Rota de uploads configurada',
+      uploadsPath,
+      exists: fs.existsSync(uploadsPath),
+      hotelsPath: path.join(uploadsPath, 'hotels'),
+      hotelsExists: fs.existsSync(path.join(uploadsPath, 'hotels')),
+      files: fs.existsSync(uploadsPath) ? fs.readdirSync(uploadsPath) : [],
+      hotelFiles: fs.existsSync(path.join(uploadsPath, 'hotels')) ? fs.readdirSync(path.join(uploadsPath, 'hotels')) : []
+    });
+  });
+
   // Logging simples
   app.use((req, res, next) => {
     if (process.env.NODE_ENV !== 'production' || req.method !== 'GET') {
@@ -181,8 +237,6 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use(express.urlencoded({ extended: true }));
 
   // ===== ROTAS DE ADMINISTRAÇÃO DOS JOBS (apenas hotéis mantido) =====
-  
-  // ✅ CORREÇÃO: Removida rota /api/admin/jobs/events/run
   
   // Rota para executar job de hotéis manualmente
   app.post('/api/admin/jobs/hotels/run', async (req, res) => {
@@ -358,7 +412,7 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     photoURL?: string;
     roles?: string[];
   }) => {
-    // ... (mantido igual - implementação original)
+    // ... (implementação original mantida)
   };
 
   app.post('/api/auth/signup', async (req, res) => { 
@@ -407,10 +461,6 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/geo', geoRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/chat', chatRoutes);
-
-  // ✅ CORREÇÃO: REMOVIDAS rotas obsoletas de events/availability
-  // ❌ /api/events/availability/check (removido)
-  // ❌ /api/events/availability/initialize (removido)
 
   // ✅ CORREÇÃO: Health-check limpo (sem referências a events antigo)
   app.get('/api/health-check', async (req, res) => {

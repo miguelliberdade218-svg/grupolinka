@@ -38,34 +38,45 @@ import { debounce } from 'lodash';
 import { EventSpace, EventSpaceSearchParams as SearchParamsType } from '@/shared/types/event-spaces';
 import { calculateDistance, parseCoordinate } from '@/utils/calculateDistance';
 
-// ✅ CORREÇÃO: Interface local atualizada - garantir que distance seja number | null (não undefined)
+// ============================================
+// ✅ CORREÇÃO 1: Tipo específico para sortBy
+// ============================================
+type SortByType = 'distance' | 'price' | 'capacity' | 'rating';
+
+// ============================================
+// ✅ CORREÇÃO 2: Interface estendida com tipos corretos
+// ============================================
+interface ExtendedSearchParams extends SearchParamsType {
+  sortBy?: SortByType;
+  page?: number;
+  radius?: number;
+  locationId?: string;
+  lat?: number;
+  lng?: number;
+  city?: string;
+  district?: string;
+}
+
+// ============================================
+// ✅ CORREÇÃO 3: Interface local atualizada - CORRIGIDA
+// ============================================
 interface LocationSuggestion {
   id: string;
   name: string;
-  province?: string;
-  district?: string;
-  locality?: string;
+  province?: string | null;
+  district?: string | null;
+  locality?: string | null;
   lat?: number | null;
   lng?: number | null;
   type?: string;
   relevance_rank?: number;
 }
 
-// ✅ CORREÇÃO: Interface estendida com tipos corretos
-interface ExtendedSearchParams extends SearchParamsType {
-  sortBy?: string;
-  page?: number;
-  radius?: number;
-  locationId?: string;
-  province?: string;
-  locality?: string;
-  lat?: number;
-  lng?: number;
-}
-
-// ✅ CORREÇÃO CRÍTICA: Interface ExtendedEventSpace com distance definida como number | null (não undefined)
+// ============================================
+// ✅ CORREÇÃO 4: Interface ExtendedEventSpace - CORRIGIDA
+// ============================================
 interface ExtendedEventSpace extends Omit<EventSpace, 'location'> {
-  distance: number | null;  // ✅ ALTERADO: number | null (sempre definida)
+  distance: number | null;
   location?: string;
   thumbnail?: string;
   capacityTheater?: number | null;
@@ -73,9 +84,27 @@ interface ExtendedEventSpace extends Omit<EventSpace, 'location'> {
   capacityBanquet?: number | null;
   capacityStanding?: number | null;
   capacityCocktail?: number | null;
+  // ✅ CORREÇÃO: Usar o mesmo tipo do hotel da interface EventSpace
+  hotel?: {
+    id?: string;
+    name: string;
+    locality: string;
+    province: string;
+    address?: string | null;
+    city?: string | null;
+    lat?: string | null;
+    lng?: string | null;
+    location_id?: string | null;
+    contact_phone?: string | null;
+    contact_email?: string | null;
+  } | null;
+  // ✅ CORREÇÃO: amenities é obrigatório
+  amenities: string[];
 }
 
-// ✅ CORREÇÃO: Função auxiliar para calcular distância segura
+// ============================================
+// ✅ CORREÇÃO 5: Função auxiliar para calcular distância segura
+// ============================================
 const calculateSafeDistance = (
   lat1: number | null | undefined, 
   lng1: number | null | undefined, 
@@ -94,8 +123,37 @@ const calculateSafeDistance = (
   }
 };
 
-// ✅ CORREÇÃO: Função para converter dados da API para o tipo ExtendedEventSpace
+// ============================================
+// ✅ CORREÇÃO 6: Função para converter dados da API - COMPLETA
+// ============================================
 function convertToEventSpace(data: any): ExtendedEventSpace {
+  // Preço - PRIORIDADE MÁXIMA PARA price_per_day
+  let basePrice = '0';
+  if (data.price_per_day) {
+    basePrice = String(data.price_per_day);
+  } else if (data.pricePerDay) {
+    basePrice = String(data.pricePerDay);
+  } else if (data.basePricePerDay) {
+    basePrice = String(data.basePricePerDay);
+  } else if (data.base_price_per_day) {
+    basePrice = String(data.base_price_per_day);
+  }
+
+  // ✅ CORREÇÃO: Criar objeto hotel que corresponda ao tipo do EventSpace
+  const hotel = data.hotel ? {
+    id: data.hotel.id,
+    name: data.hotel.name || 'Hotel não especificado',
+    locality: data.hotel.locality || '',
+    province: data.hotel.province || '',
+    address: data.hotel.address || null,
+    city: data.hotel.city || null,
+    lat: data.hotel.lat || null,
+    lng: data.hotel.lng || null,
+    location_id: data.hotel.location_id || null,
+    contact_phone: data.hotel.contact_phone || data.hotel.contactPhone || null,
+    contact_email: data.hotel.contact_email || data.hotel.contactEmail || null,
+  } : null;
+
   const baseSpace: EventSpace = {
     id: data.id || '',
     hotelId: data.hotelId || data.hotel_id || data.hotel?.id || '',
@@ -105,7 +163,7 @@ function convertToEventSpace(data: any): ExtendedEventSpace {
     capacityMin: data.capacityMin || data.capacity_min || 0,
     capacityMax: data.capacityMax || data.capacity_max || 0,
     areaSqm: data.areaSqm || data.area_sqm || null,
-    basePricePerDay: data.basePricePerDay || data.base_price_per_day || '0',
+    basePricePerDay: basePrice,
     weekendSurchargePercent: data.weekendSurchargePercent || data.weekend_surcharge_percent || 0,
     offersCatering: data.offersCatering || data.offers_catering || false,
     cateringDiscountPercent: data.cateringDiscountPercent || data.catering_discount_percent || 0,
@@ -140,30 +198,67 @@ function convertToEventSpace(data: any): ExtendedEventSpace {
     inherits_hotel_location: data.inherits_hotel_location || false,
     createdAt: data.createdAt || data.created_at || new Date().toISOString(),
     updatedAt: data.updatedAt || data.updated_at || new Date().toISOString(),
+    amenities: [],
+    hotel: hotel,
   };
 
-  // ✅ CORREÇÃO CRÍTICA: Inicializar distance como null (não undefined)
-  // Extrair distance dos dados ou calcular
-  let distance: number | null = null;
-  
-  if (data.distance !== undefined && data.distance !== null) {
-    distance = typeof data.distance === 'number' ? data.distance : null;
+  // ✅ CORREÇÃO: Amenities - Suporte a múltiplos formatos
+  let amenitiesList: string[] = [];
+  if (data.amenities && Array.isArray(data.amenities)) {
+    if (data.amenities.length > 0) {
+      if (typeof data.amenities[0] === 'string') {
+        amenitiesList = data.amenities;
+      } else if (data.amenities[0]?.name) {
+        amenitiesList = data.amenities.map((a: any) => a.name);
+      }
+    }
+  } else if (data.equipment?.amenities && Array.isArray(data.equipment.amenities)) {
+    if (data.equipment.amenities.length > 0) {
+      if (typeof data.equipment.amenities[0] === 'string') {
+        amenitiesList = data.equipment.amenities;
+      } else if (data.equipment.amenities[0]?.name) {
+        amenitiesList = data.equipment.amenities.map((a: any) => a.name);
+      }
+    }
+  } else if (data.amenities_list && Array.isArray(data.amenities_list)) {
+    amenitiesList = data.amenities_list;
   }
   
-  // Criar objeto estendido
+  baseSpace.amenities = amenitiesList;
+
+  let distance: number | null = null;
+  if (data.distance !== undefined && data.distance !== null) {
+    distance = typeof data.distance === 'number' ? data.distance : parseFloat(String(data.distance)) || null;
+  }
+  
+  // ✅ CORREÇÃO: Localização - Prioridade correta
+  let location = undefined;
+  if (data.location) {
+    location = data.location;
+  } else if (data.locality && data.province) {
+    location = `${data.locality}, ${data.province}`;
+  } else if (data.hotel?.locality && data.hotel?.province) {
+    location = `${data.hotel.locality}, ${data.hotel.province}`;
+  } else if (data.hotel?.locality) {
+    location = data.hotel.locality;
+  } else if (data.locality) {
+    location = data.locality;
+  }
+  
   const extendedSpace: ExtendedEventSpace = {
     ...baseSpace,
-    distance, // ✅ SEMPRE definido: number ou null
-    thumbnail: data.images?.[0] || '',
-    location: data.hotel?.locality 
-      ? `${data.hotel.locality}, ${data.hotel.province}`
-      : undefined,
-    hotel: data.hotel || null,
+    distance,
+    thumbnail: Array.isArray(data.images) && data.images.length > 0 
+      ? (typeof data.images[0] === 'string' ? data.images[0] : data.images[0]?.url || '')
+      : '',
+    location,
+    hotel: hotel,
     capacityTheater: data.capacityTheater || data.capacity_theater || null,
     capacityClassroom: data.capacityClassroom || data.capacity_classroom || null,
     capacityBanquet: data.capacityBanquet || data.capacity_banquet || null,
     capacityStanding: data.capacityStanding || data.capacity_standing || null,
     capacityCocktail: data.capacityCocktail || data.capacity_cocktail || null,
+    amenities: amenitiesList,
   };
 
   return extendedSpace;
@@ -176,28 +271,45 @@ export default function EventSpacesSearchPage() {
   const [searchParams, setSearchParams] = useState<ExtendedSearchParams>({});
   const [showFilters, setShowFilters] = useState(true);
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
+  
+  // ============================================
+  // ✅ CORREÇÃO 7: Estados separados para localização
+  // ============================================
   const [locationQuery, setLocationQuery] = useState('');
+  const [locality, setLocality] = useState('');
+  const [province, setProvince] = useState('');
+  
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // ✅ CORREÇÃO: Obter parâmetros da URL
+  // ============================================
+  // ✅ CORREÇÃO 8: Obter parâmetros da URL
+  // ============================================
   useEffect(() => {
     const params = new URLSearchParams(search);
     
+    const localityParam = params.get('locality') || '';
+    const provinceParam = params.get('province') || '';
+    
+    setLocality(localityParam);
+    setProvince(provinceParam);
+    
+    const sortByParam = params.get('sortBy') as SortByType | null;
+    
     const paramsObj: ExtendedSearchParams = {
       query: params.get('query') || undefined,
-      locality: params.get('locality') || '',
-      province: params.get('province') || '',
+      locality: localityParam,
+      province: provinceParam,
       startDate: params.get('startDate') || new Date().toISOString().split('T')[0],
       endDate: params.get('endDate') || undefined,
       capacity: parseInt(params.get('capacity') || '50'),
       eventType: params.get('eventType') || '',
       maxPricePerDay: parseInt(params.get('maxPricePerDay') || '50000'),
       hotelId: params.get('hotelId') || undefined,
-      sortBy: params.get('sortBy') || 'distance',
+      sortBy: sortByParam || 'distance',
       page: parseInt(params.get('page') || '1'),
       radius: parseInt(params.get('radius') || '50'),
       locationId: params.get('locationId') || undefined,
@@ -213,29 +325,18 @@ export default function EventSpacesSearchPage() {
     setSearchParams(paramsObj);
     setCurrentPage(paramsObj.page || 1);
     
-    if (paramsObj.locality) {
-      setLocationQuery(paramsObj.locality);
+    if (localityParam) {
+      if (provinceParam) {
+        setLocationQuery(`${localityParam}, ${provinceParam}`);
+      } else {
+        setLocationQuery(localityParam);
+      }
     }
   }, [search]);
 
-  // Função para lidar com a visualização de detalhes do espaço de evento
-  const handleViewEventSpaceDetails = (space: any) => {
-    if (!space?.id) {
-      console.error('❌ Event Space ID não encontrado:', space);
-      toast({
-        title: "Erro",
-        description: "Espaço de evento não encontrado",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Usar slug se disponível, caso contrário ID
-    const identifier = space.slug || space.id;
-    setLocation(`/event-spaces/${identifier}`);
-  };
-
-  // ✅ CORREÇÃO: Buscar sugestões com conversão de tipos
+  // ============================================
+  // ✅ CORREÇÃO 9: Buscar sugestões - TIPAGEM CORRETA
+  // ============================================
   const fetchSuggestions = useCallback(
     debounce(async (query: string) => {
       if (query.length < 2) {
@@ -246,13 +347,12 @@ export default function EventSpacesSearchPage() {
       setIsLoadingSuggestions(true);
       try {
         const suggestions = await locationsService.searchSuggestions(query, 5);
-        // Converter ServiceLocationSuggestion para LocationSuggestion
-        const convertedSuggestions: LocationSuggestion[] = suggestions.map(suggestion => ({
+        const convertedSuggestions: LocationSuggestion[] = suggestions.map((suggestion: ServiceLocationSuggestion) => ({
           id: suggestion.id,
           name: suggestion.name,
-          province: suggestion.province,
-          district: suggestion.district,
-          locality: suggestion.locality,
+          province: suggestion.province ?? null,
+          district: suggestion.district ?? null,
+          locality: suggestion.locality ?? null,
           lat: suggestion.lat ?? null,
           lng: suggestion.lng ?? null,
           type: suggestion.type,
@@ -271,7 +371,7 @@ export default function EventSpacesSearchPage() {
         setIsLoadingSuggestions(false);
       }
     }, 300),
-    []
+    [toast]
   );
 
   useEffect(() => {
@@ -296,19 +396,20 @@ export default function EventSpacesSearchPage() {
     };
   }, []);
 
-  // Buscar espaços para eventos com BUSCA INTELIGENTE
+  // ============================================
+  // ✅ CORREÇÃO 10: Buscar espaços para eventos - TIPAGEM CORRETA
+  // ============================================
   const { data: spacesResponse, isLoading, refetch, error } = useQuery({
     queryKey: ['eventSpacesSearch', searchParams],
     queryFn: async () => {
       try {
-        // ✅ BUSCA INTELIGENTE: Se temos locationId E coordenadas, buscar por PROXIMIDADE
         if (searchParams.locationId && searchParams.lat && searchParams.lng) {
           console.log('📍 [EventSpaces] Buscando espaços por proximidade:', {
             lat: searchParams.lat,
             lng: searchParams.lng,
             radius: searchParams.radius || 50,
-            locality: searchParams.locality,
-            province: searchParams.province
+            locality: locality,
+            province: province
           });
           
           const response = await eventSpaceService.searchNearbyEventSpaces(
@@ -325,12 +426,10 @@ export default function EventSpacesSearchPage() {
             }
           );
           
-          // ✅ Calcular distâncias REAIS para espaços com coordenadas válidas
           if (response.success && response.data) {
             const spacesWithDistance = response.data.map((space: any) => {
               const parsedSpace = convertToEventSpace(space);
               
-              // Se já tem distance, manter; se não, calcular
               if (parsedSpace.distance === null) {
                 const spaceLat = parseCoordinate(space.lat);
                 const spaceLng = parseCoordinate(space.lng);
@@ -359,16 +458,14 @@ export default function EventSpacesSearchPage() {
           return response;
         }
         
-        // ✅ FALLBACK: busca tradicional usando locality/province
         console.log('📍 [EventSpaces] Buscando espaços por localização exata:', {
-          locality: searchParams.locality,
-          province: searchParams.province,
+          locality: locality || searchParams.locality,
+          province: province || searchParams.province,
         });
         
-        // Criar filtros para a API (sem os campos frontend-only)
         const filters: SearchParamsType = {
-          locality: searchParams.locality,
-          province: searchParams.province,
+          locality: locality || searchParams.locality,
+          province: province || searchParams.province,
           startDate: searchParams.startDate,
           endDate: searchParams.endDate,
           capacity: searchParams.capacity,
@@ -383,7 +480,7 @@ export default function EventSpacesSearchPage() {
         if (response.success && response.data) {
           const spacesData = Array.isArray(response.data) ? response.data : [];
           const perPage = 9;
-          setTotalPages(Math.ceil(spacesData.length / perPage));
+          setTotalPages(Math.max(1, Math.ceil(spacesData.length / perPage)));
         }
         
         return response;
@@ -397,11 +494,13 @@ export default function EventSpacesSearchPage() {
         throw error;
       }
     },
-    enabled: !!searchParams.locality || !!searchParams.locationId,
+    enabled: !!(locality || searchParams.locality || searchParams.locationId),
     retry: 2,
   });
 
-  // Converter dados da API para o tipo ExtendedEventSpace
+  // ============================================
+  // ✅ CORREÇÃO 11: Converter dados da API
+  // ============================================
   const spaces: ExtendedEventSpace[] = React.useMemo(() => {
     if (!spacesResponse?.data) return [];
     
@@ -411,7 +510,9 @@ export default function EventSpacesSearchPage() {
 
   const totalResults = spaces.length || 0;
 
-  // ✅ CORREÇÃO CRÍTICA: Ordenar espaços - distance agora é sempre number | null (não undefined)
+  // ============================================
+  // ✅ CORREÇÃO 12: Ordenar espaços - TIPAGEM CORRETA
+  // ============================================
   const sortedSpaces = useCallback(() => {
     const spacesCopy = [...spaces];
     
@@ -419,9 +520,11 @@ export default function EventSpacesSearchPage() {
     
     switch (sortBy) {
       case 'price':
-        return spacesCopy.sort((a, b) => 
-          (parseInt(a.basePricePerDay || '0') - parseInt(b.basePricePerDay || '0'))
-        );
+        return spacesCopy.sort((a, b) => {
+          const priceA = parseInt(String(a.basePricePerDay || '0'));
+          const priceB = parseInt(String(b.basePricePerDay || '0'));
+          return priceA - priceB;
+        });
       case 'capacity':
         return spacesCopy.sort((a, b) => 
           (b.capacityMax || 0) - (a.capacityMax || 0)
@@ -433,21 +536,21 @@ export default function EventSpacesSearchPage() {
       case 'distance':
       default:
         return spacesCopy.sort((a, b) => {
-          // ✅ CORREÇÃO: distance é SEMPRE number | null, nunca undefined
           const distA = a.distance;
           const distB = b.distance;
           
           if (distA === null && distB === null) return 0;
-          if (distA === null) return 1; // Sem distância vai para o final
-          if (distB === null) return -1; // Com distância vem antes
+          if (distA === null) return 1;
+          if (distB === null) return -1;
           
-          // ✅ AGORA distA e distB são numbers com certeza
           return distA - distB;
         });
     }
   }, [spaces, searchParams.sortBy]);
 
-  // ✅ CORREÇÃO: Manipulador de seleção de localização
+  // ============================================
+  // ✅ CORREÇÃO 13: Manipulador de seleção de localização
+  // ============================================
   const handleLocationSelect = (suggestion: LocationSuggestion) => {
     console.log('📍 [EventSpaces] Localização selecionada:', {
       name: suggestion.name,
@@ -461,12 +564,17 @@ export default function EventSpacesSearchPage() {
     const displayName = suggestion.district || suggestion.name;
     setLocationQuery(displayName);
     
-    // ✅ SALVAR TODOS OS DADOS para busca inteligente
+    const newLocality = suggestion.locality || suggestion.name;
+    const newProvince = suggestion.province || '';
+    
+    setLocality(newLocality);
+    setProvince(newProvince);
+    
     setSearchParams(prev => ({
       ...prev,
       locationId: suggestion.id,
-      locality: suggestion.locality || suggestion.name,
-      province: suggestion.province || '',
+      locality: newLocality,
+      province: newProvince,
       lat: suggestion.lat ?? undefined,
       lng: suggestion.lng ?? undefined
     }));
@@ -474,17 +582,34 @@ export default function EventSpacesSearchPage() {
     setLocationSuggestions([]);
   };
 
-  // ✅ CORREÇÃO: Handle search com todos os parâmetros
-  const handleSearch = () => {
+  // ============================================
+  // ✅ CORREÇÃO 14: Handle search
+  // ============================================
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    console.log('🔍 Executando busca com:', {
+      locality,
+      province,
+      locationQuery
+    });
+    
+    setSearchParams(prev => ({
+      ...prev,
+      locality: locality || undefined,
+      province: province || undefined,
+    }));
+    
     const params = new URLSearchParams();
-    if (searchParams.locality) params.set('locality', searchParams.locality);
-    if (searchParams.province) params.set('province', searchParams.province || '');
-    if (searchParams.startDate) params.set('startDate', searchParams.startDate || '');
+    
+    if (locality) params.set('locality', locality);
+    if (province) params.set('province', province);
+    if (searchParams.startDate) params.set('startDate', searchParams.startDate);
     if (searchParams.endDate) params.set('endDate', searchParams.endDate || '');
     if (searchParams.capacity) params.set('capacity', searchParams.capacity.toString());
     if (searchParams.eventType) params.set('eventType', searchParams.eventType || '');
     if (searchParams.maxPricePerDay) params.set('maxPricePerDay', searchParams.maxPricePerDay?.toString() || '50000');
-    if (searchParams.sortBy) params.set('sortBy', searchParams.sortBy || '');
+    if (searchParams.sortBy) params.set('sortBy', searchParams.sortBy);
     if (searchParams.page) params.set('page', searchParams.page.toString());
     if (searchParams.radius) params.set('radius', searchParams.radius?.toString() || '50');
     if (searchParams.locationId) params.set('locationId', searchParams.locationId || '');
@@ -499,12 +624,16 @@ export default function EventSpacesSearchPage() {
   };
 
   const handleResetFilters = () => {
+    setLocality('');
+    setProvince('');
+    setLocationQuery('');
+    
     setSearchParams({
-      locality: searchParams.locality,
-      province: searchParams.province,
-      locationId: searchParams.locationId,
-      lat: searchParams.lat,
-      lng: searchParams.lng,
+      locality: '',
+      province: '',
+      locationId: undefined,
+      lat: undefined,
+      lng: undefined,
       startDate: new Date().toISOString().split('T')[0],
       capacity: 50,
       eventType: '',
@@ -523,15 +652,24 @@ export default function EventSpacesSearchPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // ============================================
+  // ✅ CORREÇÃO 15: Handler para mudança de ordenação
+  // ============================================
+  const handleSortChange = (value: string) => {
+    if (value === 'distance' || value === 'price' || value === 'capacity' || value === 'rating') {
+      setSearchParams(prev => ({ ...prev, sortBy: value }));
+    }
+  };
+
   const eventTypeOptions = [
     { id: 'conference', label: 'Conferência', icon: <Briefcase className="w-4 h-4" /> },
     { id: 'wedding', label: 'Casamento', icon: <Heart className="w-4 h-4" /> },
     { id: 'party', label: 'Festa', icon: <PartyPopper className="w-4 h-4" /> },
     { id: 'concert', label: 'Concerto', icon: <Music className="w-4 h-4" /> },
     { id: 'seminar', label: 'Seminário', icon: <Mic className="w-4 h-4" /> },
-    { id: 'exhibition', label: 'Exposição', icon: '🎨' },
-    { id: 'corporate', label: 'Corporativo', icon: '🏢' },
-    { id: 'social', label: 'Social', icon: '🎉' },
+    { id: 'exhibition', label: 'Exposição', icon: <span>🎨</span> },
+    { id: 'corporate', label: 'Corporativo', icon: <span>🏢</span> },
+    { id: 'social', label: 'Social', icon: <span>🎉</span> },
   ];
 
   const amenitiesOptions = [
@@ -545,7 +683,9 @@ export default function EventSpacesSearchPage() {
     { id: 'security', label: 'Segurança', icon: '👮' },
   ];
 
-  // Renderizar paginação
+  // ============================================
+  // ✅ CORREÇÃO 16: Renderizar paginação
+  // ============================================
   const renderPagination = () => {
     const pages = [];
     const maxVisiblePages = 5;
@@ -574,11 +714,36 @@ export default function EventSpacesSearchPage() {
     return pages;
   };
 
-  // Paginar espaços
+  // ============================================
+  // ✅ CORREÇÃO 17: Paginar espaços
+  // ============================================
   const paginatedSpaces = React.useMemo(() => {
     const startIndex = (currentPage - 1) * 9;
     return sortedSpaces().slice(startIndex, startIndex + 9);
   }, [sortedSpaces, currentPage]);
+
+  // ============================================
+  // ✅ DEBUG: Console log para verificar dados
+  // ============================================
+  console.log('🔍 DEBUG - EventSpacesSearchPage:', {
+    totalSpaces: spaces.length,
+    searchParams: {
+      locality: searchParams.locality,
+      province: searchParams.province,
+      locationId: searchParams.locationId,
+      lat: searchParams.lat,
+      lng: searchParams.lng,
+      radius: searchParams.radius,
+      sortBy: searchParams.sortBy,
+    },
+    sampleSpace: spaces.length > 0 ? {
+      name: spaces[0].name,
+      basePricePerDay: spaces[0].basePricePerDay,
+      distance: spaces[0].distance,
+      location: spaces[0].location,
+      amenitiesCount: spaces[0].amenities?.length || 0,
+    } : null,
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
@@ -607,107 +772,134 @@ export default function EventSpacesSearchPage() {
           {/* Barra de busca rápida */}
           <Card className="bg-white/10 backdrop-blur-sm border-white/20">
             <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Localização */}
-                <div className="relative" ref={suggestionsRef}>
-                  <Label className="text-white text-sm mb-2 block">Localização</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-300" />
-                    <Input
-                      type="text"
-                      placeholder="Onde será o evento?"
-                      className="pl-10 bg-white/20 border-white/30 text-white placeholder:text-white/70 focus:ring-2 focus:ring-white/50"
-                      value={locationQuery}
-                      onChange={(e) => setLocationQuery(e.target.value)}
-                      onFocus={() => {
-                        if (locationQuery.length >= 2) {
-                          fetchSuggestions(locationQuery);
-                        }
-                      }}
-                    />
-                    {isLoadingSuggestions && (
-                      <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white animate-spin" />
+              <form onSubmit={handleSearch}>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {/* Localização - Campo principal */}
+                  <div className="relative" ref={suggestionsRef}>
+                    <Label className="text-white text-sm mb-2 block">Localização</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-300" />
+                      <Input
+                        type="text"
+                        placeholder="Onde será o evento?"
+                        className="pl-10 bg-white/20 border-white/30 text-white placeholder:text-white/70 focus:ring-2 focus:ring-white/50"
+                        value={locationQuery}
+                        onChange={(e) => setLocationQuery(e.target.value)}
+                        onFocus={() => {
+                          if (locationQuery.length >= 2) {
+                            fetchSuggestions(locationQuery);
+                          }
+                        }}
+                      />
+                      {isLoadingSuggestions && (
+                        <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white animate-spin" />
+                      )}
+                    </div>
+                    
+                    {/* Sugestões */}
+                    {locationSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto">
+                        {locationSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion.id}
+                            type="button"
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                            onClick={() => handleLocationSelect(suggestion)}
+                          >
+                            <MapPin className="w-4 h-4 text-gray-400" />
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900">
+                                {suggestion.district || suggestion.name}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {suggestion.province || 'Moçambique'}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                {suggestion.lat !== null && suggestion.lng !== null 
+                                  ? '✅ Tem coordenadas' 
+                                  : 'ℹ️ Busca por nome'}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  
-                  {/* Sugestões */}
-                  {locationSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto">
-                      {locationSuggestions.map((suggestion) => (
-                        <button
-                          key={suggestion.id}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 transition-colors"
-                          onClick={() => handleLocationSelect(suggestion)}
-                        >
-                          <MapPin className="w-4 h-4 text-gray-400" />
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900">
-                              {suggestion.district || suggestion.name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {suggestion.province || 'Moçambique'}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-1">
-                              {suggestion.lat !== null && suggestion.lng !== null 
-                                ? '✅ Tem coordenadas' 
-                                : 'ℹ️ Busca por nome'}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
-                {/* Data */}
-                <div>
-                  <Label className="text-white text-sm mb-2 block">Data do evento</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-300" />
+                  {/* Campo específico para Localidade */}
+                  <div className="flex-1">
+                    <Label className="text-white text-sm mb-2 block">Localidade</Label>
                     <Input
-                      type="date"
-                      className="pl-10 bg-white/20 border-white/30 text-white"
-                      value={searchParams.startDate || ''}
-                      min={new Date().toISOString().split('T')[0]}
-                      onChange={(e) => setSearchParams(prev => ({ ...prev, startDate: e.target.value }))}
+                      type="text"
+                      placeholder="Ex: Costa do Sol"
+                      className="bg-white/20 border-white/30 text-white placeholder:text-white/70"
+                      value={locality}
+                      onChange={(e) => setLocality(e.target.value)}
                     />
                   </div>
-                </div>
 
-                {/* Capacidade */}
-                <div>
-                  <Label className="text-white text-sm mb-2 block">Capacidade</Label>
-                  <Select
-                    value={searchParams.capacity?.toString() || "50"}
-                    onValueChange={(value) => setSearchParams(prev => ({ ...prev, capacity: parseInt(value) }))}
-                  >
-                    <SelectTrigger className="bg-white/20 border-white/30 text-white">
-                      <Users className="w-4 h-4 mr-2" />
-                      <SelectValue placeholder="Número de pessoas" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">Até 10 pessoas</SelectItem>
-                      <SelectItem value="50">Até 50 pessoas</SelectItem>
-                      <SelectItem value="100">Até 100 pessoas</SelectItem>
-                      <SelectItem value="200">Até 200 pessoas</SelectItem>
-                      <SelectItem value="500">Até 500 pessoas</SelectItem>
-                      <SelectItem value="1000">Mais de 500 pessoas</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  {/* Campo específico para Província */}
+                  <div className="flex-1">
+                    <Label className="text-white text-sm mb-2 block">Província</Label>
+                    <Input
+                      type="text"
+                      placeholder="Ex: Cidade de Maputo"
+                      className="bg-white/20 border-white/30 text-white placeholder:text-white/70"
+                      value={province}
+                      onChange={(e) => setProvince(e.target.value)}
+                    />
+                  </div>
 
-                {/* Botão de busca */}
-                <div className="flex items-end">
-                  <Button 
-                    className="w-full bg-white text-purple-600 hover:bg-gray-100 h-10 font-medium"
-                    onClick={handleSearch}
-                    disabled={isLoading || !locationQuery}
-                  >
-                    <Search className="w-4 h-4 mr-2" />
-                    {isLoading ? 'Buscando...' : 'Buscar Espaços'}
-                  </Button>
+                  {/* Data */}
+                  <div>
+                    <Label className="text-white text-sm mb-2 block">Data do evento</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-300" />
+                      <Input
+                        type="date"
+                        className="pl-10 bg-white/20 border-white/30 text-white"
+                        value={searchParams.startDate || ''}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setSearchParams(prev => ({ ...prev, startDate: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Capacidade */}
+                  <div>
+                    <Label className="text-white text-sm mb-2 block">Capacidade</Label>
+                    <Select
+                      value={searchParams.capacity?.toString() || "50"}
+                      onValueChange={(value) => setSearchParams(prev => ({ ...prev, capacity: parseInt(value) }))}
+                    >
+                      <SelectTrigger className="bg-white/20 border-white/30 text-white">
+                        <Users className="w-4 h-4 mr-2" />
+                        <SelectValue placeholder="Número de pessoas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">Até 10 pessoas</SelectItem>
+                        <SelectItem value="50">Até 50 pessoas</SelectItem>
+                        <SelectItem value="100">Até 100 pessoas</SelectItem>
+                        <SelectItem value="200">Até 200 pessoas</SelectItem>
+                        <SelectItem value="500">Até 500 pessoas</SelectItem>
+                        <SelectItem value="1000">Mais de 500 pessoas</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Botão de busca */}
+                  <div className="flex items-end">
+                    <Button 
+                      type="submit"
+                      className="w-full bg-white text-purple-600 hover:bg-gray-100 h-10 font-medium"
+                      disabled={isLoading || (!locality && !province && !locationQuery)}
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      {isLoading ? 'Buscando...' : 'Buscar Espaços'}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              </form>
             </CardContent>
           </Card>
         </div>
@@ -852,9 +1044,13 @@ export default function EventSpacesSearchPage() {
                   <h2 className="text-2xl font-bold text-gray-900">
                     {isLoading ? 'Buscando espaços...' : `Espaços encontrados (${totalResults})`}
                   </h2>
-                  {searchParams.locality && (
+                  {(locality || searchParams.locality) && (
                     <div className="text-gray-600 mt-1">
-                      <p>em {searchParams.locality}</p>
+                      <p>
+                        em {locality || searchParams.locality}
+                        {province && `, ${province}`}
+                        {searchParams.province && !province && `, ${searchParams.province}`}
+                      </p>
                       {searchParams.lat && searchParams.lng && (
                         <p className="text-sm text-blue-600">
                           ✅ Buscando por proximidade (raio: {searchParams.radius || 50}km)
@@ -871,7 +1067,7 @@ export default function EventSpacesSearchPage() {
                 <div className="flex items-center gap-4">
                   <Select
                     value={searchParams.sortBy || 'distance'}
-                    onValueChange={(value) => setSearchParams(prev => ({ ...prev, sortBy: value }))}
+                    onValueChange={handleSortChange}
                   >
                     <SelectTrigger className="w-[180px]">
                       <SelectValue placeholder="Ordenar por" />
@@ -931,8 +1127,8 @@ export default function EventSpacesSearchPage() {
                     <div className="text-6xl mb-4">🎪</div>
                     <h3 className="text-xl font-semibold mb-2">Nenhum espaço encontrado</h3>
                     <p className="text-gray-600 mb-6 max-w-md mx-auto">
-                      {searchParams.locality 
-                        ? `Não encontramos espaços em "${searchParams.locality}". Tente buscar em outra localização ou ajustar seus filtros.`
+                      {(locality || searchParams.locality) 
+                        ? `Não encontramos espaços em "${locality || searchParams.locality}"${province ? `, ${province}` : ''}. Tente buscar em outra localização ou ajustar seus filtros.`
                         : 'Digite uma localização para buscar espaços disponíveis.'
                       }
                     </p>
@@ -955,7 +1151,7 @@ export default function EventSpacesSearchPage() {
                           <span className="font-medium text-purple-800">
                             {searchParams.lat && searchParams.lng 
                               ? `Buscando por proximidade em raio de ${searchParams.radius || 50}km` 
-                              : `Buscando em: ${searchParams.locality || 'Moçambique'}`}
+                              : `Buscando em: ${locality || searchParams.locality || 'Moçambique'}${province ? `, ${province}` : ''}`}
                           </span>
                           {searchParams.startDate && (
                             <div className="text-sm text-purple-700 mt-1">
@@ -1013,10 +1209,8 @@ export default function EventSpacesSearchPage() {
                   {/* Lista de espaços */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {paginatedSpaces.map((space) => {
-                      // ✅ CORREÇÃO: distance agora é SEMPRE number | null, nunca undefined
                       const distance = space.distance;
                       
-                      // ✅ CORREÇÃO: distance é number | null
                       let distanceColor = 'bg-gray-100 text-gray-800 border-gray-300';
                       let distanceText = 'Localização não disponível';
                       
@@ -1035,7 +1229,6 @@ export default function EventSpacesSearchPage() {
                       
                       return (
                         <div key={space.id} className="group relative animate-in fade-in slide-in-from-bottom-2 duration-300">
-                          {/* Badge de distância */}
                           <div className="absolute top-3 right-3 z-10">
                             <Badge className={`${distanceColor}`}>
                               {distanceText}
@@ -1129,7 +1322,6 @@ export default function EventSpacesSearchPage() {
                   </div>
                 </div>
                 
-                {/* Informações extras */}
                 <div className="mt-6 pt-6 border-t border-purple-200">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-purple-700">
                     <div className="flex items-center gap-2">

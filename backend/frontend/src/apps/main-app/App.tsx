@@ -1,4 +1,7 @@
-// src/apps/main-app/AppRouter.tsx - COMPLETO E CORRIGIDO
+// src/apps/main-app/AppRouter.tsx - VERSÃO FINAL CORRIGIDA
+// ✅ ADICIONADO: Rota de confirmação para eventos
+// ✅ CORREÇÃO: Path exato que o frontend está a usar
+
 import { Switch, Route } from 'wouter';
 import { queryClient } from '@/shared/lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -27,7 +30,7 @@ import EventSpacesSearchPage from './pages/EventSpacesSearchPage';
 import EventSpaceDetailsPage from './pages/EventSpaceDetailsPage';
 import EventSpaceBookingPage from './pages/EventSpaceBookingPage';
 
-// Import da página de confirmação de reserva
+// ✅ Import da página de confirmação de reserva
 import BookingConfirmationPage from './pages/BookingConfirmationPage';
 
 function MainApp() {
@@ -49,11 +52,11 @@ function MainApp() {
               </Route>
               
               <Route path="/hotels/:id">
-                {(params) => <HotelDetailsPage />}
+                {(params) => <HotelDetailsPage key={params.id} />}
               </Route>
               
               <Route path="/hotels/:id/book">
-                {(params) => <HotelBookingPage />}
+                {(params) => <HotelBookingPage key={params.id} />}
               </Route>
 
               {/* ========== ROTAS DE EVENT SPACES ========== */}
@@ -62,16 +65,27 @@ function MainApp() {
               </Route>
               
               <Route path="/event-spaces/:id">
-                {(params) => <EventSpaceDetailsPage />}
+                {(params) => <EventSpaceDetailsPage key={params.id} />}
               </Route>
               
               <Route path="/event-spaces/:id/book">
-                {(params) => <EventSpaceBookingPage />}
+                {(params) => <EventSpaceBookingPage key={params.id} />}
               </Route>
 
-              {/* ========== ROTA DE CONFIRMAÇÃO DE RESERVA ========== */}
+              {/* ========== ✅ ROTA DE CONFIRMAÇÃO DE EVENTOS ========== */}
+              {/* ESTA É A ROTA QUE ESTAVA FALTANDO! */}
+              <Route path="/event-spaces/:id/booking-confirmation">
+                {(params) => <BookingConfirmationPage key={params.id} />}
+              </Route>
+
+              {/* ========== ROTA DE CONFIRMAÇÃO DE HOTÉIS ========== */}
               <Route path="/bookings/:type/:bookingId/confirmation">
-                {(params) => <BookingConfirmationPage />}
+                {(params) => <BookingConfirmationPage key={params.bookingId} />}
+              </Route>
+
+              {/* ========== ROTA GENÉRICA DE CONFIRMAÇÃO (FALLBACK) ========== */}
+              <Route path="/booking-confirmation">
+                <BookingConfirmationPage />
               </Route>
 
               {/* ========== ROTAS PRINCIPAIS DO APP ========== */}
@@ -108,7 +122,7 @@ function MainApp() {
                 </ProtectedRoute>
               </Route>
 
-              {/* Rota 404 */}
+              {/* Rota 404 - SEMPRE por último */}
               <Route component={NotFound} />
             </Switch>
           </main>

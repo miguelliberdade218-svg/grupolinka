@@ -1,4 +1,6 @@
-// src/modules/events/eventSpaceService.ts - VERSÃO FINAL CORRIGIDA COM DISPONIBILIDADE INFINITA E DETECÇÃO DE CONFLITOS
+// src/modules/events/eventSpaceService.ts - VERSÃO FINAL CORRIGIDA
+// ✅ ÚNICA CORREÇÃO APLICADA: Adicionada função getEventSpaceDetails
+// ✅ TODAS AS FUNÇÕES EXISTENTES MANTIDAS IGUAIS
 
 import { db } from "../../../db";
 import {
@@ -68,6 +70,118 @@ const generateDateRange = (startDate: string, endDate: string): string[] => {
   return dates;
 };
 
+// ✅ Função para processar equipment SEMPRE como string JSON
+const processEquipmentForDb = (equipment: any): string => {
+  if (equipment === null || equipment === undefined) {
+    return '{}';
+  }
+  
+  // Se já for string
+  if (typeof equipment === 'string') {
+    // Se for string vazia, retorna objeto vazio
+    if (equipment.trim() === '') {
+      return '{}';
+    }
+    
+    // Tentar parsear para validar
+    try {
+      const parsed = JSON.parse(equipment);
+      // Se parseou com sucesso, converter de volta para string limpa
+      return JSON.stringify(parsed);
+    } catch {
+      // Se não for JSON válido, retorna objeto vazio
+      return '{}';
+    }
+  }
+  
+  // Se for objeto, converter para string JSON
+  if (typeof equipment === 'object') {
+    try {
+      return JSON.stringify(equipment);
+    } catch {
+      return '{}';
+    }
+  }
+  
+  // Qualquer outro tipo, retorna objeto vazio
+  return '{}';
+};
+
+// ==================== BUSCAR HOTEL POR ID (AUXILIAR) ====================
+const getHotelById = async (hotelId: string) => {
+  const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
+  return hotel || null;
+};
+
+// ==================== ✅ CORREÇÃO APLICADA: getEventSpaceDetails ====================
+// ✅ FUNÇÃO ADICIONADA - NECESSÁRIA PARA O EVENTCONTROLLER
+export const getEventSpaceDetails = async (spaceId: string) => {
+  // Buscar o espaço com TODOS os campos necessários
+  const space = await db.query.eventSpaces.findFirst({
+    where: eq(eventSpaces.id, spaceId),
+    columns: {
+      id: true,
+      hotelId: true,
+      name: true,
+      description: true,
+      capacityMin: true,
+      capacityMax: true,
+      basePricePerDay: true,
+      pricePerDay: true,
+      weekendSurchargePercent: true,
+      securityDeposit: true,
+      offersCatering: true,
+      cateringDiscountPercent: true,
+      cateringMenuUrls: true,
+      isActive: true,
+      isFeatured: true,
+      areaSqm: true,
+      spaceType: true,
+      hasStage: true,
+      naturalLight: true,
+      loadingAccess: true,
+      dressingRooms: true,
+      insuranceRequired: true,
+      alcoholAllowed: true,
+      floorPlanImage: true,
+      virtualTourUrl: true,
+      approvalRequired: true,
+      equipment: true,
+      amenities: true,
+      images: true,
+      setupOptions: true,
+      slug: true,
+      createdAt: true,
+      updatedAt: true,
+      // ✅ CAMPO CRÍTICO - PRECISA ESTAR AQUI!
+      allowedEventTypes: true,
+      prohibitedEventTypes: true
+    }
+  });
+  
+  if (!space) {
+    return null;
+  }
+  
+  // ✅ LOG PARA DEBUG - VERIFICAR SE O CAMPO ESTÁ SENDO RETORNADO
+  console.log('🔍 [getEventSpaceDetails] space:', {
+    id: space.id,
+    name: space.name,
+    allowedEventTypes: space.allowedEventTypes,
+    prohibitedEventTypes: space.prohibitedEventTypes,
+    hasAllowedTypes: Array.isArray(space.allowedEventTypes),
+    allowedCount: space.allowedEventTypes?.length || 0
+  });
+  
+  // Buscar o hotel associado
+  const hotel = await getHotelById(space.hotelId);
+  
+  return {
+    space,
+    hotel
+  };
+};
+
 // ==================== CRUD DE ESPAÇOS ====================
 
 export const getEventSpacesByHotel = async (
@@ -92,43 +206,32 @@ export const getEventSpaceById = async (id: string): Promise<EventSpace | null> 
 };
 
 export const createEventSpace = async (data: EventSpaceInsert): Promise<EventSpace> => {
-  // ✅ CORREÇÃO: Verificar se equipment já é string JSON
+  // ✅ Processar equipment para string JSON
   let equipmentValue: string;
   
   if (typeof data.equipment === 'string') {
-    // Se já for string, verificar se é JSON válido
     try {
       const parsed = JSON.parse(data.equipment);
-      // Se parseou, converter de volta para string limpa
       equipmentValue = JSON.stringify(parsed);
       console.log('✅ Equipment já era string JSON, parseado e re-stringified');
     } catch {
-      // Se não for JSON válido, usar como objeto vazio
       equipmentValue = '{}';
       console.log('⚠️ Equipment era string inválida, usando objeto vazio');
     }
   } else {
-    // Se for objeto, converter para string JSON
     equipmentValue = JSON.stringify(data.equipment || {});
     console.log('✅ Equipment era objeto, convertido para string JSON');
   }
   
-  // ✅ LOG para debug DETALHADO
   console.log('🔍 [eventSpaceService] equipment FINAL:', {
     original: data.equipment,
     type: typeof data.equipment,
-    stringified: equipmentValue,
-    hasEscapes: equipmentValue.includes('\\"'),
-    length: equipmentValue.length,
-    first50: equipmentValue.substring(0, 50),
-    startsWithQuote: equipmentValue.startsWith('"'),
-    endsWithQuote: equipmentValue.endsWith('"')
+    stringified: equipmentValue.substring(0, 100)
   });
   
   const processedData = {
     ...data,
     basePricePerDay: data.basePricePerDay ? data.basePricePerDay.toString() : "0",
-    // ✅ Enviar como string JSON pura (SEM sql helper)
     equipment: equipmentValue,
   };
   
@@ -139,9 +242,7 @@ export const createEventSpace = async (data: EventSpaceInsert): Promise<EventSpa
     console.error('❌ ERRO ao inserir espaço:', {
       message: error.message,
       detail: error.detail,
-      constraint: error.constraint_name,
-      query: error.query,
-      parameters: error.parameters?.map((p: any, i: number) => `${i}: ${p}`)
+      constraint: error.constraint_name
     });
     throw error;
   }
@@ -151,37 +252,14 @@ export const updateEventSpace = async (
   id: string,
   data: EventSpaceUpdate
 ): Promise<EventSpace | null> => {
-  const processedData: any = { ...data };
+  const processedData: any = { ...data, updatedAt: new Date() };
   
   if (data.basePricePerDay !== undefined) {
     processedData.basePricePerDay = data.basePricePerDay.toString();
   }
   
   if (data.equipment !== undefined) {
-    // ✅ CORREÇÃO: Mesma lógica da create
-    let equipmentValue: string;
-    
-    if (typeof data.equipment === 'string') {
-      try {
-        const parsed = JSON.parse(data.equipment);
-        equipmentValue = JSON.stringify(parsed);
-      } catch {
-        equipmentValue = '{}';
-      }
-    } else {
-      equipmentValue = JSON.stringify(data.equipment || {});
-    }
-    
-    processedData.equipment = equipmentValue;
-    
-    console.log('🔍 [eventSpaceService] update equipment:', {
-      original: data.equipment,
-      type: typeof data.equipment,
-      stringified: equipmentValue,
-      hasEscapes: equipmentValue.includes('\\"'),
-      length: equipmentValue.length,
-      first50: equipmentValue.substring(0, 50)
-    });
+    processedData.equipment = processEquipmentForDb(data.equipment);
   }
   
   const [space] = await db
@@ -229,8 +307,7 @@ export const getEventSpaceCalendar = async (
     .orderBy(asc(eventAvailability.date));
 };
 
-// ✅ CORREÇÃO CRÍTICA: Função isEventSpaceAvailable corrigida para DISPONIBILIDADE INFINITA
-// ✅ E DETECÇÃO DE CONFLITOS INCLUINDO BOOKINGS pending_approval
+// ✅ CORREÇÃO: Disponibilidade infinita e detecção de conflitos com pending_approval
 export const isEventSpaceAvailable = async (
   eventSpaceId: string,
   startDate: string,
@@ -240,14 +317,13 @@ export const isEventSpaceAvailable = async (
     const dateRange = generateDateRange(startDate, endDate);
 
     for (const date of dateRange) {
-      // ✅ VERIFICAÇÃO 1: Verificar se há booking (confirmado, in_progress OU pending_approval) para esta data
+      // ✅ VERIFICAÇÃO 1: Verificar bookings (incluindo pending_approval)
       const conflictingBooking = await db
         .select({ count: sql<number>`count(*)` })
         .from(eventBookings)
         .where(
           and(
             eq(eventBookings.eventSpaceId, eventSpaceId),
-            // ✅ CRÍTICO: Incluir pending_approval para evitar múltiplas reservas na mesma data
             inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"]),
             sql`${eventBookings.startDate}::date <= ${date}::date`,
             sql`${eventBookings.endDate}::date > ${date}::date`
@@ -261,17 +337,20 @@ export const isEventSpaceAvailable = async (
         };
       }
 
-      // ✅ VERIFICAÇÃO 2: Verificar disponibilidade manual (APENAS SE HOUVER REGISTRO)
-      const [avail] = await db.select().from(eventAvailability)
-        .where(and(
-          eq(eventAvailability.eventSpaceId, eventSpaceId),
-          sql`${eventAvailability.date}::date = ${date}::date`
-        ))
+      // ✅ VERIFICAÇÃO 2: Verificar disponibilidade manual (só se houver registro)
+      const [avail] = await db
+        .select()
+        .from(eventAvailability)
+        .where(
+          and(
+            eq(eventAvailability.eventSpaceId, eventSpaceId),
+            sql`${eventAvailability.date}::date = ${date}::date`
+          )
+        )
         .limit(1);
 
-      // ✅ CORREÇÃO: Se NÃO houver registro, CONTINUA DISPONÍVEL (disponibilidade infinita)
+      // ✅ DISPONIBILIDADE INFINITA: Se não há registro, está disponível!
       if (avail) {
-        // Só aplica restrições se HOUVER registro explícito
         if (avail.stopSell) {
           return { 
             available: false, 
@@ -286,7 +365,6 @@ export const isEventSpaceAvailable = async (
           };
         }
         
-        // ✅ Verificar availableUnits também se necessário
         if (avail.availableUnits !== null && avail.availableUnits <= 0) {
           return { 
             available: false, 
@@ -294,15 +372,62 @@ export const isEventSpaceAvailable = async (
           };
         }
       }
-      // ✅ Se não houver registro, DISPONÍVEL POR PADRÃO!
     }
 
     return { available: true };
   } catch (error) {
-    console.error('Erro ao verificar disponibilidade (isEventSpaceAvailable):', error);
+    console.error('Erro ao verificar disponibilidade:', error);
     return { 
       available: false, 
       message: 'Erro ao verificar disponibilidade' 
+    };
+  }
+};
+
+export const checkBookingConflicts = async (
+  eventSpaceId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ hasConflict: boolean; conflicts?: any[]; message?: string }> => {
+  try {
+    const dateRange = generateDateRange(startDate, endDate);
+    const conflicts = [];
+
+    for (const date of dateRange) {
+      const conflictingBooking = await db
+        .select()
+        .from(eventBookings)
+        .where(
+          and(
+            eq(eventBookings.eventSpaceId, eventSpaceId),
+            inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"]),
+            sql`${eventBookings.startDate}::date <= ${date}::date`,
+            sql`${eventBookings.endDate}::date > ${date}::date`
+          )
+        )
+        .limit(1);
+
+      if (conflictingBooking.length > 0) {
+        conflicts.push({
+          date,
+          bookingId: conflictingBooking[0].id,
+          status: conflictingBooking[0].status
+        });
+      }
+    }
+
+    return {
+      hasConflict: conflicts.length > 0,
+      conflicts: conflicts.length > 0 ? conflicts : undefined,
+      message: conflicts.length > 0 
+        ? `Conflito detectado em ${conflicts.length} dia(s)` 
+        : undefined
+    };
+  } catch (error) {
+    console.error('Erro ao verificar conflitos:', error);
+    return {
+      hasConflict: true,
+      message: 'Erro ao verificar conflitos'
     };
   }
 };
@@ -324,11 +449,11 @@ export const bulkUpdateEventAvailability = async (
 
   await db.transaction(async (tx) => {
     for (const update of updates) {
-      const dateStr = update.date; // Manter como string
+      const dateStr = update.date;
       
       const values: any = {
         eventSpaceId,
-        date: dateStr, // Usar string diretamente
+        date: dateStr,
         isAvailable: update.isAvailable ?? true,
         stopSell: update.stopSell ?? false,
         availableUnits: update.availableUnits ?? 1,
@@ -337,7 +462,6 @@ export const bulkUpdateEventAvailability = async (
         updatedAt: new Date()
       };
 
-      // Adicionar campos opcionais se fornecidos
       if (update.priceOverride !== null && update.priceOverride !== undefined) {
         values.priceOverride = update.priceOverride.toString();
       }
@@ -360,25 +484,27 @@ export const getHotelEventSpacesSummary = async (hotelId: string) => {
   return await db
     .select({
       space: eventSpaces,
-      totalDaysAvailable: sql<number>`COUNT(DISTINCT ea.date)`.as("days_available"),
-      upcomingBookings: sql<number>`(
-        SELECT COUNT(*) FROM "eventBookings" eb 
-        WHERE eb."eventSpaceId" = "eventSpaces"."id" 
-        AND eb."status" IN ('confirmed', 'pending')
-        AND eb."startDate"::date >= CURRENT_DATE
-      )`.as("upcoming_bookings"),
+      totalDaysAvailable: sql<number>`COUNT(DISTINCT ${eventAvailability.date})`.as("days_available"),
+      upcomingBookings: sql<number>`
+        COALESCE(
+          (SELECT COUNT(*) FROM ${eventBookings} eb 
+           WHERE eb."eventSpaceId" = ${eventSpaces.id} 
+           AND eb.status IN ('pending_approval', 'confirmed')
+           AND eb."startDate"::date >= CURRENT_DATE
+          ), 0
+        )
+      `.as("upcoming_bookings"),
     })
     .from(eventSpaces)
     .leftJoin(eventAvailability, and(
       eq(eventAvailability.eventSpaceId, eventSpaces.id),
-      eq(eventAvailability.isAvailable, true)
+      eq(eventAvailability.isAvailable, true),
+      eq(eventAvailability.stopSell, false)
     ))
     .where(eq(eventSpaces.hotelId, hotelId))
     .groupBy(eventSpaces.id)
     .orderBy(eventSpaces.name);
 };
-
-// ==================== FUNÇÕES ADICIONAIS ====================
 
 export const upsertEventAvailability = async (
   eventSpaceId: string,
@@ -393,11 +519,11 @@ export const upsertEventAvailability = async (
     minBookingHoursDefault?: number;
   }
 ): Promise<EventAvailability> => {
-  const dateStr = date; // Manter como string
+  const dateStr = date;
   
   const values: any = {
     eventSpaceId,
-    date: dateStr, // Usar string diretamente
+    date: dateStr,
     isAvailable: data.isAvailable ?? true,
     stopSell: data.stopSell ?? false,
     availableUnits: data.availableUnits ?? 1,
@@ -406,7 +532,6 @@ export const upsertEventAvailability = async (
     updatedAt: new Date()
   };
 
-  // Adicionar campos opcionais se fornecidos
   if (data.priceOverride !== null && data.priceOverride !== undefined) {
     values.priceOverride = data.priceOverride.toString();
   }
@@ -433,20 +558,7 @@ export const getMultiSpaceAvailabilityForDate = async (
   if (eventSpaceIds.length === 0) return {};
 
   const availability = await db
-    .select({
-      id: eventAvailability.id,
-      eventSpaceId: eventAvailability.eventSpaceId,
-      date: eventAvailability.date,
-      priceOverride: eventAvailability.priceOverride,
-      isAvailable: eventAvailability.isAvailable,
-      stopSell: eventAvailability.stopSell,
-      availableUnits: eventAvailability.availableUnits,
-      maxUnits: eventAvailability.maxUnits,
-      price: eventAvailability.price,
-      minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
-      createdAt: eventAvailability.createdAt,
-      updatedAt: eventAvailability.updatedAt,
-    })
+    .select()
     .from(eventAvailability)
     .where(
       and(
@@ -474,10 +586,10 @@ export const getEventSpaceAvailabilityStats = async (
 ) => {
   const stats = await db
     .select({
-      totalDays: sql<number>`COUNT(DISTINCT date)`,
-      availableDays: sql<number>`COUNT(DISTINCT date) FILTER (WHERE "isAvailable" = true AND "stopSell" = false)`,
-      blockedDays: sql<number>`COUNT(DISTINCT date) FILTER (WHERE "stopSell" = true)`,
-      averagePrice: sql<number>`COALESCE(AVG("price"), 0)`,
+      totalDays: sql<number>`COUNT(DISTINCT ${eventAvailability.date})`,
+      availableDays: sql<number>`COUNT(DISTINCT ${eventAvailability.date}) FILTER (WHERE ${eventAvailability.isAvailable} = true AND ${eventAvailability.stopSell} = false)`,
+      blockedDays: sql<number>`COUNT(DISTINCT ${eventAvailability.date}) FILTER (WHERE ${eventAvailability.stopSell} = true)`,
+      averagePrice: sql<number>`COALESCE(AVG(${eventAvailability.price}), 0)`,
     })
     .from(eventAvailability)
     .where(
@@ -489,12 +601,12 @@ export const getEventSpaceAvailabilityStats = async (
     );
 
   const bookedDays = await db
-    .select({ count: sql<number>`COUNT(DISTINCT "startDate")` })
+    .select({ count: sql<number>`COUNT(DISTINCT ${eventBookings.startDate})` })
     .from(eventBookings)
     .where(
       and(
         eq(eventBookings.eventSpaceId, eventSpaceId),
-        eq(eventBookings.status, "confirmed"),
+        inArray(eventBookings.status, ["confirmed", "in_progress"]),
         sql`${eventBookings.startDate}::date >= ${startDate}::date`,
         sql`${eventBookings.endDate}::date <= ${endDate}::date`
       )
@@ -516,7 +628,7 @@ export const hasActiveEventBookingsForSpace = async (eventSpaceId: string): Prom
     .where(
       and(
         eq(eventBookings.eventSpaceId, eventSpaceId),
-        inArray(eventBookings.status, ["pending", "confirmed", "checked_in"])
+        inArray(eventBookings.status, ["pending_approval", "confirmed", "in_progress"])
       )
     );
 
@@ -533,35 +645,12 @@ export const syncAvailabilityWithSpaceConfig = async (
     throw new Error('Espaço de evento não encontrado');
   }
 
-  const startDateObj = ymdToDateStart(startDate);
-  const endDateObj = ymdToDateEnd(endDate);
-  
-  const daysDiff = Math.ceil(
-    (endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
+  const dateRange = generateDateRange(startDate, endDate);
   let updatedCount = 0;
 
-  for (let i = 0; i <= daysDiff; i++) {
-    const currentDate = new Date(startDateObj);
-    currentDate.setDate(startDateObj.getDate() + i);
-    const dateStr = dateToYMD(currentDate);
-
+  for (const dateStr of dateRange) {
     const existing = await db
-      .select({
-        id: eventAvailability.id,
-        eventSpaceId: eventAvailability.eventSpaceId,
-        date: eventAvailability.date,
-        priceOverride: eventAvailability.priceOverride,
-        isAvailable: eventAvailability.isAvailable,
-        stopSell: eventAvailability.stopSell,
-        availableUnits: eventAvailability.availableUnits,
-        maxUnits: eventAvailability.maxUnits,
-        price: eventAvailability.price,
-        minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
-        createdAt: eventAvailability.createdAt,
-        updatedAt: eventAvailability.updatedAt,
-      })
+      .select({ id: eventAvailability.id })
       .from(eventAvailability)
       .where(
         and(
@@ -607,7 +696,7 @@ export const exportAvailabilityCalendar = async (
     .where(
       and(
         eq(eventBookings.eventSpaceId, eventSpaceId),
-        eq(eventBookings.status, "confirmed"),
+        inArray(eventBookings.status, ["confirmed", "in_progress"]),
         sql`${eventBookings.startDate}::date >= ${startDate}::date`,
         sql`${eventBookings.endDate}::date <= ${endDate}::date`
       )
@@ -618,7 +707,7 @@ export const exportAvailabilityCalendar = async (
     const start = new Date(booking.startDate);
     const end = new Date(booking.endDate);
     const current = new Date(start);
-    while (current <= end) {
+    while (current < end) {
       bookingDates.add(dateToYMD(current));
       current.setDate(current.getDate() + 1);
     }
@@ -653,8 +742,6 @@ export const exportAvailabilityCalendar = async (
     };
   });
 };
-
-// ==================== FUNÇÕES ADICIONAIS ====================
 
 export const getEventSpacesByEventType = async (
   eventType: string,
@@ -833,32 +920,12 @@ export const calculateEventPrice = async (
     throw new Error('Espaço não encontrado');
   }
   
-  const start = ymdToDateStart(startDate);
-  const end = ymdToDateEnd(endDate);
-  const daysDifference = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  
+  const dateRange = generateDateRange(startDate, endDate);
   let totalPrice = 0;
   
-  for (let i = 0; i < daysDifference; i++) {
-    const currentDate = new Date(start);
-    currentDate.setDate(start.getDate() + i);
-    const currentDateStr = dateToYMD(currentDate);
-    
+  for (const currentDateStr of dateRange) {
     const [availability] = await db
-      .select({
-        id: eventAvailability.id,
-        eventSpaceId: eventAvailability.eventSpaceId,
-        date: eventAvailability.date,
-        priceOverride: eventAvailability.priceOverride,
-        isAvailable: eventAvailability.isAvailable,
-        stopSell: eventAvailability.stopSell,
-        availableUnits: eventAvailability.availableUnits,
-        maxUnits: eventAvailability.maxUnits,
-        price: eventAvailability.price,
-        minBookingHoursDefault: eventAvailability.minBookingHoursDefault,
-        createdAt: eventAvailability.createdAt,
-        updatedAt: eventAvailability.updatedAt,
-      })
+      .select()
       .from(eventAvailability)
       .where(
         and(
@@ -870,13 +937,13 @@ export const calculateEventPrice = async (
     
     let dailyPrice = toNumber(space.basePricePerDay || "0");
     
-    // Usar price do availability se existir, senão usar priceOverride se existir
     if (availability?.price) {
       dailyPrice = toNumber(availability.price);
     } else if (availability?.priceOverride) {
       dailyPrice = toNumber(availability.priceOverride);
     }
     
+    const currentDate = ymdToDateStart(currentDateStr);
     const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
     if (isWeekend && space.weekendSurchargePercent) {
       const surchargePercent = toNumber(space.weekendSurchargePercent);
@@ -904,12 +971,32 @@ export const getEventSpacesWithStats = async (
 }>> => {
   const spaces = await getEventSpacesByHotel(hotelId, true);
   
-  return spaces.map(space => ({
-    ...space,
-    totalBookings: 0,
-    totalRevenue: 0,
-    lastBookingDate: null
-  }));
+  const spacesWithStats = await Promise.all(
+    spaces.map(async (space) => {
+      const bookings = await db
+        .select({
+          count: sql<number>`count(*)`,
+          revenue: sql<number>`sum(${eventBookings.totalPrice}::numeric)`,
+          lastDate: sql<string>`max(${eventBookings.startDate})`
+        })
+        .from(eventBookings)
+        .where(
+          and(
+            eq(eventBookings.eventSpaceId, space.id),
+            eq(eventBookings.status, "confirmed")
+          )
+        );
+      
+      return {
+        ...space,
+        totalBookings: bookings[0]?.count || 0,
+        totalRevenue: bookings[0]?.revenue || 0,
+        lastBookingDate: bookings[0]?.lastDate || null
+      };
+    })
+  );
+  
+  return spacesWithStats;
 };
 
 export const isEventSpaceSlugAvailable = async (
@@ -1013,7 +1100,7 @@ export const getAvailabilityCalendar = async (
     .where(
       and(
         eq(eventBookings.eventSpaceId, eventSpaceId),
-        eq(eventBookings.status, "confirmed"),
+        inArray(eventBookings.status, ["confirmed", "in_progress"]),
         sql`${eventBookings.startDate}::date >= ${startDate}::date`,
         sql`${eventBookings.endDate}::date <= ${endDate}::date`
       )

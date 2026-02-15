@@ -5,9 +5,11 @@ import { Checkbox } from '@/shared/components/ui/checkbox';
 import { Input } from '@/shared/components/ui/input';
 import { Textarea } from '@/shared/components/ui/textarea';
 import { Label } from '@/shared/components/ui/label';
-import { AlertCircle, Loader2, X, Upload, Image as ImageIcon, Wifi, Users, Star, DoorOpen, Wind, Bed, Bath, Coffee, Utensils, Tv, Shield, Leaf, Dumbbell, Car, Baby, PawPrint, CigaretteOff, ArrowUpDown, Accessibility, ShowerHead, Key, Mountain, Sun, Umbrella, Coffee as CoffeeCup, Wine, Cake, Music, Gamepad, BookOpen, Laptop, Phone, Globe, MapPin, Heart, Sparkles, KeyRound } from 'lucide-react';
+import { AlertCircle, Loader2, X, Upload, Image as ImageIcon, Wifi, Users, Star, DoorOpen, Wind, Bed, Bath, Coffee, Utensils, Tv, Shield, Leaf, Dumbbell, Car, Baby, PawPrint, CigaretteOff, ArrowUpDown, Accessibility, ShowerHead, Key, Mountain, Sun, Umbrella, Coffee as CoffeeCup, Wine, Cake, Music, Gamepad, BookOpen, Laptop, Phone, Globe, MapPin, Heart, Sparkles, KeyRound, ChevronLeft, ChevronRight, Eye, Star as StarIcon } from 'lucide-react';
 import { hotelService } from '@/services/hotelService';
+import { photoGalleryService } from '@/services/photoGalleryService';
 import { useToast } from '@/shared/hooks/use-toast';
+import type { RoomTypePhoto } from '@/shared/types/hotel-photos';
 
 interface RoomType {
   id: string;
@@ -21,15 +23,325 @@ interface RoomType {
   extra_child_price?: string;
   amenities?: string[];
   min_nights?: number;
-  images?: string[];
+  images?: string[]; // Mantido para compatibilidade
 }
 
 interface CreateRoomTypeFormModernProps {
   hotelId: string;
-  initialData?: RoomType; // Para modo edição
+  initialData?: RoomType;
   onSuccess: (roomTypeId: string) => void;
   onCancel: () => void;
 }
+
+// Componente de Galeria para o Formulário Moderno
+const PhotoGallerySection: React.FC<{
+  roomTypeId: string;
+  onPhotosChange?: (photos: RoomTypePhoto[]) => void;
+}> = ({ roomTypeId, onPhotosChange }) => {
+  const [photos, setPhotos] = useState<RoomTypePhoto[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    loadPhotos();
+  }, [roomTypeId]);
+
+  const loadPhotos = async () => {
+    try {
+      setLoading(true);
+      const data = await photoGalleryService.getRoomTypePhotos(roomTypeId);
+      setPhotos(data);
+      setCurrentIndex(0);
+      onPhotosChange?.(data);
+    } catch (error) {
+      console.error('Erro ao carregar fotos:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileUpload = async (files: FileList) => {
+    if (!files.length) return;
+
+    try {
+      setUploading(true);
+      
+      const uploadPromises = Array.from(files).map((file, index) =>
+        photoGalleryService.uploadRoomTypePhoto({
+          room_type_id: roomTypeId,
+          file,
+          is_featured: photos.length === 0 && index === 0,
+          is_primary: photos.length === 0 && index === 0,
+        })
+      );
+
+      const uploadedPhotos = await Promise.all(uploadPromises);
+      const updatedPhotos = [...photos, ...uploadedPhotos];
+      
+      setPhotos(updatedPhotos);
+      onPhotosChange?.(updatedPhotos);
+      
+      toast({
+        title: '✅ Fotos enviadas',
+        description: `${uploadedPhotos.length} foto(s) adicionada(s) com sucesso`,
+      });
+    } catch (error) {
+      toast({
+        title: '❌ Erro no upload',
+        description: error instanceof Error ? error.message : 'Falha ao enviar fotos',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: string) => {
+    try {
+      await photoGalleryService.deletePhoto(roomTypeId, photoId);
+      const updated = photos.filter(p => p.id !== photoId);
+      setPhotos(updated);
+      setCurrentIndex(Math.min(currentIndex, updated.length - 1));
+      onPhotosChange?.(updated);
+      
+      toast({
+        title: '✅ Foto removida',
+        description: 'Foto deletada com sucesso',
+      });
+    } catch (error) {
+      toast({
+        title: '❌ Erro',
+        description: error instanceof Error ? error.message : 'Falha ao deletar foto',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleSetPrimary = async (photoId: string) => {
+    try {
+      const updated = await photoGalleryService.setPrimaryPhoto(roomTypeId, photoId);
+      const newPhotos = photos.map(p => ({
+        ...p,
+        is_primary: p.id === photoId,
+      }));
+      setPhotos(newPhotos);
+      onPhotosChange?.(newPhotos);
+      
+      toast({
+        title: '⭐ Foto principal',
+        description: 'Foto definida como principal',
+      });
+    } catch (error) {
+      toast({
+        title: '❌ Erro',
+        description: error instanceof Error ? error.message : 'Falha ao definir foto principal',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleToggleFeatured = async (photoId: string) => {
+    try {
+      const photo = photos.find(p => p.id === photoId)!;
+      const updated = await photoGalleryService.updatePhoto(roomTypeId, photoId, {
+        is_featured: !photo.is_featured,
+      });
+      const newPhotos = photos.map(p => p.id === photoId ? updated : p);
+      setPhotos(newPhotos);
+      onPhotosChange?.(newPhotos);
+    } catch (error) {
+      toast({
+        title: '❌ Erro',
+        description: error instanceof Error ? error.message : 'Falha ao alternar destaque',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const goToPrevious = () => {
+    setCurrentIndex(prev => (prev === 0 ? photos.length - 1 : prev - 1));
+  };
+
+  const goToNext = () => {
+    setCurrentIndex(prev => (prev === photos.length - 1 ? 0 : prev + 1));
+  };
+
+  const currentPhoto = photos[currentIndex];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Viewer Principal */}
+      {photos.length > 0 && (
+        <div className="relative bg-gray-900 rounded-xl overflow-hidden aspect-video group">
+          <img
+            src={currentPhoto.url}
+            alt={currentPhoto.alt_text || 'Foto do quarto'}
+            className="w-full h-full object-cover"
+          />
+
+          {photos.length > 1 && (
+            <>
+              <button
+                onClick={goToPrevious}
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition opacity-0 group-hover:opacity-100"
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <button
+                onClick={goToNext}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition opacity-0 group-hover:opacity-100"
+              >
+                <ChevronRight size={24} />
+              </button>
+            </>
+          )}
+
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
+            {currentIndex + 1} / {photos.length}
+          </div>
+
+          {currentPhoto.is_primary && (
+            <div className="absolute top-4 left-4 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+              <StarIcon size={12} fill="currentColor" /> Principal
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Ações da Foto Atual */}
+      {currentPhoto && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => handleSetPrimary(currentPhoto.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
+                currentPhoto.is_primary
+                  ? 'bg-yellow-500 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              <StarIcon size={18} fill={currentPhoto.is_primary ? 'currentColor' : 'none'} />
+              Principal
+            </button>
+
+            <button
+              onClick={() => handleToggleFeatured(currentPhoto.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
+                currentPhoto.is_featured
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+              }`}
+            >
+              <Eye size={18} />
+              Destacar
+            </button>
+
+            <button
+              onClick={() => handleDeletePhoto(currentPhoto.id)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-lg transition border border-red-200"
+            >
+              <X size={18} />
+              Remover
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Thumbnails */}
+      {photos.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {photos.map((photo, index) => (
+            <button
+              key={photo.id}
+              onClick={() => setCurrentIndex(index)}
+              className={`flex-shrink-0 relative w-20 h-20 rounded-lg overflow-hidden border-2 transition ${
+                index === currentIndex ? 'border-blue-600' : 'border-gray-300'
+              }`}
+            >
+              <img
+                src={photo.url}
+                alt={photo.alt_text}
+                className="w-full h-full object-cover"
+              />
+              {photo.is_primary && (
+                <div className="absolute top-1 right-1 bg-yellow-500 text-white rounded-full p-1">
+                  <StarIcon size={10} fill="currentColor" />
+                </div>
+              )}
+              {photo.is_featured && (
+                <div className="absolute bottom-1 right-1 bg-blue-500 text-white rounded-full p-1">
+                  <Eye size={10} />
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Área de Upload */}
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="w-full border-2 border-dashed border-blue-300 rounded-xl p-6 hover:border-blue-600 hover:bg-blue-50 transition-all text-center disabled:opacity-50"
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="w-8 h-8 text-blue-600 mx-auto mb-2 animate-spin" />
+              <p className="text-blue-600">Enviando fotos...</p>
+            </>
+          ) : (
+            <>
+              <Upload className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+              <p className="font-semibold text-blue-600">Adicionar mais fotos</p>
+              <p className="text-sm text-gray-500 mt-1">Máx 5MB por foto • JPEG, PNG, WebP</p>
+            </>
+          )}
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+          className="hidden"
+          disabled={uploading}
+        />
+      </div>
+
+      {/* Estatísticas */}
+      {photos.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 text-center text-sm">
+          <div className="bg-gray-100 rounded-lg p-2">
+            <div className="font-bold text-gray-900">{photos.length}</div>
+            <div className="text-gray-600">Total</div>
+          </div>
+          <div className="bg-blue-100 rounded-lg p-2">
+            <div className="font-bold text-blue-900">{photos.filter(p => p.is_featured).length}</div>
+            <div className="text-blue-700">Destacadas</div>
+          </div>
+          <div className="bg-yellow-100 rounded-lg p-2">
+            <div className="font-bold text-yellow-900">{photos.filter(p => p.is_primary).length}</div>
+            <div className="text-yellow-700">Principal</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
   hotelId,
@@ -40,11 +352,11 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const [images, setImages] = useState<string[]>([]);
-  const [previewImages, setPreviewImages] = useState<string[]>([]);
+  // Estado para fotos (agora usando o novo sistema)
+  const [photos, setPhotos] = useState<RoomTypePhoto[]>([]);
+  const [createdRoomTypeId, setCreatedRoomTypeId] = useState<string | null>(initialData?.id || null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -128,7 +440,7 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
         amenities: initialData.amenities || [],
         min_nights: initialData.min_nights || 1,
       });
-      setPreviewImages(initialData.images || []);
+      setCreatedRoomTypeId(initialData.id);
     }
   }, [initialData]);
 
@@ -150,44 +462,6 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
         : [...current, amenityId];
       return { ...prev, amenities: newAmenities };
     });
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const maxFiles = 10;
-    
-    if (files.length + previewImages.length > maxFiles) {
-      toast({
-        title: 'Limite excedido',
-        description: `Máximo de ${maxFiles} imagens permitido`,
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    files.forEach(file => {
-      if (file.size > 5 * 1024 * 1024) { // 5MB
-        toast({
-          title: 'Arquivo muito grande',
-          description: `${file.name} excede 5MB`,
-          variant: 'destructive',
-        });
-        return;
-      }
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setPreviewImages(prev => [...prev, result]);
-        setImages(prev => [...prev, result]);
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const removeImage = (index: number) => {
-    setPreviewImages(prev => prev.filter((_, i) => i !== index));
-    setImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const validateStep = (step: number): boolean => {
@@ -258,65 +532,63 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
         return;
       }
 
-      // CORREÇÃO #1: Payload completo para o backend
+      // Payload no formato correto que o backend espera
       const payload = {
-        // Campos obrigatórios para UPDATE
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         capacity: parseInt(formData.capacity.toString()),
         base_occupancy: parseInt(formData.base_occupancy.toString()),
-        base_price: formData.base_price.toString(), // Manter como string para o backend
+        base_price: formData.base_price.toString(),
         total_units: parseInt(formData.total_units.toString()),
-        
-        // Campos opcionais
         extra_adult_price: formData.extra_adult_price ? formData.extra_adult_price.toString() : undefined,
         extra_child_price: formData.extra_child_price ? formData.extra_child_price.toString() : undefined,
         amenities: formData.amenities,
         min_nights: parseInt(formData.min_nights.toString()),
-        images: images.length > 0 ? images : undefined,
       };
 
-      // CORREÇÃO #2: Log para debug
-      console.log('🚀 Payload enviado para', initialData ? 'updateRoomType' : 'createRoomType');
-      console.log('📦 Payload completo:', payload);
-      console.log('🔍 Campos específicos:', {
-        name: payload.name,
-        base_price: payload.base_price,
-        total_units: payload.total_units,
-        capacity: payload.capacity
-      });
+      console.log('🚀 Payload enviado:', payload);
 
       let response;
       if (initialData) {
-        // Modo edição - garantir que o ID está incluído
-        const updatePayload = {
-          ...payload,
-          id: initialData.id // Garantir que o ID está presente para UPDATE
-        };
-        console.log('✏️ Modo edição - ID do quarto:', initialData.id);
-        response = await hotelService.updateRoomType(hotelId, initialData.id, updatePayload);
+        response = await hotelService.updateRoomType(hotelId, initialData.id, payload);
       } else {
-        // Modo criação
         response = await hotelService.createRoomType(hotelId, payload);
       }
 
       if (response.success && response.data) {
+        const roomTypeId = response.data.id;
+        
+        // Se for criação, guardar o ID para permitir upload de fotos depois
+        if (!initialData) {
+          setCreatedRoomTypeId(roomTypeId);
+        }
+        
         toast({
           title: initialData ? '✅ Quarto atualizado!' : '✨ Quarto criado!',
           description: `"${formData.name}" salvo com sucesso`,
         });
-        onSuccess(response.data.id);
+        
+        // Se for criação e tivermos fotos para upload, podemos fazer o upload agora
+        if (!initialData && photos.length > 0) {
+          toast({
+            title: '📸 Enviando fotos...',
+            description: 'Aguarde enquanto as fotos são enviadas',
+          });
+          
+          // Upload das fotos
+          for (const photo of photos) {
+            // As fotos já foram enviadas? Depende da implementação
+            // Se as fotos foram adicionadas via PhotoGallerySection durante a criação,
+            // elas já foram enviadas e estão com URL completa
+          }
+        }
+        
+        onSuccess(roomTypeId);
       } else {
         throw new Error(response.error || 'Falha na operação');
       }
     } catch (err: any) {
-      // Log detalhado do erro
-      console.error('❌ Erro completo:', {
-        message: err.message,
-        stack: err.stack,
-        payload: err.config?.data
-      });
-      
+      console.error('❌ Erro:', err);
       setError(err.message || 'Erro ao salvar quarto');
       toast({
         title: '❌ Erro',
@@ -337,7 +609,7 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
             <h2 className="text-2xl font-bold">
               {initialData ? '✏️ Editar Tipo de Quarto' : '✨ Criar Tipo de Quarto'}
             </h2>
-            <p className="text-blue-100 text-sm mt-1">Passo {currentStep} de 3</p>
+            <p className="text-blue-100 text-sm mt-1">Passo {currentStep} de 4</p>
           </div>
           <button
             onClick={onCancel}
@@ -351,7 +623,7 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
         {/* Progress Bar */}
         <div className="bg-gray-100 px-6 py-3">
           <div className="flex gap-2">
-            {[1, 2, 3].map(step => (
+            {[1, 2, 3, 4].map(step => (
               <div
                 key={step}
                 className={`flex-1 h-1 rounded-full transition-all ${
@@ -391,7 +663,6 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
                   disabled={loading}
                   className="px-4 py-3"
                 />
-                <p className="text-xs text-gray-500 mt-1">Mínimo 3 caracteres</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -407,12 +678,11 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
                     onChange={handleInputChange}
                     placeholder="ex: 2500"
                     step="0.01"
-                    min="0.01" // CORREÇÃO #2: Não permitir zero
+                    min="0.01"
                     required
                     disabled={loading}
                     className="px-4 py-3"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Preço por noite (mínimo: 0.01 MZN)</p>
                 </div>
 
                 <div>
@@ -482,7 +752,6 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
                 </div>
               </div>
 
-              {/* CORREÇÃO #2: Inputs para preços extras no passo 1 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <Label htmlFor="extra_adult_price" className="text-sm font-semibold text-gray-900 mb-2">
@@ -495,12 +764,11 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
                     value={formData.extra_adult_price}
                     onChange={handleInputChange}
                     step="0.01"
-                    min="0" // Permite 0 mas backend pode rejeitar se check constraint for > 0
+                    min="0"
                     placeholder="0.00"
                     disabled={loading}
                     className="px-4 py-3"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Deixe 0.00 para gratuito</p>
                 </div>
 
                 <div>
@@ -519,7 +787,6 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
                     disabled={loading}
                     className="px-4 py-3"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Deixe 0.00 para gratuito</p>
                 </div>
               </div>
 
@@ -541,98 +808,78 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
             </div>
           )}
 
-          {/* Passo 2: Detalhes, Amenities e Fotos */}
+          {/* Passo 2: Amenities */}
           {currentStep === 2 && (
-            <div className="space-y-8">
-              {/* Amenities */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Amenidades do Quarto</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-80 overflow-y-auto p-4 bg-gray-50 rounded-xl border border-gray-200">
-                  {AMENITIES_OPTIONS.map((amenity) => {
-                    const isSelected = formData.amenities.includes(amenity.id);
-                    return (
-                      <div key={amenity.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`amenity-${amenity.id}`}
-                          checked={isSelected}
-                          onCheckedChange={() => toggleAmenity(amenity.id)}
-                          disabled={loading}
-                        />
-                        <Label
-                          htmlFor={`amenity-${amenity.id}`}
-                          className="text-sm cursor-pointer flex items-center gap-2"
-                        >
-                          <amenity.icon className="w-4 h-4 text-gray-600" />
-                          {amenity.label}
-                        </Label>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  {formData.amenities.length} amenidade(s) selecionada(s)
-                </p>
-              </div>
-
-              {/* Fotos */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Fotos do Quarto (opcional)</h3>
-                <div className="space-y-4">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full border-2 border-dashed border-blue-300 rounded-xl p-8 hover:border-blue-600 hover:bg-blue-50 transition-all text-center"
-                    disabled={loading}
-                  >
-                    <Upload className="w-10 h-10 text-blue-600 mx-auto mb-3" />
-                    <p className="font-semibold text-blue-600">Clique para fazer upload</p>
-                    <p className="text-sm text-gray-500 mt-1">PNG, JPG até 5MB cada (máx 10)</p>
-                  </button>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    disabled={loading}
-                  />
-
-                  {previewImages.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                      {previewImages.map((img, idx) => (
-                        <div key={idx} className="relative group rounded-lg overflow-hidden shadow-sm">
-                          <img
-                            src={img}
-                            alt={`Preview ${idx + 1}`}
-                            className="w-full h-32 object-cover"
-                          />
-                          <button
-                            onClick={() => removeImage(idx)}
-                            className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                            disabled={loading}
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Amenidades do Quarto</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-h-80 overflow-y-auto p-4 bg-gray-50 rounded-xl border border-gray-200">
+                {AMENITIES_OPTIONS.map((amenity) => {
+                  const isSelected = formData.amenities.includes(amenity.id);
+                  return (
+                    <div key={amenity.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`amenity-${amenity.id}`}
+                        checked={isSelected}
+                        onCheckedChange={() => toggleAmenity(amenity.id)}
+                        disabled={loading}
+                      />
+                      <Label
+                        htmlFor={`amenity-${amenity.id}`}
+                        className="text-sm cursor-pointer flex items-center gap-2"
+                      >
+                        <amenity.icon className="w-4 h-4 text-gray-600" />
+                        {amenity.label}
+                      </Label>
                     </div>
-                  )}
-
-                  {previewImages.length === 0 && (
-                    <p className="text-center text-gray-500 text-sm py-4">
-                      <ImageIcon className="w-8 h-8 mx-auto mb-2 text-gray-400" />
-                      Nenhuma imagem selecionada (opcional)
-                    </p>
-                  )}
-                </div>
+                  );
+                })}
               </div>
+              <p className="text-xs text-gray-500">
+                {formData.amenities.length} amenidade(s) selecionada(s)
+              </p>
             </div>
           )}
 
-          {/* Passo 3: Confirmação */}
+          {/* Passo 3: Fotos - FUNCIONA TANTO NA CRIAÇÃO QUANTO NA EDIÇÃO */}
           {currentStep === 3 && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Fotos do Quarto</h3>
+              
+              {createdRoomTypeId || initialData?.id ? (
+                // Temos um ID (edição ou criação já finalizada)
+                <PhotoGallerySection
+                  roomTypeId={createdRoomTypeId || initialData!.id}
+                  onPhotosChange={setPhotos}
+                />
+              ) : (
+                // Modo criação: ainda não tem roomTypeId
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center">
+                      <Upload className="w-10 h-10 text-blue-600" />
+                    </div>
+                    <h4 className="text-lg font-semibold text-blue-900">Fotos serão adicionadas após a criação</h4>
+                    <p className="text-blue-700 max-w-md">
+                      O quarto será criado primeiro. Depois você poderá adicionar as fotos na página de edição ou continuar aqui após a criação.
+                    </p>
+                    <div className="bg-white rounded-lg p-4 mt-2">
+                      <p className="text-sm text-gray-600">
+                        <strong>Fluxo:</strong>
+                      </p>
+                      <ol className="text-sm text-left text-gray-600 mt-2 space-y-1 list-decimal list-inside">
+                        <li>Clique em "Criar Quarto" no próximo passo</li>
+                        <li>Após a criação, você será redirecionado para editar o quarto</li>
+                        <li>Lá você poderá adicionar todas as fotos</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Passo 4: Confirmação */}
+          {currentStep === 4 && (
             <div className="space-y-6">
               <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 p-6">
                 <h3 className="text-xl font-bold text-blue-900 mb-4">📋 Resumo do Quarto</h3>
@@ -662,29 +909,15 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
                     <p className="font-semibold">{formData.min_nights}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Preço Extra Adulto:</p>
-                    <p className="font-semibold">{formData.extra_adult_price || '0.00'} MZN</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Preço Extra Criança:</p>
-                    <p className="font-semibold">{formData.extra_child_price || '0.00'} MZN</p>
-                  </div>
-                  <div>
                     <p className="text-gray-600">Amenidades:</p>
                     <p className="font-semibold">{formData.amenities.length} selecionadas</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Fotos:</p>
-                    <p className="font-semibold">{previewImages.length} enviada(s)</p>
+                    <p className="font-semibold">{photos.length} adicionadas</p>
                   </div>
                 </div>
               </Card>
-
-              <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-                <p className="text-green-800 font-medium">
-                  ✅ Tudo pronto! Clique em "{initialData ? 'Atualizar Quarto' : 'Criar Quarto'}" para confirmar.
-                </p>
-              </div>
             </div>
           )}
         </div>
@@ -714,7 +947,7 @@ const CreateRoomTypeFormModern: React.FC<CreateRoomTypeFormModernProps> = ({
               Cancelar
             </Button>
 
-            {currentStep < 3 ? (
+            {currentStep < 4 ? (
               <Button
                 onClick={handleNext}
                 disabled={loading}

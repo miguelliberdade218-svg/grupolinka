@@ -1,17 +1,18 @@
-// src/modules/hotels/hotelController.ts - VERSÃO FINAL CORRIGIDA (07/02/2026)
-// ✅ CORREÇÃO APLICADA: País sempre "Moçambique" (forçado em POST e PUT)
-// ✅ CORREÇÕES APLICADAS: Validação de available_units vs total_units e price com null/undefined
-// ✅ CORREÇÃO DO BULK UPDATE: Aceitar ambos os formatos (snake_case e camelCase) do frontend
-// ✅ CORREÇÃO CRÍTICA: Transformação automática de snake_case para camelCase no schema
-// ✅ ATUALIZADO: Adicionado campo location_id nos schemas de hotel
-// ✅ CORREÇÃO CRÍTICA: Schema de booking atualizado para aceitar camelCase e snake_case
-// ✅ CORREÇÃO CRÍTICA: Adicionado logging detalhado para debug de bookings
-// ✅ NOVO ENDPOINT: Adicionado /bookings/:bookingId/confirm (atualiza status para 'confirmed')
-
+// src/modules/hotels/hotelController.ts - VERSÃO FINAL COM UPLOAD DE FOTOS E DEBUG
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { db } from '../../../db';
 import { sql } from 'drizzle-orm';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
+import { fileURLToPath } from 'url';
+
+// ✅ Criar __dirname para ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 import {
   searchHotels,
   getHotelById,
@@ -78,44 +79,113 @@ import {
   type PaymentType
 } from './hotelPaymentService';
 
-// Reviews Service
+import { roomTypePhotoService } from './roomTypePhotoService';
 import { HotelReviewsService } from './hotel-reviews.service';
+
 const hotelReviewsService = new HotelReviewsService();
+
+// ==================== CONFIGURAÇÃO DE UPLOAD ====================
+
+// Garantir que as pastas de upload existem
+const uploadBaseDir = path.join(__dirname, '../../../public/uploads');
+const uploadDir = path.join(uploadBaseDir, 'hotels');
+const tempDir = path.join(uploadBaseDir, 'temp');
+
+if (!fs.existsSync(uploadBaseDir)) {
+  fs.mkdirSync(uploadBaseDir, { recursive: true });
+}
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
+}
+
+// Configuração do storage do multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, tempDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueId = uuidv4();
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${uniqueId}${ext}`);
+  }
+});
+
+// Filtro de arquivos (apenas imagens)
+const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowedMimes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif'
+  ];
+  
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Formato inválido. Use apenas: JPEG, PNG, WEBP ou GIF'));
+  }
+};
+
+// Configuração do upload
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+    files: 10 // máximo 10 arquivos por vez
+  }
+});
+
+// Helpers para manipulação de arquivos
+const moveUploadedFile = (tempPath: string, filename: string): string => {
+  const finalPath = path.join(uploadDir, filename);
+  fs.renameSync(tempPath, finalPath);
+  return `/uploads/hotels/${filename}`;
+};
+
+const deleteUploadedFile = (fileUrl: string) => {
+  if (!fileUrl) return;
+  const filename = path.basename(fileUrl);
+  const filePath = path.join(uploadDir, filename);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+};
 
 // ==================== VALIDATION SCHEMAS ====================
 
-// Schema base sem transform
 const createHotelBaseSchema = z.object({
   name: z.string().min(3).max(100),
   slug: z.string().min(3).max(100).optional(),
   description: z.string().max(1000).optional(),
   address: z.string().min(5),
-  locality: z.string().min(2), // Obrigatório!
+  locality: z.string().min(2),
   province: z.string().min(2),
   country: z.string().default('Moçambique'),
-  lat: z.string().regex(/^-?\d+(\.\d+)?$/).optional(), // String com formato numérico
-  lng: z.string().regex(/^-?\d+(\.\d+)?$/).optional(), // String com formato numérico
-  location_id: z.string().uuid().optional(), // ✅ NOVO: Referência à localização real
+  lat: z.string().regex(/^-?\d+(\.\d+)?$/).optional(),
+  lng: z.string().regex(/^-?\d+(\.\d+)?$/).optional(),
+  location_id: z.string().uuid().optional(),
   contact_email: z.string().email(),
   contact_phone: z.string().optional(),
   policies: z.string().optional(),
   images: z.array(z.string().url()).optional(),
   amenities: z.array(z.string()).optional(),
-  check_in_time: z.string().regex(/^\d{2}:\d{2}$/).optional(), // Apenas HH:mm
-  check_out_time: z.string().regex(/^\d{2}:\d{2}$/).optional(), // Apenas HH:mm
+  check_in_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  check_out_time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   host_id: z.string().min(1),
 });
 
-// Schema com transform aplicado
 const createHotelSchema = createHotelBaseSchema.transform((data) => ({
   ...data,
-  slug: data.slug || generateSlug(data.name), // Garante que slug nunca seja undefined
+  slug: data.slug || generateSlug(data.name),
 }));
 
-// Schema para update (usando partial do schema base)
 const updateHotelSchema = createHotelBaseSchema.partial();
 
-// Schema para criação/atualização de promoção
 const createPromotionSchema = z.object({
   promo_code: z.string().min(3).max(50),
   name: z.string().min(3).max(100),
@@ -130,36 +200,32 @@ const createPromotionSchema = z.object({
 
 const updatePromotionSchema = createPromotionSchema.partial();
 
-// ✅ CORREÇÃO CRÍTICA: Schema de criação de booking que aceita ambos os formatos
 const createBookingSchema = z.object({
-  // ✅ ACEITAR AMBOS OS FORMATOS: camelCase e snake_case
   roomTypeId: z.string().uuid().optional(),
   room_type_id: z.string().uuid().optional(),
-  guestName: z.string().min(2, "Nome do hóspede obrigatório").optional(),
-  guest_name: z.string().min(2, "Nome do hóspede obrigatório").optional(),
-  guestEmail: z.string().email("Email inválido").optional(),
-  guest_email: z.string().email("Email inválido").optional(),
+  guestName: z.string().min(2).optional(),
+  guest_name: z.string().min(2).optional(),
+  guestEmail: z.string().email().optional(),
+  guest_email: z.string().email().optional(),
   guestPhone: z.string().optional().nullable(),
   guest_phone: z.string().optional().nullable(),
-  checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
-  check_in: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
-  checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
-  check_out: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)").optional(),
-  adults: z.number().int().min(1, "Pelo menos 1 adulto"),
+  checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  check_in: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  check_out: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  adults: z.number().int().min(1),
   children: z.number().int().min(0).optional().default(0),
   units: z.number().int().min(1).optional().default(1),
   specialRequests: z.string().optional().nullable(),
   special_requests: z.string().optional().nullable(),
   promoCode: z.string().optional().nullable(),
   promo_code: z.string().optional().nullable(),
-  // ✅ CORREÇÃO: Alterado de 'pending' para 'pending_confirmation' para corresponder ao service
   status: z.string().optional().default('pending_confirmation'),
   paymentStatus: z.string().optional().default('pending'),
   user_id: z.string().optional().nullable(),
   userId: z.string().optional().nullable(),
 })
 .transform((data) => ({
-  // ✅ NORMALIZAR PARA camelCase (que o service espera)
   roomTypeId: data.roomTypeId || data.room_type_id,
   guestName: data.guestName || data.guest_name,
   guestEmail: data.guestEmail || data.guest_email,
@@ -169,7 +235,6 @@ const createBookingSchema = z.object({
   specialRequests: data.specialRequests || data.special_requests,
   promoCode: data.promoCode || data.promo_code,
   userId: data.userId || data.user_id,
-  // Manter outros campos
   adults: data.adults,
   children: data.children,
   units: data.units,
@@ -189,7 +254,6 @@ const createBookingSchema = z.object({
   path: ["checkOut"],
 });
 
-// ✅ CORREÇÃO: Schema de room type atualizado para usar min_nights_default
 const createRoomTypeSchema = z.object({
   hotel_id: z.string().uuid(),
   name: z.string().min(3).max(100),
@@ -223,7 +287,6 @@ const manualPaymentSchema = z.object({
   paymentType: z.enum(["partial", "full"]).optional().default("partial"),
 });
 
-// Schemas de Reviews
 const submitReviewSchema = z.object({
   bookingId: z.string().uuid(),
   ratings: z.object({
@@ -248,25 +311,19 @@ const respondReviewSchema = z.object({
   responseText: z.string().min(10).max(1000),
 });
 
-// ✅ NOVO: Schema para sincronização de localização
 const syncLocationSchema = z.object({
   maxDistanceKm: z.number().min(0.1).max(100).optional().default(5),
 });
 
-// ✅ CORREÇÃO CRÍTICA: Schema para bulk update de disponibilidade com transformação automática
 const bulkAvailabilityUpdateBaseSchema = z.object({
   roomTypeId: z.string().uuid(),
   updates: z.array(z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)"),
-    
-    // ✅ ACEITAR CAMPOS DO FRONTEND (snake_case)
     price_override: z.number().positive().optional().nullable(),
     stop_sell: z.boolean().optional().nullable(),
     available_units: z.number().int().min(0).optional().nullable(),
     min_nights: z.number().int().positive().optional(),
     reset: z.boolean().optional().default(false),
-    
-    // ✅ MANTER CAMPOS ORIGINAIS (camelCase) para compatibilidade
     price: z.number().positive().optional().nullable(),
     stopSell: z.boolean().optional().nullable(),
     availableUnits: z.number().int().min(0).optional().nullable(),
@@ -274,13 +331,11 @@ const bulkAvailabilityUpdateBaseSchema = z.object({
   })).min(1, "Pelo menos uma atualização é necessária"),
 });
 
-// Schema final com transformação
 const bulkAvailabilityUpdateSchema = bulkAvailabilityUpdateBaseSchema.transform((data) => ({
   roomTypeId: data.roomTypeId,
   updates: data.updates.map(update => ({
     date: update.date,
     reset: update.reset || false,
-    // ✅ MAPEAR snake_case → camelCase (prioridade: campos do frontend primeiro)
     price: update.price_override ?? update.price,
     stopSell: update.stop_sell ?? update.stopSell,
     availableUnits: update.available_units ?? update.availableUnits,
@@ -288,10 +343,8 @@ const bulkAvailabilityUpdateSchema = bulkAvailabilityUpdateBaseSchema.transform(
   }))
 }));
 
-// Tipo inferido do schema
 type BulkAvailabilityUpdate = z.infer<typeof bulkAvailabilityUpdateSchema>;
 
-// ==================== TIPOS ADICIONAIS ====================
 interface PaymentServiceData {
   amount: number;
   paymentMethod: PaymentMethod;
@@ -304,6 +357,7 @@ interface PaymentServiceData {
 }
 
 // ==================== FUNÇÕES HELPER ====================
+
 const generateSlug = (name: string): string => {
   return name
     .toLowerCase()
@@ -332,7 +386,6 @@ const parseDateSafe = (dateString: string | Date | null): Date | null => {
   }
 };
 
-// Helper para validar preços
 const validatePrice = (price: any): { isValid: boolean; error?: string; value?: string } => {
   if (price === undefined || price === null) {
     return { isValid: true, value: undefined };
@@ -351,14 +404,12 @@ const validatePrice = (price: any): { isValid: boolean; error?: string; value?: 
   return { isValid: true, value: num.toString() };
 };
 
-// ✅ ADICIONADA: Função para normalizar campos de snake_case para camelCase (manter para compatibilidade)
 const normalizeUpdateFields = (update: any) => {
   const normalized: any = {
     date: update.date,
     reset: update.reset || false,
   };
  
-  // ✅ Mapear snake_case → camelCase
   normalized.price = update.price_override ?? update.price;
   normalized.stopSell = update.stop_sell ?? update.stopSell;
   normalized.availableUnits = update.available_units ?? update.availableUnits;
@@ -368,13 +419,35 @@ const normalizeUpdateFields = (update: any) => {
 };
 
 // ==================== MIDDLEWARE ====================
+
 const requireHotelOwner = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const hotelId = req.params.id || req.params.hotelId;
+    // Tentar obter o hotelId de diferentes lugares possíveis
+    let hotelId = req.params.id || req.params.hotelId;
+    
+    // Se não encontrou, tentar buscar pelo roomTypeId
+    if (!hotelId && req.params.roomTypeId) {
+      // Buscar o hotel associado ao room type
+      const roomType = await getRoomTypeById(req.params.roomTypeId);
+      if (roomType) {
+        hotelId = roomType.hotel_id;
+        // Adicionar aos params para referência futura
+        req.params.hotelId = hotelId;
+      }
+    }
+    
     const userId = (req as any).user?.id || (req as any).user?.uid;
 
     if (!userId) {
       return res.status(401).json({ success: false, message: 'Autenticação requerida' });
+    }
+
+    if (!hotelId) {
+      console.error('❌ [OWNER CHECK] hotelId não encontrado nos parâmetros da requisição');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'ID do hotel não fornecido' 
+      });
     }
 
     if (process.env.NODE_ENV === 'test' && userId === 'bB88VrzVx8dbUUpXV7qSrGA5eiy2') {
@@ -385,13 +458,19 @@ const requireHotelOwner = async (req: Request, res: Response, next: NextFunction
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
 
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ success: false, message: 'Acesso negado: não é dono deste hotel' });
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Acesso negado: não é dono deste hotel' 
+      });
     }
 
     next();
   } catch (error) {
     console.error('❌ [OWNER CHECK] Erro:', error);
-    return res.status(500).json({ success: false, message: 'Erro ao verificar propriedade' });
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao verificar propriedade' 
+    });
   }
 };
 
@@ -447,6 +526,7 @@ const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
 const router = Router();
 
 // ======================= HOTÉIS =======================
+
 router.get('/', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -476,7 +556,6 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ✅ CORRIGIDO: Rota de criação de hotel com host_id do usuário autenticado E país fixo Moçambique
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
@@ -488,11 +567,10 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Nome obrigatório (mínimo 3 caracteres)' });
     }
 
-    // ✅ CORREÇÃO: Forçar país como "Moçambique" sempre
     const validated = createHotelSchema.parse({
       ...rawData,
-      host_id: userId,  // Força host_id do usuário logado
-      country: 'Moçambique', // ✅ FORÇAR sempre Moçambique
+      host_id: userId,
+      country: 'Moçambique',
       slug: rawData.slug || generateSlug(rawData.name.trim()),
       lat: rawData.lat?.toString(),
       lng: rawData.lng?.toString(),
@@ -515,20 +593,17 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// ✅ CORRIGIDO: Rota de atualização de hotel com país fixo Moçambique
 router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     console.log("🔵 [HOTEL UPDATE] Payload recebido:", JSON.stringify(req.body, null, 2));
     
     const rawData = req.body;
     
-    // ✅ CORREÇÃO: Forçar país como "Moçambique" sempre
     const normalizedData = {
       ...rawData,
-      country: 'Moçambique', // ✅ FORÇAR sempre Moçambique
+      country: 'Moçambique',
     };
     
-    // Validação de campos obrigatórios
     if (normalizedData.name !== undefined && (!normalizedData.name || typeof normalizedData.name !== 'string' || normalizedData.name.trim().length < 3)) {
       return res.status(400).json({ 
         success: false, 
@@ -570,7 +645,6 @@ router.put('/:id', requireAuth, requireHotelOwner, async (req: Request, res: Res
   }
 });
 
-// ✅ NOVA ROTA: Sincronização de localização
 router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     const hotelId = req.params.id;
@@ -578,7 +652,6 @@ router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Re
     
     const validated = syncLocationSchema.parse({ maxDistanceKm });
     
-    // Buscar hotel
     const hotel = await getHotelById(hotelId);
     if (!hotel) {
       return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
@@ -591,7 +664,6 @@ router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Re
       });
     }
     
-    // Sincronizar localização
     const result = await syncHotelLocation(hotelId);
     
     if (!result.success) {
@@ -602,7 +674,6 @@ router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Re
       });
     }
     
-    // Buscar informações da localização
     const location = await db.execute(sql`
       SELECT 
         id,
@@ -618,7 +689,6 @@ router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Re
     
     const locationData = (location as any).rows?.[0] || null;
     
-    // Buscar hotel atualizado
     const updatedHotel = await getHotelById(hotelId);
     
     res.json({
@@ -635,8 +705,6 @@ router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Re
   }
 });
 
-// ======================= ROTA /host/me (NOVA) =======================
-// ✅ ADICIONADA: Rota para listar hotéis do usuário autenticado atual
 router.get('/host/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
@@ -664,13 +732,11 @@ router.get('/host/me', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// ======================= ROTA /host/:hostId (MANTIDA) =======================
 router.get('/host/:hostId', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
     const requestedHostId = req.params.hostId;
 
-    // Verificar se é admin ou se está acessando seus próprios hotéis
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
     
     if (userId !== requestedHostId && !isAdmin) {
@@ -693,6 +759,7 @@ router.get('/host/:hostId', requireAuth, async (req: Request, res: Response) => 
 });
 
 // ======================= PROMOÇÕES =======================
+
 router.get('/:id/promotions', async (req: Request, res: Response) => {
   try {
     const promotions = await getPromotionsByHotel(req.params.id);
@@ -772,6 +839,7 @@ router.delete('/:id/promotions/:promotionId', requireAuth, requireHotelOwner, as
 });
 
 // ======================= REVIEWS DE HOTÉIS =======================
+
 router.get('/:id/reviews', async (req: Request, res: Response) => {
   try {
     const hotelId = req.params.id;
@@ -953,7 +1021,8 @@ router.post('/:hotelId/reviews/:reviewId/respond', requireAuth, requireHotelOwne
   }
 });
 
-// ======================= BUSCA POR RAIO (NOVA ROTA) - VERSÃO SIMPLIFICADA =======================
+// ======================= BUSCA POR RAIO =======================
+
 router.get('/search/nearby', async (req: Request, res: Response) => {
   try {
     const { lat, lng, radius = 60, useExactLocations = false } = req.query;
@@ -969,7 +1038,6 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
     let query;
     
     if (useExactLocations === 'true') {
-      // ✅ NOVO: Busca usando localizações exatas (mozambique_locations)
       query = sql`
         SELECT 
           h.*,
@@ -978,12 +1046,10 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
           ml.province as exact_province,
           ml.district as exact_district,
           ml.locality as exact_locality,
-          -- Distância da localização exata
           ST_Distance(
             ST_SetSRID(ST_MakePoint(ml.lng, ml.lat), 4326)::geography,
             ST_SetSRID(ST_MakePoint(${lngNum}, ${latNum}), 4326)::geography
           ) / 1000 as distance_from_exact_location_km,
-          -- Distância do hotel (fallback)
           (6371 * acos(
             cos(radians(${latNum})) * 
             cos(radians(CAST(h.lat AS numeric))) * 
@@ -995,14 +1061,12 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
         LEFT JOIN mozambique_locations ml ON h.location_id = ml.id
         WHERE h.is_active = true
         AND (
-          -- Se tem location_id, usa distância da localização exata
           (h.location_id IS NOT NULL AND 
            ST_Distance(
              ST_SetSRID(ST_MakePoint(ml.lng, ml.lat), 4326)::geography,
              ST_SetSRID(ST_MakePoint(${lngNum}, ${latNum}), 4326)::geography
            ) <= ${radiusMeters})
           OR
-          -- Se não tem location_id, usa distância do hotel (fallback)
           (h.location_id IS NULL AND h.lat IS NOT NULL AND h.lng IS NOT NULL AND
            (6371 * acos(
              cos(radians(${latNum})) * 
@@ -1014,14 +1078,13 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
         )
         ORDER BY 
           CASE 
-            WHEN h.location_id IS NOT NULL THEN 1  -- Prioridade para hotéis com localização exata
+            WHEN h.location_id IS NOT NULL THEN 1
             ELSE 2
           END,
           COALESCE(distance_from_exact_location_km, distance_from_hotel_km) ASC
         LIMIT 50
       `;
     } else {
-      // Busca tradicional (mantida para compatibilidade)
       query = sql`
         SELECT 
           h.*,
@@ -1072,6 +1135,7 @@ router.get('/search/nearby', async (req: Request, res: Response) => {
 });
 
 // ======================= DASHBOARD DO HOTEL =======================
+
 router.get('/:id/dashboard', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     const hotelId = req.params.id;
@@ -1118,7 +1182,6 @@ router.get('/:id/dashboard', requireAuth, requireHotelOwner, async (req: Request
     const activePromotions = await getActivePromotions(hotelId);
     const longStaySettings = await getLongStaySettings(hotelId);
     const paymentOptions = await getPaymentOptionsForHotel(hotelId);
-
     const recentPayments = await getRecentPaymentsByHotel(hotelId, 10);
 
     res.json({
@@ -1141,6 +1204,7 @@ router.get('/:id/dashboard', requireAuth, requireHotelOwner, async (req: Request
 });
 
 // ======================= TIPOS DE QUARTO =======================
+
 router.get('/:id/room-types', async (req: Request, res: Response) => {
   try {
     const roomTypesList = await getRoomTypesByHotel(req.params.id);
@@ -1156,7 +1220,6 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
     const rawData = req.body;
     console.log("🔵 [ROOM TYPE CREATE] Payload recebido:", JSON.stringify(rawData, null, 2));
     
-    // Validação básica
     if (!rawData.name || typeof rawData.name !== 'string' || rawData.name.trim().length < 3) {
       return res.status(400).json({ 
         success: false, 
@@ -1175,7 +1238,6 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
                          (rawData.min_nights ? toNumber(rawData.min_nights) : 1),
     };
 
-    // ✅ REMOVER min_nights se existir para evitar conflitos
     if (data.min_nights !== undefined) {
       delete data.min_nights;
     }
@@ -1207,7 +1269,6 @@ router.post('/:id/room-types', requireAuth, requireHotelOwner, async (req: Reque
   }
 });
 
-// ✅ CORREÇÃO APLICADA: Rota PUT de room-types com conversão de min_nights para min_nights_default
 router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     console.log("🔵 [ROOM TYPE UPDATE] Payload recebido:", JSON.stringify(req.body, null, 2));
@@ -1219,7 +1280,6 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
     
     console.log("🔍 Campos recebidos no controller:", Object.keys(rawData));
     
-    // Validação básica
     if (rawData.name !== undefined && (!rawData.name || typeof rawData.name !== 'string' || rawData.name.trim().length < 3)) {
       return res.status(400).json({ 
         success: false, 
@@ -1227,7 +1287,6 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
       });
     }
     
-    // Conversão de preços - garantir que sejam strings para o banco
     if (rawData.base_price !== undefined) {
       const price = toNumber(rawData.base_price);
       if (price <= 0) {
@@ -1247,7 +1306,6 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
       updateData.extra_child_price = toNumber(rawData.extra_child_price).toString();
     }
 
-    // ✅ CORREÇÃO CRÍTICA: Converter min_nights para min_nights_default
     if (rawData.min_nights !== undefined) {
       console.log("🔄 [CONTROLLER] Convertendo min_nights para min_nights_default:", rawData.min_nights);
       updateData.min_nights_default = parseInt(rawData.min_nights);
@@ -1272,7 +1330,6 @@ router.put('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner, a
       }
     }
 
-    // Remover campo id se presente
     delete updateData.id;
 
     console.log("🔄 Dados processados para envio ao service:", JSON.stringify(updateData, null, 2));
@@ -1318,7 +1375,596 @@ router.delete('/:hotelId/room-types/:roomTypeId', requireAuth, requireHotelOwner
   }
 });
 
+// ======================= FOTOS DOS ROOM TYPES =======================
+
+/**
+ * POST /api/hotels/room-types/:roomTypeId/photos
+ * Upload de foto para um room type - VERSÃO CORRIGIDA
+ */
+router.post('/room-types/:roomTypeId/photos', 
+  requireAuth, 
+  upload.single('photo'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    console.log('📸 [BACKEND] ===== INÍCIO UPLOAD =====');
+    console.log('📸 [BACKEND] Headers:', {
+      contentType: req.headers['content-type'],
+      authorization: req.headers.authorization ? 'Presente' : 'Ausente'
+    });
+    console.log('📸 [BACKEND] roomTypeId:', req.params.roomTypeId);
+    console.log('📸 [BACKEND] req.body:', req.body);
+    console.log('📸 [BACKEND] req.file:', req.file ? {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: req.file.path
+    } : '❌ NENHUM ARQUIVO RECEBIDO');
+    
+    try {
+      const { roomTypeId } = req.params;
+      
+      // Verificar se o arquivo foi recebido
+      if (!req.file) {
+        console.log('📸 [BACKEND] ❌ Nenhum arquivo recebido!');
+        return res.status(400).json({
+          success: false,
+          error: 'Nenhum arquivo enviado'
+        });
+      }
+
+      // Buscar o room type para obter o hotelId
+      const roomType = await getRoomTypeById(roomTypeId);
+      if (!roomType) {
+        console.log('📸 [BACKEND] ❌ Room type não encontrado:', roomTypeId);
+        fs.unlinkSync(req.file.path);
+        return res.status(404).json({
+          success: false,
+          error: 'Room type não encontrado'
+        });
+      }
+      console.log('📸 [BACKEND] ✅ Room type encontrado:', roomType.id, roomType.name);
+      
+      // Adicionar o hotelId aos params para o middleware requireHotelOwner
+      req.params.hotelId = roomType.hotel_id;
+      
+      // Chamar o middleware requireHotelOwner manualmente
+      return requireHotelOwner(req, res, async () => {
+        console.log('📸 [BACKEND] ✅ Verificação de propriedade OK');
+        
+        const { alt_text, is_featured, is_primary } = req.body;
+        const file = req.file as Express.Multer.File;
+
+        const { canAdd, currentCount, remaining } = await roomTypePhotoService.canAddMore(roomTypeId);
+        if (!canAdd) {
+          console.log('📸 [BACKEND] ❌ Limite de fotos atingido:', { currentCount, remaining });
+          fs.unlinkSync(file.path);
+          return res.status(400).json({
+            success: false,
+            error: `Limite máximo de 20 fotos atingido. Atual: ${currentCount}`,
+            remaining: 0,
+            limit: 20
+          });
+        }
+
+        // ✅ CORREÇÃO: Se for para ser a foto principal, remover primary de todas as outras
+        if (is_primary === 'true') {
+          console.log('📸 [BACKEND] ⭐ Removendo primary de outras fotos');
+          // Passar null em vez de string vazia para indicar que quer remover primary de todas
+          await roomTypePhotoService.setPrimary(roomTypeId, null);
+        }
+
+        console.log('📸 [BACKEND] Movendo arquivo:', file.path, '->', file.filename);
+        const url = moveUploadedFile(file.path, file.filename);
+        console.log('📸 [BACKEND] URL gerada:', url);
+
+        // Criar a foto
+        const photo = await roomTypePhotoService.create({
+          room_type_id: roomTypeId,
+          url,
+          alt_text: alt_text || '',
+          order: currentCount,
+          is_featured: is_featured === 'true',
+          is_primary: is_primary === 'true',
+        });
+
+        console.log('📸 [BACKEND] ✅ Upload concluído, foto salva com ID:', photo.id);
+        console.log('📸 [BACKEND] ===== FIM UPLOAD (SUCESSO) =====\n');
+
+        res.status(201).json({
+          success: true,
+          data: photo,
+          message: 'Foto enviada com sucesso',
+          remaining: remaining - 1
+        });
+      });
+    } catch (error) {
+      console.error('📸 [BACKEND] ❌ Erro no upload:', error);
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      console.error('Erro ao fazer upload:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/hotels/room-types/:roomTypeId/photos/multiple
+ * Upload de múltiplas fotos - VERSÃO CORRIGIDA
+ */
+router.post('/room-types/:roomTypeId/photos/multiple', 
+  requireAuth, 
+  upload.array('photos', 10),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const files = req.files as Express.Multer.File[] | undefined;
+    
+    console.log('📸 [BACKEND] ===== INÍCIO UPLOAD MÚLTIPLO =====');
+    console.log('📸 [BACKEND] roomTypeId:', req.params.roomTypeId);
+    console.log('📸 [BACKEND] Número de arquivos recebidos:', files?.length || 0);
+    
+    if (files && files.length > 0) {
+      files.forEach((file, index) => {
+        console.log(`📸 [BACKEND] Arquivo ${index + 1}:`, {
+          fieldname: file.fieldname,
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size
+        });
+      });
+    } else {
+      console.log('📸 [BACKEND] ❌ Nenhum arquivo recebido');
+    }
+    
+    try {
+      const { roomTypeId } = req.params;
+
+      if (!files || files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Nenhum arquivo enviado'
+        });
+      }
+
+      // Buscar o room type para obter o hotelId
+      const roomType = await getRoomTypeById(roomTypeId);
+      if (!roomType) {
+        files.forEach(file => fs.unlinkSync(file.path));
+        return res.status(404).json({
+          success: false,
+          error: 'Room type não encontrado'
+        });
+      }
+      
+      // Adicionar o hotelId aos params para o middleware requireHotelOwner
+      req.params.hotelId = roomType.hotel_id;
+      
+      // Chamar o middleware requireHotelOwner manualmente
+      return requireHotelOwner(req, res, async () => {
+        const { canAdd, currentCount, remaining } = await roomTypePhotoService.canAddMore(roomTypeId);
+        if (!canAdd || files.length > remaining) {
+          files.forEach(file => fs.unlinkSync(file.path));
+          return res.status(400).json({
+            success: false,
+            error: `Limite excedido. Pode adicionar no máximo ${remaining} foto(s)`,
+            currentCount,
+            remaining,
+            limit: 20
+          });
+        }
+
+        const photos = await Promise.all(
+          files.map(async (file, index) => {
+            const url = moveUploadedFile(file.path, file.filename);
+            return roomTypePhotoService.create({
+              room_type_id: roomTypeId,
+              url,
+              alt_text: '',
+              order: currentCount + index,
+              is_featured: index === 0,
+              is_primary: false,
+            });
+          })
+        );
+
+        console.log(`📸 [BACKEND] ✅ Upload múltiplo concluído: ${photos.length} foto(s) salva(s)`);
+
+        res.status(201).json({
+          success: true,
+          data: photos,
+          message: `${photos.length} foto(s) enviada(s) com sucesso`,
+          remaining: remaining - photos.length
+        });
+      });
+    } catch (error) {
+      files?.forEach(file => {
+        try { fs.unlinkSync(file.path); } catch (e) {}
+      });
+      console.error('Erro ao fazer upload múltiplo:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/hotels/room-types/:roomTypeId/photos
+ * Listar fotos de um room type
+ */
+router.get('/room-types/:roomTypeId/photos', async (req: Request, res: Response) => {
+  try {
+    const { roomTypeId } = req.params;
+    const photos = await roomTypePhotoService.getByRoomType(roomTypeId);
+    
+    res.json({
+      success: true,
+      data: photos,
+      count: photos.length
+    });
+  } catch (error) {
+    console.error('Erro ao listar fotos:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * GET /api/hotels/room-types/:roomTypeId/photos/:photoId
+ * Obter uma foto específica
+ */
+router.get('/room-types/:roomTypeId/photos/:photoId', async (req: Request, res: Response) => {
+  try {
+    const { photoId } = req.params;
+    const photo = await roomTypePhotoService.getById(photoId);
+
+    if (!photo) {
+      return res.status(404).json({
+        success: false,
+        error: 'Foto não encontrada'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: photo
+    });
+  } catch (error) {
+    console.error('Erro ao buscar foto:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * PUT /api/hotels/room-types/:roomTypeId/photos/:photoId
+ * Atualizar meta-dados de uma foto
+ */
+router.put('/room-types/:roomTypeId/photos/:photoId', 
+  requireAuth, 
+  requireHotelOwner, 
+  async (req: Request, res: Response) => {
+    try {
+      const { roomTypeId, photoId } = req.params;
+      const updates = req.body;
+
+      const existing = await roomTypePhotoService.getById(photoId);
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          error: 'Foto não encontrada'
+        });
+      }
+
+      if (updates.is_primary === true) {
+        await roomTypePhotoService.setPrimary(roomTypeId, photoId);
+        const updated = await roomTypePhotoService.getById(photoId);
+        return res.json({
+          success: true,
+          data: updated,
+          message: 'Foto definida como principal com sucesso'
+        });
+      }
+
+      const photo = await roomTypePhotoService.update(photoId, updates);
+
+      res.json({
+        success: true,
+        data: photo,
+        message: 'Foto atualizada com sucesso'
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar foto:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  }
+);
+
+/**
+ * PATCH /api/hotels/room-types/:roomTypeId/photos/:photoId/toggle-featured
+ * Alternar status featured
+ */
+router.patch('/room-types/:roomTypeId/photos/:photoId/toggle-featured',
+  requireAuth,
+  requireHotelOwner,
+  async (req: Request, res: Response) => {
+    try {
+      const { photoId } = req.params;
+      
+      const photo = await roomTypePhotoService.toggleFeatured(photoId);
+      if (!photo) {
+        return res.status(404).json({
+          success: false,
+          error: 'Foto não encontrada'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: photo,
+        message: `Foto ${photo.is_featured ? 'destacada' : 'não destacada'} com sucesso`
+      });
+    } catch (error) {
+      console.error('Erro ao alternar featured:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  }
+);
+
+/**
+ * DELETE /api/hotels/room-types/:roomTypeId/photos/:photoId
+ * Deletar uma foto (soft delete)
+ */
+router.delete('/room-types/:roomTypeId/photos/:photoId', 
+  requireAuth, 
+  requireHotelOwner, 
+  async (req: Request, res: Response) => {
+    try {
+      const { photoId } = req.params;
+      
+      const photo = await roomTypePhotoService.getById(photoId);
+      if (!photo) {
+        return res.status(404).json({
+          success: false,
+          error: 'Foto não encontrada'
+        });
+      }
+
+      deleteUploadedFile(photo.url);
+
+      await roomTypePhotoService.softDelete(photoId);
+
+      res.json({
+        success: true,
+        message: 'Foto deletada com sucesso'
+      });
+    } catch (error) {
+      console.error('Erro ao deletar foto:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  }
+);
+
+/**
+ * PUT /api/hotels/room-types/:roomTypeId/photos/reorder
+ * Reordenar fotos
+ */
+router.put('/room-types/:roomTypeId/photos/reorder', 
+  requireAuth, 
+  requireHotelOwner, 
+  async (req: Request, res: Response) => {
+    try {
+      const { roomTypeId } = req.params;
+      const { photoIds } = req.body;
+
+      if (!Array.isArray(photoIds) || photoIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'photoIds é obrigatório e deve ser um array não vazio'
+        });
+      }
+
+      const updated = await roomTypePhotoService.reorder(roomTypeId, photoIds);
+
+      res.json({
+        success: true,
+        data: updated,
+        message: 'Fotos reordenadas com sucesso'
+      });
+    } catch (error) {
+      console.error('Erro ao reordenar fotos:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro desconhecido'
+      });
+    }
+  }
+);
+
+/**
+ * GET /api/hotels/:hotelId/photos
+ * Obter todas as fotos de um hotel (todos os room types)
+ */
+router.get('/:hotelId/photos', async (req: Request, res: Response) => {
+  try {
+    const { hotelId } = req.params;
+    
+    const photos = await roomTypePhotoService.getByHotel(hotelId);
+
+    res.json({
+      success: true,
+      data: photos,
+      count: photos.length
+    });
+  } catch (error) {
+    console.error('Erro ao buscar fotos do hotel:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * GET /api/hotels/:hotelId/photos/featured
+ * Obter apenas fotos destacadas de um hotel
+ */
+router.get('/:hotelId/photos/featured', async (req: Request, res: Response) => {
+  try {
+    const { hotelId } = req.params;
+    
+    const photos = await roomTypePhotoService.getFeaturedByHotel(hotelId);
+
+    res.json({
+      success: true,
+      data: photos,
+      count: photos.length
+    });
+  } catch (error) {
+    console.error('Erro ao buscar fotos destacadas:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * GET /api/hotels/:hotelId/photos/primary
+ * Obter foto principal de um hotel
+ */
+router.get('/:hotelId/photos/primary', async (req: Request, res: Response) => {
+  try {
+    const { hotelId } = req.params;
+    
+    const photo = await roomTypePhotoService.getPrimaryByHotel(hotelId);
+
+    res.json({
+      success: true,
+      data: photo
+    });
+  } catch (error) {
+    console.error('Erro ao buscar foto principal:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * GET /api/hotels/:hotelId/with-photos
+ * Obter hotel com fotos (para search results)
+ */
+router.get('/:hotelId/with-photos', async (req: Request, res: Response) => {
+  try {
+    const { hotelId } = req.params;
+    
+    const hotel = await getHotelById(hotelId);
+    if (!hotel) {
+      return res.status(404).json({
+        success: false,
+        error: 'Hotel não encontrado'
+      });
+    }
+
+    const photos = await roomTypePhotoService.getFeaturedByHotel(hotelId);
+
+    res.json({
+      success: true,
+      data: {
+        ...hotel,
+        photos
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao buscar hotel com fotos:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * GET /api/hotels/room-types/:roomTypeId/with-photos
+ * Obter room type com fotos (para details page)
+ */
+router.get('/room-types/:roomTypeId/with-photos', async (req: Request, res: Response) => {
+  try {
+    const { roomTypeId } = req.params;
+    
+    const roomType = await getRoomTypeById(roomTypeId);
+    if (!roomType) {
+      return res.status(404).json({
+        success: false,
+        error: 'Room type não encontrado'
+      });
+    }
+
+    const photos = await roomTypePhotoService.getByRoomType(roomTypeId);
+
+    res.json({
+      success: true,
+      data: {
+        ...roomType,
+        photos
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao buscar room type com fotos:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
+/**
+ * GET /api/hotels/:hotelId/photos/count
+ * Contar fotos de um hotel
+ */
+router.get('/:hotelId/photos/count', async (req: Request, res: Response) => {
+  try {
+    const { hotelId } = req.params;
+    
+    const photos = await roomTypePhotoService.getByHotel(hotelId);
+
+    res.json({
+      success: true,
+      data: {
+        total: photos.length,
+        featured: photos.filter(p => p.is_featured).length,
+        withPrimary: photos.some(p => p.is_primary)
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao contar fotos:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido'
+    });
+  }
+});
+
 // ======================= DISPONIBILIDADE =======================
+
 router.get('/:id/availability/check', async (req: Request, res: Response) => {
   try {
     const { roomTypeId, checkIn, checkOut, units = 1 } = req.query;
@@ -1383,7 +2029,6 @@ router.get('/:id/availability', async (req: Request, res: Response) => {
   }
 });
 
-// ✅ CORREÇÃO COMPLETA: Rota bulk update com transformação automática no schema
 router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     console.log('📤 Received bulk payload:', JSON.stringify(req.body, null, 2));
@@ -1391,7 +2036,6 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
     const validated: BulkAvailabilityUpdate = bulkAvailabilityUpdateSchema.parse(req.body);
     const { updates, roomTypeId } = validated;
     
-    // Verificar se o roomType pertence ao hotel
     const roomType = await getRoomTypeById(roomTypeId);
     if (!roomType || roomType.hotel_id !== req.params.id) {
       return res.status(403).json({
@@ -1409,7 +2053,6 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
         reset: update.reset || false,
       };
 
-      // ✅ VALIDAÇÃO DE PREÇO (com suporte a reset)
       if (update.price !== undefined) {
         if (update.reset) {
           processed.price = null;
@@ -1422,7 +2065,6 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
         }
       }
 
-      // ✅ VALIDAÇÃO DE UNIDADES (com suporte a reset)
       if (update.availableUnits !== undefined) {
         if (update.reset) {
           processed.availableUnits = null;
@@ -1439,12 +2081,10 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
         }
       }
 
-      // ✅ VALIDAÇÃO DE STOP_SELL (com suporte a reset)
       if (update.stopSell !== undefined) {
         processed.stopSell = update.reset ? false : Boolean(update.stopSell);
       }
 
-      // ✅ MIN_NIGHTS (com suporte a reset)
       if (update.minNights !== undefined) {
         if (update.reset) {
           processed.minNights = 1;
@@ -1502,7 +2142,7 @@ router.post('/:id/availability/bulk', requireAuth, requireHotelOwner, async (req
 });
 
 // ======================= RESERVAS =======================
-// ✅ CORREÇÃO CRÍTICA: Rota de criação de booking com logging detalhado e schema corrigido
+
 router.post('/:id/bookings', requireAuth, async (req: Request, res: Response) => {
   try {
     console.log('🔍 [HOTEL BOOKING] Dados recebidos do frontend:', {
@@ -1519,12 +2159,10 @@ router.post('/:id/bookings', requireAuth, async (req: Request, res: Response) =>
     const hotel = await getHotelById(hotelId);
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
 
-    // ✅ VALIDAÇÃO COM SCHEMA CORRIGIDO
     console.log('✅ [HOTEL BOOKING] Validando dados com schema...');
     const validated = createBookingSchema.parse(req.body);
     console.log('✅ [HOTEL BOOKING] Dados validados:', validated);
     
-    // ✅ CONSTRUIR DADOS PARA O SERVICE
     const bookingData: CreateBookingData = {
       hotelId,
       roomTypeId: validated.roomTypeId!,
@@ -1539,28 +2177,23 @@ router.post('/:id/bookings', requireAuth, async (req: Request, res: Response) =>
       specialRequests: validated.specialRequests || undefined,
       promoCode: validated.promoCode || undefined,
       userId: validated.userId || userId,
-      // ✅ CORREÇÃO: Status definido no service como 'pending_confirmation' por padrão
       status: validated.status,
       paymentStatus: validated.paymentStatus,
     };
     
     console.log('📦 [HOTEL BOOKING] Booking data para service:', bookingData);
     
-    // ✅ CHAMAR SERVICE
     console.log('🚀 [HOTEL BOOKING] Chamando createHotelBooking...');
     const result = await createHotelBooking(bookingData, userId);
     
-    // ✅ CORREÇÃO: Verificar a estrutura do resultado
     let bookingResult;
     let unitsReserved = 1;
 
     if (result && typeof result === 'object') {
       if ('booking' in result) {
-        // Caso 1: Service retorna { booking, unitsReserved }
         bookingResult = result.booking;
         unitsReserved = result.unitsReserved || 1;
       } else if ('id' in result) {
-        // Caso 2: Service retorna o booking diretamente
         bookingResult = result;
       } else {
         throw new Error('Estrutura de retorno do service desconhecida');
@@ -1581,7 +2214,6 @@ router.post('/:id/bookings', requireAuth, async (req: Request, res: Response) =>
 
     console.log('🎉 [HOTEL BOOKING] Reserva criada com ID:', bookingResult.id);
     
-    // ✅ Retornar resposta
     res.status(201).json({
       success: true,
       message: 'Reserva criada com sucesso',
@@ -1656,7 +2288,6 @@ router.get('/:id/bookings/:bookingId', requireAuth, requireHotelOwner, async (re
   }
 });
 
-// ✅ CORRIGIDO: Check-in com validação de propriedade
 router.post('/bookings/:bookingId/check-in', requireAuth, async (req: Request, res: Response) => {
   try {
     const { bookingId } = req.params;
@@ -1681,7 +2312,6 @@ router.post('/bookings/:bookingId/check-in', requireAuth, async (req: Request, r
       });
     }
 
-    // Verificar se o usuário é dono do hotel ou admin
     const isOwner = await isHotelOwner(booking.hotelId, user.id);
     const isAdmin = user.roles?.includes('admin') || false;
 
@@ -1717,7 +2347,6 @@ router.post('/bookings/:bookingId/check-in', requireAuth, async (req: Request, r
   }
 });
 
-// ✅ CORRIGIDO: Check-out com validação de propriedade
 router.post('/bookings/:bookingId/check-out', requireAuth, async (req: Request, res: Response) => {
   try {
     const { bookingId } = req.params;
@@ -1742,7 +2371,6 @@ router.post('/bookings/:bookingId/check-out', requireAuth, async (req: Request, 
       });
     }
 
-    // Verificar se o usuário é dono do hotel ou admin
     const isOwner = await isHotelOwner(booking.hotelId, user.id);
     const isAdmin = user.roles?.includes('admin') || false;
 
@@ -1778,7 +2406,6 @@ router.post('/bookings/:bookingId/check-out', requireAuth, async (req: Request, 
   }
 });
 
-// ✅ ATUALIZADO: Cancelamento usando função corrigida do service
 router.post('/bookings/:bookingId/cancel', requireAuth, async (req: Request, res: Response) => {
   try {
     const { reason } = req.body;
@@ -1792,7 +2419,6 @@ router.post('/bookings/:bookingId/cancel', requireAuth, async (req: Request, res
       });
     }
 
-    // Verificar permissão
     const isOwner = await isHotelOwner(booking.hotelId, userId);
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
 
@@ -1827,7 +2453,6 @@ router.post('/bookings/:bookingId/cancel', requireAuth, async (req: Request, res
   }
 });
 
-// ✅ NOVA ROTA: Confirmar reserva (atualiza status para 'confirmed')
 router.post('/bookings/:bookingId/confirm', requireAuth, async (req: Request, res: Response) => {
   try {
     const { bookingId } = req.params;
@@ -1841,7 +2466,6 @@ router.post('/bookings/:bookingId/confirm', requireAuth, async (req: Request, re
       });
     }
 
-    // Verificar permissão
     const isOwner = await isHotelOwner(booking.hotelId, userId);
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
 
@@ -1853,7 +2477,6 @@ router.post('/bookings/:bookingId/confirm', requireAuth, async (req: Request, re
       });
     }
 
-    // Atualizar status para confirmed
     const confirmed = await confirmBooking(bookingId, userId);
     
     if (!confirmed) {
@@ -1877,7 +2500,6 @@ router.post('/bookings/:bookingId/confirm', requireAuth, async (req: Request, re
   }
 });
 
-// ✅ NOVA ROTA: Rejeitar reserva
 router.post('/bookings/:bookingId/reject', requireAuth, async (req: Request, res: Response) => {
   try {
     const { reason } = req.body;
@@ -1891,7 +2513,6 @@ router.post('/bookings/:bookingId/reject', requireAuth, async (req: Request, res
       });
     }
 
-    // Verificar permissão
     const isOwner = await isHotelOwner(booking.hotelId, userId);
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
 
@@ -1927,6 +2548,7 @@ router.post('/bookings/:bookingId/reject', requireAuth, async (req: Request, res
 });
 
 // ======================= PAGAMENTOS =======================
+
 router.get('/:id/bookings/:bookingId/invoice', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     const { bookingId } = req.params;
@@ -2175,6 +2797,7 @@ router.post('/:id/bookings/:bookingId/cancel-non-payment', requireAuth, requireH
 });
 
 // ======================= PREÇO FINAL =======================
+
 router.post('/:id/bookings/calculate-price', async (req: Request, res: Response) => {
   try {
     const {
@@ -2217,6 +2840,7 @@ router.post('/:id/bookings/calculate-price', async (req: Request, res: Response)
 });
 
 // ======================= ROTAS ADICIONAIS =======================
+
 router.get('/slug/:slug', async (req: Request, res: Response) => {
   try {
     const hotel = await getHotelBySlug(req.params.slug);
@@ -2265,6 +2889,7 @@ router.get('/locality/:locality', async (req: Request, res: Response) => {
 });
 
 // ======================= RELATÓRIOS =======================
+
 router.get('/:id/reports/bookings', requireAuth, requireHotelOwner, async (req: Request, res: Response) => {
   try {
     const hotelId = req.params.id;

@@ -16,7 +16,7 @@ import type {
   EventSpace 
 } from '@/shared/types/event-spaces';
 
-// ✅ CORREÇÃO: Criar interface Hotel baseada no que existe no EventSpace
+// ✅ CORREÇÃO: Interface Hotel baseada no que existe no EventSpace
 interface Hotel {
   id?: string;
   name: string;
@@ -35,14 +35,14 @@ const EventSpaceDetailsPage = () => {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState('overview');
   
-  // ✅ CORREÇÃO: Adicionar estado para dados do formulário de reserva
+  // ✅ Estado para dados do formulário de reserva
   const [selectedDates, setSelectedDates] = useState<{ start: Date | null; end: Date | null }>({
     start: null,
     end: null,
   });
   const [participants, setParticipants] = useState<number>(50);
 
-  // ✅ CORREÇÃO: eventSpaceService.getEventSpaceDetails retorna ServiceResponse<EventSpaceDetailsResponse>
+  // ✅ Query para buscar detalhes do espaço
   const { 
     data: spaceDetailsResponse, 
     isLoading, 
@@ -60,7 +60,6 @@ const EventSpaceDetailsPage = () => {
       setLocation('/event-spaces/search');
     }
     
-    // ✅ Tratar erro na resposta do service
     if (spaceDetailsResponse?.success === false && spaceDetailsResponse?.error) {
       console.error('Erro na resposta do service:', spaceDetailsResponse.error);
       toast.error(spaceDetailsResponse.error || 'Erro ao carregar detalhes do espaço');
@@ -69,17 +68,229 @@ const EventSpaceDetailsPage = () => {
   }, [error, spaceDetailsResponse, setLocation]);
 
   // ✅ CORREÇÃO: Extrair dados corretamente da resposta
-  // spaceDetailsResponse é ServiceResponse<EventSpaceDetailsResponse>
   const spaceDetails: EventSpaceDetailsResponse | null = 
     spaceDetailsResponse?.success && spaceDetailsResponse.data 
       ? spaceDetailsResponse.data
       : null;
 
-  // ✅ CORREÇÃO: Acessar os dados corretamente
+  // ✅ CORREÇÃO: Acessar os dados corretamente (estrutura da API)
   const space: EventSpaceData | EventSpace | null = spaceDetails?.space || null;
   const hotel: Hotel | null = spaceDetails?.hotel || null;
 
-  // ✅ FUNÇÃO ADICIONADA: Manipular clique no botão "Continuar para detalhes"
+  // ============================================
+  // ✅ CORREÇÃO 1: Função getAmenities() aprimorada
+  // ============================================
+  const getAmenities = (): string[] => {
+    // 1. Tentar space.amenities (EventSpaceData)
+    if (space?.amenities && Array.isArray(space.amenities) && space.amenities.length > 0) {
+      console.log('✅ Amenities encontradas em space.amenities:', space.amenities);
+      return space.amenities;
+    }
+    
+    // 2. Tentar spaceDetails.amenities (nível superior da resposta)
+    if (spaceDetails?.amenities && Array.isArray(spaceDetails.amenities) && spaceDetails.amenities.length > 0) {
+      console.log('✅ Amenities encontradas em spaceDetails.amenities:', spaceDetails.amenities);
+      return spaceDetails.amenities;
+    }
+    
+    // 3. Tentar equipment.amenities
+    if (space?.equipment?.amenities && Array.isArray(space.equipment.amenities) && space.equipment.amenities.length > 0) {
+      console.log('✅ Amenities encontradas em equipment.amenities:', space.equipment.amenities);
+      return space.equipment.amenities;
+    }
+    
+    // 4. Tentar data.amenities (resposta direta)
+    if (spaceDetailsResponse?.data?.amenities && Array.isArray(spaceDetailsResponse.data.amenities)) {
+      console.log('✅ Amenities encontradas em data.amenities:', spaceDetailsResponse.data.amenities);
+      return spaceDetailsResponse.data.amenities;
+    }
+    
+    // 5. Tentar (space as any).amenitiesList
+    if ((space as any)?.amenitiesList && Array.isArray((space as any).amenitiesList)) {
+      console.log('✅ Amenities encontradas em amenitiesList:', (space as any).amenitiesList);
+      return (space as any).amenitiesList;
+    }
+    
+    console.log('⚠️ Nenhuma amenity encontrada');
+    return [];
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 2: Função getBasePrice()
+  // ============================================
+  const getBasePrice = (): number => {
+    // 1. Tentar space.basePricePerDay (camelCase)
+    if (space?.basePricePerDay) {
+      const price = parseFloat(space.basePricePerDay);
+      if (!isNaN(price) && price > 0) {
+        console.log('✅ Preço encontrado em space.basePricePerDay:', price);
+        return price;
+      }
+    }
+    
+    // 2. Tentar spaceDetails.base_price_per_day (snake_case)
+    if (spaceDetails?.base_price_per_day) {
+      const price = parseFloat(spaceDetails.base_price_per_day);
+      if (!isNaN(price) && price > 0) {
+        console.log('✅ Preço encontrado em spaceDetails.base_price_per_day:', price);
+        return price;
+      }
+    }
+    
+    // 3. Tentar space.base_price_per_day
+    if ((space as any)?.base_price_per_day) {
+      const price = parseFloat((space as any).base_price_per_day);
+      if (!isNaN(price) && price > 0) {
+        console.log('✅ Preço encontrado em space.base_price_per_day:', price);
+        return price;
+      }
+    }
+    
+    // 4. Tentar spaceDetailsResponse?.data?.base_price_per_day
+    if (spaceDetailsResponse?.data?.base_price_per_day) {
+      const price = parseFloat(spaceDetailsResponse.data.base_price_per_day);
+      if (!isNaN(price) && price > 0) {
+        console.log('✅ Preço encontrado em data.base_price_per_day:', price);
+        return price;
+      }
+    }
+    
+    console.log('⚠️ Nenhum preço encontrado, usando 0');
+    return 0;
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 3: Função getLocation()
+  // ============================================
+  const getLocation = (): string => {
+    // 1. Tentar location completa do espaço
+    if (space?.location) {
+      console.log('✅ Localização encontrada em space.location:', space.location);
+      return space.location;
+    }
+    
+    // 2. Tentar locality + province do espaço
+    if (space?.locality && space?.province) {
+      const location = `${space.locality}, ${space.province}`;
+      console.log('✅ Localização encontrada em space.locality/province:', location);
+      return location;
+    }
+    
+    // 3. Tentar locality + province do hotel
+    if (hotel?.locality && hotel?.province) {
+      const location = `${hotel.locality}, ${hotel.province}`;
+      console.log('✅ Localização encontrada em hotel.locality/province:', location);
+      return location;
+    }
+    
+    // 4. Tentar nome do hotel + cidade
+    if (hotel?.name && hotel?.locality) {
+      const location = `${hotel.name}, ${hotel.locality}`;
+      console.log('✅ Localização encontrada em hotel.name/locality:', location);
+      return location;
+    }
+    
+    // 5. Tentar apenas locality do hotel
+    if (hotel?.locality) {
+      console.log('✅ Localização encontrada em hotel.locality:', hotel.locality);
+      return hotel.locality;
+    }
+    
+    console.log('⚠️ Nenhuma localização encontrada');
+    return 'Localização não disponível';
+  };
+
+  // ============================================
+  // ✅ CORREÇÃO 4: Função getCapacity()
+  // ============================================
+  const getCapacity = (): { min: number; max: number } => {
+    const min = space?.capacityMin || (space as any)?.capacity_min || 0;
+    const max = space?.capacityMax || (space as any)?.capacity_max || min || 0;
+    
+    console.log('✅ Capacidade extraída:', { min, max });
+    return { min, max };
+  };
+
+  // ============================================
+  // ✅ FUNÇÕES AUXILIARES ADICIONAIS
+  // ============================================
+
+  const getRatingInfo = () => {
+    if (!space) return { rating: 0, reviewCount: 0, bookingCount: 0 };
+    
+    return {
+      rating: (space as EventSpaceData).rating || (space as any).average_rating || 0,
+      reviewCount: (space as EventSpaceData).totalReviews || (space as any).review_count || 0,
+      bookingCount: (space as EventSpaceData).total_bookings || 0
+    };
+  };
+
+  const getLocationInfo = () => {
+    if (!hotel) return { address: '', locality: '', province: '' };
+    
+    return {
+      address: hotel.address || '',
+      locality: hotel.locality || '',
+      province: hotel.province || ''
+    };
+  };
+
+  const getCateringInfo = () => {
+    if (!space) return { offersCatering: false, discountPercent: 0, menuUrls: [] };
+    
+    return {
+      offersCatering: (space as any).offersCatering || false,
+      discountPercent: (space as any).cateringDiscountPercent || 0,
+      menuUrls: (space as any).cateringMenuUrls || []
+    };
+  };
+
+  const getPriceInfo = () => {
+    if (!space) return { basePrice: '0', weekendSurcharge: 0, securityDeposit: '0' };
+    
+    return {
+      basePrice: String(getBasePrice()),
+      weekendSurcharge: (space as EventSpaceData).weekendSurchargePercent || spaceDetails?.weekend_surcharge_percent || 0,
+      securityDeposit: (space as any).securityDeposit || spaceDetails?.security_deposit || '0'
+    };
+  };
+
+  const getOtherInfo = () => {
+    if (!space) return { 
+      facilities: [] as string[], 
+      accessibilityFeatures: [] as string[], 
+      nearbyAttractions: [] as string[],
+      parkingInfo: null as string | null,
+      publicTransportInfo: null as string | null
+    };
+    
+    return {
+      facilities: Array.isArray((space as any).facilities) ? (space as any).facilities : [],
+      accessibilityFeatures: Array.isArray((space as any).accessibility_features) ? (space as any).accessibility_features : [],
+      nearbyAttractions: Array.isArray((space as any).nearby_attractions) ? (space as any).nearby_attractions : [],
+      parkingInfo: (space as any).parking_info || null,
+      publicTransportInfo: (space as any).public_transport_info || null
+    };
+  };
+
+  // ============================================
+  // ✅ HOOK DE DEBUG
+  // ============================================
+  useEffect(() => {
+    console.log('🔍 =========== DEBUG EVENT SPACE DETAIL ===========');
+    console.log('🔍 spaceId:', id);
+    console.log('🔍 spaceDetailsResponse:', spaceDetailsResponse);
+    console.log('🔍 spaceDetails:', spaceDetails);
+    console.log('🔍 space:', space);
+    console.log('🔍 hotel:', hotel);
+    console.log('🔍 basePrice:', getBasePrice());
+    console.log('🔍 location:', getLocation());
+    console.log('🔍 amenities:', getAmenities());
+    console.log('🔍 capacity:', getCapacity());
+    console.log('🔍 ===============================================');
+  }, [id, spaceDetailsResponse, spaceDetails, space, hotel]);
+
+  // ✅ Handler para continuar para detalhes da reserva
   const handleContinueToDetails = () => {
     if (!selectedDates.start || !selectedDates.end) {
       toast.error('Por favor, selecione as datas do evento');
@@ -91,31 +302,36 @@ const EventSpaceDetailsPage = () => {
       return;
     }
 
-    // ✅ CORREÇÃO: Construir URL com parâmetros de reserva
     const params = new URLSearchParams({
       startDate: selectedDates.start.toISOString(),
       endDate: selectedDates.end.toISOString(),
       participants: participants.toString(),
     });
 
-    // ✅ Navegar para página de reserva com parâmetros
     setLocation(`/event-spaces/${id}/book?${params.toString()}`);
   };
 
-  // ✅ FUNÇÃO ADICIONADA: Manipular solicitação de reserva imediata
   const handleBookNow = () => {
     if (!space) return;
-    
-    // Navegar para página de reserva com dados pré-preenchidos
     setLocation(`/event-spaces/${id}/book?step=1`);
   };
 
-  // ✅ Tratar estado de loading
+  // ✅ Formatação de preço
+  const formatPrice = (price: string | number): string => {
+    const priceNum = typeof price === 'string' ? parseFloat(price) : price;
+    if (isNaN(priceNum) || priceNum === 0) return 'Sob consulta';
+    return priceNum.toLocaleString('pt-MZ', {
+      style: 'currency',
+      currency: 'MZN',
+      minimumFractionDigits: 2
+    });
+  };
+
+  // ✅ Loading state
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="space-y-8">
-          {/* Cabeçalho loading */}
           <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6">
             <div className="space-y-2 flex-1">
               <Skeleton className="h-8 w-2/3" />
@@ -125,14 +341,12 @@ const EventSpaceDetailsPage = () => {
             <Skeleton className="h-10 w-32" />
           </div>
 
-          {/* Galeria loading */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             {[1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-48 w-full rounded-lg" />
             ))}
           </div>
 
-          {/* Cards de informações loading */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             {[1, 2, 3, 4].map((i) => (
               <Card key={i}>
@@ -147,7 +361,6 @@ const EventSpaceDetailsPage = () => {
             ))}
           </div>
 
-          {/* Conteúdo loading */}
           <div className="space-y-4">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-64 w-full" />
@@ -157,7 +370,7 @@ const EventSpaceDetailsPage = () => {
     );
   }
 
-  // ✅ Tratar erro ou dados não encontrados
+  // ✅ Error state
   if (!spaceDetailsResponse?.success || !space || !hotel) {
     const errorMessage = spaceDetailsResponse?.error || 'Espaço de evento não encontrado';
     
@@ -201,7 +414,18 @@ const EventSpaceDetailsPage = () => {
     );
   }
 
-  // ✅ SECÇÃO ADICIONADA: Formulário para reserva rápida (antes do conteúdo principal)
+  // ✅ Extrair dados usando as funções corrigidas
+  const amenities = getAmenities();
+  const ratingInfo = getRatingInfo();
+  const locationInfo = getLocationInfo();
+  const cateringInfo = getCateringInfo();
+  const priceInfo = getPriceInfo();
+  const otherInfo = getOtherInfo();
+  const basePrice = getBasePrice();
+  const location = getLocation();
+  const { min: capacityMin, max: capacityMax } = getCapacity();
+
+  // ✅ Formulário de reserva rápida
   const renderQuickBookingForm = () => {
     const today = new Date().toISOString().split('T')[0];
     
@@ -257,7 +481,7 @@ const EventSpaceDetailsPage = () => {
                 <input
                   type="number"
                   min="1"
-                  max={space.capacityMax || 500}
+                  max={capacityMax || 500}
                   value={participants}
                   onChange={(e) => setParticipants(parseInt(e.target.value) || 1)}
                   className="flex-1 text-center p-2 border rounded-md"
@@ -265,14 +489,14 @@ const EventSpaceDetailsPage = () => {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => setParticipants(Math.min(space.capacityMax || 500, participants + 1))}
-                  disabled={participants >= (space.capacityMax || 500)}
+                  onClick={() => setParticipants(Math.min(capacityMax || 500, participants + 1))}
+                  disabled={participants >= (capacityMax || 500)}
                 >
                   +
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Capacidade máxima: {space.capacityMax} pessoas
+                Capacidade máxima: {capacityMax} pessoas
               </p>
             </div>
           </div>
@@ -297,113 +521,6 @@ const EventSpaceDetailsPage = () => {
     );
   };
 
-  // Função para extrair amenities com fallback seguro
-  const getAmenities = (): string[] => {
-    if (!space) return [];
-    
-    // ✅ CORREÇÃO: Garantir que amenities sempre seja um array
-    if (Array.isArray((space as EventSpaceData).amenities)) {
-      return (space as EventSpaceData).amenities;
-    }
-    
-    // Fallback para campo alternativo se existir
-    if (Array.isArray((space as any).amenitiesList)) {
-      return (space as any).amenitiesList;
-    }
-    
-    // Fallback para amenities do response
-    if (spaceDetails && Array.isArray(spaceDetails.amenities)) {
-      return spaceDetails.amenities;
-    }
-    
-    return [];
-  };
-
-  // Função para extrair campos de rating com fallback
-  const getRatingInfo = () => {
-    if (!space) return { rating: 0, reviewCount: 0, bookingCount: 0 };
-    
-    const spaceData = space as EventSpaceData;
-    
-    return {
-      rating: spaceData.rating || spaceData.average_rating || 0,
-      reviewCount: spaceData.totalReviews || spaceData.review_count || 0,
-      bookingCount: spaceData.total_bookings || 0
-    };
-  };
-
-  // Função para extrair informações de localização
-  const getLocationInfo = () => {
-    if (!hotel) return { address: '', locality: '', province: '' };
-    
-    return {
-      address: hotel.address || '',
-      locality: hotel.locality || '',
-      province: hotel.province || ''
-    };
-  };
-
-  // Função para extrair campos de catering
-  const getCateringInfo = () => {
-    if (!space) return { offersCatering: false, discountPercent: 0, menuUrls: [] };
-    
-    return {
-      offersCatering: space.offersCatering || false,
-      discountPercent: space.cateringDiscountPercent || 0,
-      menuUrls: space.cateringMenuUrls || []
-    };
-  };
-
-  // Função para extrair campos de preço
-  const getPriceInfo = () => {
-    if (!space) return { basePrice: '0', weekendSurcharge: 0, securityDeposit: '0' };
-    
-    const spaceData = space as EventSpaceData;
-    
-    return {
-      basePrice: spaceData.basePricePerDay || '0',
-      weekendSurcharge: spaceData.weekendSurchargePercent || 0,
-      securityDeposit: spaceData.securityDeposit || spaceDetails?.security_deposit || '0'
-    };
-  };
-
-  // Função para extrair outras informações úteis
-  const getOtherInfo = () => {
-    if (!space) return { 
-      facilities: [] as string[], 
-      accessibilityFeatures: [] as string[], 
-      nearbyAttractions: [] as string[] 
-    };
-    
-    const spaceData = space as EventSpaceData;
-    
-    return {
-      facilities: Array.isArray(spaceData.facilities) ? spaceData.facilities : [],
-      accessibilityFeatures: Array.isArray(spaceData.accessibility_features) ? spaceData.accessibility_features : [],
-      nearbyAttractions: Array.isArray(spaceData.nearby_attractions) ? spaceData.nearby_attractions : [],
-      parkingInfo: spaceData.parking_info || null,
-      publicTransportInfo: spaceData.public_transport_info || null
-    };
-  };
-
-  // Extrair dados para renderização
-  const amenities = getAmenities();
-  const ratingInfo = getRatingInfo();
-  const locationInfo = getLocationInfo();
-  const cateringInfo = getCateringInfo();
-  const priceInfo = getPriceInfo();
-  const otherInfo = getOtherInfo();
-
-  // ✅ Função de formatação de preço
-  const formatPrice = (price: string | number): string => {
-    const priceNum = typeof price === 'string' ? parseFloat(price) : price;
-    return priceNum.toLocaleString('pt-MZ', {
-      style: 'currency',
-      currency: 'MZN',
-      minimumFractionDigits: 2
-    });
-  };
-
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Cabeçalho */}
@@ -417,11 +534,7 @@ const EventSpaceDetailsPage = () => {
             </div>
             <div className="flex items-center gap-2 mt-1">
               <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">
-                {locationInfo.address ? `${locationInfo.address}, ` : ''}
-                {locationInfo.locality ? `${locationInfo.locality}, ` : ''}
-                {locationInfo.province || 'Localização não especificada'}
-              </span>
+              <span className="text-muted-foreground">{location}</span>
             </div>
             {ratingInfo.rating && ratingInfo.rating > 0 && (
               <div className="flex items-center gap-1 mt-1">
@@ -437,7 +550,7 @@ const EventSpaceDetailsPage = () => {
         </div>
       </div>
 
-      {/* ✅ FORMULÁRIO DE RESERVA RÁPIDA ADICIONADO */}
+      {/* Formulário de Reserva Rápida */}
       {renderQuickBookingForm()}
 
       {/* Galeria de Imagens */}
@@ -471,7 +584,7 @@ const EventSpaceDetailsPage = () => {
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center">
               <Users className="h-8 w-8 mb-2 text-primary" />
-              <span className="text-2xl font-bold">{space.capacityMax || 'N/A'}</span>
+              <span className="text-2xl font-bold">{capacityMax || 'N/A'}</span>
               <span className="text-sm text-muted-foreground">Capacidade Máxima</span>
             </div>
           </CardContent>
@@ -494,7 +607,7 @@ const EventSpaceDetailsPage = () => {
                 <span className="text-lg font-bold">MZN</span>
               </div>
               <span className="text-2xl font-bold">
-                {formatPrice(priceInfo.basePrice).split(',')[0]}
+                {basePrice > 0 ? formatPrice(basePrice).split(',')[0] : 'Sob consulta'}
               </span>
               <span className="text-sm text-muted-foreground">Preço por dia</span>
             </div>
@@ -552,9 +665,7 @@ const EventSpaceDetailsPage = () => {
                       <MapPin className="h-5 w-5 text-primary" />
                       <div>
                         <p className="text-sm font-medium">Endereço</p>
-                        <p className="font-medium">
-                          {locationInfo.address || 'Endereço não especificado'}
-                        </p>
+                        <p className="font-medium">{location}</p>
                       </div>
                     </div>
                     <div className="p-3 bg-muted/30 rounded-lg mt-2">
@@ -571,7 +682,7 @@ const EventSpaceDetailsPage = () => {
                     <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
                       <span className="text-muted-foreground">Capacidade:</span>
                       <span className="font-medium">
-                        {space.capacityMin} - {space.capacityMax} pessoas
+                        {capacityMin} - {capacityMax} pessoas
                       </span>
                     </div>
                     {space.areaSqm && (
@@ -666,7 +777,6 @@ const EventSpaceDetailsPage = () => {
                     </div>
                   </div>
                   
-                  {/* Mostrar informações adicionais se disponíveis */}
                   {otherInfo.facilities.length > 0 && (
                     <div>
                       <h4 className="font-semibold mb-3">Instalações</h4>
@@ -770,7 +880,6 @@ const EventSpaceDetailsPage = () => {
                 </div>
               )}
               
-              {/* Mostrar informações de estacionamento e transporte se disponíveis */}
               {(otherInfo.parkingInfo || otherInfo.publicTransportInfo) && (
                 <div className="mt-8 p-6 bg-muted/50 border rounded-lg">
                   <h4 className="font-semibold mb-3">Informações de Acesso</h4>
@@ -808,11 +917,13 @@ const EventSpaceDetailsPage = () => {
                     <div>
                       <h4 className="font-semibold mb-3">Preço Base</h4>
                       <div className="text-4xl font-bold text-primary">
-                        {formatPrice(priceInfo.basePrice)}
-                        <span className="text-lg font-normal text-muted-foreground"> / dia</span>
+                        {formatPrice(basePrice)}
+                        {basePrice > 0 && (
+                          <span className="text-lg font-normal text-muted-foreground"> / dia</span>
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground mt-2">
-                        Preço para reserva em dias úteis
+                        {basePrice > 0 ? 'Preço para reserva em dias úteis' : 'Preço sob consulta'}
                       </p>
                     </div>
                     
@@ -930,7 +1041,7 @@ const EventSpaceDetailsPage = () => {
             <div>
               <p className="font-semibold text-sm">{space.name}</p>
               <p className="text-xs text-muted-foreground">
-                {formatPrice(priceInfo.basePrice)} / dia
+                {basePrice > 0 ? `${formatPrice(basePrice)} / dia` : 'Sob consulta'}
               </p>
             </div>
             <Button onClick={handleBookNow} size="sm" className="px-6">

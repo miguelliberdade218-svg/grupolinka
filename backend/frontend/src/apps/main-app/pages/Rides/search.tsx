@@ -697,7 +697,7 @@ export default function RideSearchPage() {
       case 'exact_match':
         return { text: `🎯 Exato (${directionScore}pts)`, color: 'bg-green-100 text-green-800 border-green-200' };
       case 'exact_province':
-        return { text: `🏛️ Mesma Província (${directionScore}pts)`, color: 'bg-blue-100 text-blue-800 border-blue-200' };
+        return { text: `🏛️ Mesma Província (${directionScore}pts)`, color: 'bg-orange-100 text-orange-800 border-orange-200' };
       case 'from_correct_province_to':
         return { text: `📍 Origem Correta (${directionScore}pts)`, color: 'bg-teal-100 text-teal-800 border-teal-200' };
       case 'to_correct_province_from':
@@ -942,7 +942,7 @@ export default function RideSearchPage() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg border border-blue-200 text-xs">
+              <div className="flex items-center gap-2 bg-orange-50 text-orange-700 px-3 py-1 rounded-lg border border-orange-200 text-xs">
                 <Navigation className="w-3 h-3" />
                 <div>
                   <p className="font-medium">Busca Inteligente</p>
@@ -971,7 +971,7 @@ export default function RideSearchPage() {
                         Datas próximas
                       </Badge>
                     )}
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs">
+                    <Badge variant="secondary" className="bg-orange-100 text-orange-800 text-xs">
                       <MapPin className="w-3 h-3 mr-1" />
                       Inteligente
                     </Badge>
@@ -983,8 +983,8 @@ export default function RideSearchPage() {
           <CardContent className="pt-0">
             {isLoading ? (
               <div className="text-center py-8">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
+                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <RefreshCw className="w-6 h-6 text-orange-600 animate-spin" />
                 </div>
                 <p className="text-gray-600 text-sm">Buscando viagens mais relevantes...</p>
               </div>
@@ -1013,10 +1013,9 @@ export default function RideSearchPage() {
                 
                 {/* ✅✅✅ ESTATÍSTICAS ATUALIZADAS COM INFO DE DATAS */}
                 {sortedRides.some(ride => ride.match_type) && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <h4 className="text-sm font-medium text-blue-900 mb-2 flex items-center">
-                      <span className="text-blue-600 mr-2">⚡</span>
-                      Busca Inteligente - Resultados
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                    <h4 className="text-sm font-medium text-orange-900 mb-2 flex items-center">
+                      <span className="text-orange-600 mr-2">⚡</span>\n                      Busca Inteligente - Resultados
                       {!hasExactDateRides && sortedRides.length > 0 && (
                         <span className="text-orange-600 text-xs ml-2 italic">
                           • Mostrando rides em datas próximas
@@ -1025,26 +1024,26 @@ export default function RideSearchPage() {
                     </h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                       <div className="text-center">
-                        <div className="text-blue-700 font-bold">
+                        <div className="text-orange-700 font-bold">
                           {sortedRides.filter(r => isRideDateExact(r.departureDate, searchParams.date)).length}
                         </div>
-                        <div className="text-blue-600">Na data</div>
+                        <div className="text-orange-600">Na data</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-blue-700 font-bold">
+                        <div className="text-orange-700 font-bold">
                           {sortedRides.filter(r => !isRideDateExact(r.departureDate, searchParams.date)).length}
                         </div>
-                        <div className="text-blue-600">Datas próximas</div>
+                        <div className="text-orange-600">Datas próximas</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-blue-700 font-bold">
+                        <div className="text-orange-700 font-bold">
                           {sortedRides.filter(r => r.direction_score && r.direction_score >= 80).length}
                         </div>
-                        <div className="text-blue-600">Alta Pont.</div>
+                        <div className="text-orange-600">Alta Pont.</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-blue-700 font-bold">{sortedRides.length}</div>
-                        <div className="text-blue-600">Total</div>
+                        <div className="text-orange-700 font-bold">{sortedRides.length}</div>
+                        <div className="text-orange-600">Total</div>
                       </div>
                     </div>
                   </div>
@@ -1218,26 +1217,26 @@ export default function RideSearchPage() {
           
           {selectedRide && (
             <div className="space-y-6">
-              <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="bg-orange-50 p-4 rounded-lg border-l-4 border-l-orange-600">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="text-sm">
-                    <span className="font-semibold">{getLocationDisplay(selectedRide, 'from')}</span>
-                    <span className="mx-2">→</span>
-                    <span className="font-semibold">{getLocationDisplay(selectedRide, 'to')}</span>
+                    <span className="font-semibold text-orange-900">{getLocationDisplay(selectedRide, 'from')}</span>
+                    <span className="mx-2 text-orange-700">→</span>
+                    <span className="font-semibold text-orange-900">{getLocationDisplay(selectedRide, 'to')}</span>
                   </div>
                 </div>
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-orange-700">
                   {formatDateForDisplay(selectedRide.departureDate)}
                 </div>
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-orange-700">
                   Motorista: {getDriverName(selectedRide)}
                 </div>
-                <div className="text-sm font-semibold mt-2">
+                <div className="text-sm font-semibold mt-2 text-orange-900">
                   Preço: {displayPrice(selectedRide.price)}
                 </div>
                 
                 {selectedRide.match_type && (
-                  <div className="text-sm text-blue-600 mt-2">
+                  <div className="text-sm text-orange-700 mt-2 bg-orange-100 p-2 rounded border border-orange-200">
                     🎯 {getMatchDescription(selectedRide)}
                   </div>
                 )}
@@ -1308,10 +1307,10 @@ export default function RideSearchPage() {
                   />
                 </div>
 
-                <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="bg-orange-50 p-4 rounded-lg">
                   <div className="flex justify-between items-center">
                     <span>Total ({bookingData.passengers} passageiro{bookingData.passengers > 1 ? 's' : ''})</span>
-                    <span className="text-xl font-bold text-blue-600">
+                    <span className="text-xl font-bold text-orange-600">
                       {displayPrice((selectedRide.price || 0) * bookingData.passengers)}
                     </span>
                   </div>

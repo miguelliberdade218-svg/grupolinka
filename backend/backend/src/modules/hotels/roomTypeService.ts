@@ -1,10 +1,9 @@
 // src/modules/hotels/roomTypeService.ts - VERSÃO FINAL CORRIGIDA
-// Com tratamento correto para disponibilidade eterna, validações robustas e correções críticas
-// ✅ CORREÇÃO CRÍTICA: Lógica de reset e interação entre stopSell e availableUnits
+// Usando tabela base "roomTypes" para operações de escrita
 
 import { db } from "../../../db";
 import {
-  roomTypes,
+  roomTypes as roomTypesView,
   roomAvailability,
   hotels,
   hotelBookings,
@@ -21,8 +20,8 @@ import {
 } from "drizzle-orm";
 
 // ==================== TIPOS ====================
-export type RoomType = typeof roomTypes.$inferSelect;
-export type RoomTypeInsert = typeof roomTypes.$inferInsert;
+export type RoomType = typeof roomTypesView.$inferSelect;
+export type RoomTypeInsert = Omit<RoomType, 'id' | 'created_at' | 'updated_at'>;
 export type RoomTypeUpdate = Partial<RoomTypeInsert>;
 
 export type RoomAvailabilityEntry = typeof roomAvailability.$inferSelect;
@@ -31,14 +30,12 @@ export type RoomAvailabilityEntry = typeof roomAvailability.$inferSelect;
 const toDecimalString = (num: number | string | null | undefined): string => {
   if (num === null || num === undefined) return "0.00";
   if (typeof num === 'string') {
-    // Converter string para number e depois formatar
     const parsedNum = parseFloat(num);
     return isNaN(parsedNum) ? "0.00" : parsedNum.toFixed(2);
   }
   return num.toFixed(2);
 };
 
-// Helper para garantir que stopSell seja boolean ou null
 const ensureStopSell = (value: boolean | null | undefined): boolean | null => {
   if (value === null || value === undefined) return null;
   return Boolean(value);
@@ -84,7 +81,6 @@ const validateRoomTypeData = (data: any): { isValid: boolean; errors: string[] }
     }
   }
   
-  // Validar se capacidade >= ocupação base
   if (data.capacity !== undefined && data.base_occupancy !== undefined) {
     const capacity = parseInt(data.capacity.toString());
     const baseOccupancy = parseInt(data.base_occupancy.toString());
@@ -93,8 +89,6 @@ const validateRoomTypeData = (data: any): { isValid: boolean; errors: string[] }
     }
   }
   
-  // CORREÇÃO: Usar apenas min_nights_default (campo correto no banco)
-  // Remover referências a min_nights que não existe no TypeScript
   if (data.min_nights_default !== undefined) {
     const minNights = parseInt(data.min_nights_default.toString());
     if (isNaN(minNights) || minNights < 1) {
@@ -108,6 +102,59 @@ const validateRoomTypeData = (data: any): { isValid: boolean; errors: string[] }
   };
 };
 
+// Função para converter dados do formato da view para o formato da tabela base
+const convertToBaseTableFormat = (data: any): any => {
+  const converted: any = {};
+  
+  if (data.name !== undefined) converted.name = data.name;
+  if (data.description !== undefined) converted.description = data.description;
+  if (data.capacity !== undefined) converted.maxOccupancy = data.capacity;
+  if (data.base_occupancy !== undefined) converted.baseOccupancy = data.base_occupancy;
+  if (data.base_price !== undefined) converted.basePrice = data.base_price;
+  if (data.total_units !== undefined) converted.totalUnits = data.total_units;
+  if (data.extra_adult_price !== undefined) converted.extraAdultPrice = data.extra_adult_price;
+  if (data.extra_child_price !== undefined) converted.extraChildPrice = data.extra_child_price;
+  if (data.amenities !== undefined) converted.amenities = data.amenities;
+  if (data.min_nights_default !== undefined) converted.minNightsDefault = data.min_nights_default;
+  if (data.images !== undefined) converted.images = data.images;
+  if (data.is_active !== undefined) converted.isActive = data.is_active;
+  if (data.base_price_low !== undefined) converted.basePriceLow = data.base_price_low;
+  if (data.base_price_high !== undefined) converted.basePriceHigh = data.base_price_high;
+  if (data.extra_night_price !== undefined) converted.extraNightPrice = data.extra_night_price;
+  if (data.slug !== undefined) converted.code = data.slug;
+  if (data.hotel_id !== undefined) converted.hotelId = data.hotel_id;
+  
+  return converted;
+};
+
+// Função para converter resultados da tabela base para o formato da view
+const convertToViewFormat = (result: any): any => {
+  if (!result) return null;
+  
+  return {
+    id: result.id,
+    hotel_id: result.hotelId,
+    name: result.name,
+    slug: result.code,
+    description: result.description,
+    capacity: result.maxOccupancy,
+    base_price: result.basePrice?.toString?.(),
+    extra_adult_price: result.extraAdultPrice?.toString?.(),
+    extra_child_price: result.extraChildPrice?.toString?.(),
+    base_occupancy: result.baseOccupancy,
+    amenities: result.amenities,
+    images: result.images,
+    total_units: result.totalUnits,
+    is_active: result.isActive,
+    created_at: result.createdAt,
+    updated_at: result.updatedAt,
+    base_price_low: result.basePriceLow?.toString?.(),
+    base_price_high: result.basePriceHigh?.toString?.(),
+    min_nights_default: result.minNightsDefault,
+    extra_night_price: result.extraNightPrice?.toString?.(),
+  };
+};
+
 // ==================== CRUD DE ROOM TYPES ====================
 
 /**
@@ -117,23 +164,23 @@ export const getRoomTypesByHotel = async (
   hotelId: string,
   includeInactive = false
 ): Promise<RoomType[]> => {
-  const conditions = [eq(roomTypes.hotel_id, hotelId)];
+  const conditions = [eq(roomTypesView.hotel_id, hotelId)];
   if (!includeInactive) {
-    conditions.push(eq(roomTypes.is_active, true));
+    conditions.push(eq(roomTypesView.is_active, true));
   }
 
   return await db
     .select()
-    .from(roomTypes)
+    .from(roomTypesView)
     .where(and(...conditions))
-    .orderBy(asc(roomTypes.name));
+    .orderBy(asc(roomTypesView.name));
 };
 
 /**
  * Obtém um tipo de quarto por ID
  */
 export const getRoomTypeById = async (id: string): Promise<RoomType | null> => {
-  const [roomType] = await db.select().from(roomTypes).where(eq(roomTypes.id, id));
+  const [roomType] = await db.select().from(roomTypesView).where(eq(roomTypesView.id, id));
   return roomType || null;
 };
 
@@ -144,19 +191,183 @@ export const createRoomType = async (data: RoomTypeInsert): Promise<RoomType> =>
   console.log("🟢 [SERVICE CREATE] Criando novo room type");
   console.log("📦 Dados recebidos:", JSON.stringify(data, null, 2));
   
-  // Validar dados
   const validation = validateRoomTypeData(data);
   if (!validation.isValid) {
     console.error("❌ Validação falhou:", validation.errors);
     throw new Error(`Dados inválidos: ${validation.errors.join(', ')}`);
   }
   
-  // Garantir que campos obrigatórios estão presentes
   if (!data.name || !data.base_price || !data.capacity || !data.total_units || !data.base_occupancy) {
     throw new Error("Campos obrigatórios faltando: name, base_price, capacity, total_units, base_occupancy");
   }
   
-  const [roomType] = await db.insert(roomTypes).values(data).returning();
+  // Converter para formato da tabela base
+  const baseTableData = convertToBaseTableFormat(data);
+  
+  // Verificar se o hotel existe
+  const hotelCheck = await db.execute(sql`
+    SELECT id FROM "hotels" WHERE id = ${baseTableData.hotelId}
+  `);
+  
+  // Extrair resultado da verificação do hotel
+  let hotelExists = null;
+  if (hotelCheck && typeof hotelCheck === 'object') {
+    if ('rows' in hotelCheck && Array.isArray((hotelCheck as any).rows)) {
+      hotelExists = (hotelCheck as any).rows[0];
+    } else if (Array.isArray(hotelCheck) && hotelCheck.length > 0) {
+      hotelExists = hotelCheck[0];
+    } else if ('0' in hotelCheck) {
+      hotelExists = (hotelCheck as any)['0'];
+    }
+  }
+  
+  if (!hotelExists) {
+    console.error("❌ Hotel não encontrado:", baseTableData.hotelId);
+    throw new Error(`Hotel com ID ${baseTableData.hotelId} não encontrado`);
+  }
+  console.log("✅ Hotel verificado:", hotelExists.id);
+  
+  // Preparar a query de inserção
+  let query;
+  
+  if (baseTableData.amenities && Array.isArray(baseTableData.amenities) && baseTableData.amenities.length > 0) {
+    // Com amenities
+    console.log("📦 Inserindo com amenities:", baseTableData.amenities);
+    
+    query = sql`
+      INSERT INTO "roomTypes" (
+        "hotelId", 
+        name, 
+        code, 
+        description, 
+        "maxOccupancy", 
+        "basePrice",
+        "extraAdultPrice", 
+        "extraChildPrice", 
+        "baseOccupancy", 
+        amenities,
+        images, 
+        "totalUnits", 
+        "isActive", 
+        "createdAt", 
+        "updatedAt",
+        "basePriceLow", 
+        "basePriceHigh", 
+        "minNightsDefault", 
+        "extraNightPrice"
+      ) VALUES (
+        ${baseTableData.hotelId},
+        ${baseTableData.name},
+        ${baseTableData.code || ''},
+        ${baseTableData.description || null},
+        ${baseTableData.maxOccupancy},
+        ${baseTableData.basePrice},
+        ${baseTableData.extraAdultPrice || null},
+        ${baseTableData.extraChildPrice || null},
+        ${baseTableData.baseOccupancy},
+        ARRAY[${sql.join(baseTableData.amenities.map((a: string) => sql`${a}`), sql`, `)}],
+        ${baseTableData.images || null},
+        ${baseTableData.totalUnits},
+        ${baseTableData.isActive ?? true},
+        NOW(),
+        NOW(),
+        ${baseTableData.basePriceLow || null},
+        ${baseTableData.basePriceHigh || null},
+        ${baseTableData.minNightsDefault ?? 1},
+        ${baseTableData.extraNightPrice || null}
+      ) RETURNING *;
+    `;
+  } else {
+    // Sem amenities
+    console.log("📦 Inserindo sem amenities");
+    
+    query = sql`
+      INSERT INTO "roomTypes" (
+        "hotelId", 
+        name, 
+        code, 
+        description, 
+        "maxOccupancy", 
+        "basePrice",
+        "extraAdultPrice", 
+        "extraChildPrice", 
+        "baseOccupancy", 
+        amenities,
+        images, 
+        "totalUnits", 
+        "isActive", 
+        "createdAt", 
+        "updatedAt",
+        "basePriceLow", 
+        "basePriceHigh", 
+        "minNightsDefault", 
+        "extraNightPrice"
+      ) VALUES (
+        ${baseTableData.hotelId},
+        ${baseTableData.name},
+        ${baseTableData.code || ''},
+        ${baseTableData.description || null},
+        ${baseTableData.maxOccupancy},
+        ${baseTableData.basePrice},
+        ${baseTableData.extraAdultPrice || null},
+        ${baseTableData.extraChildPrice || null},
+        ${baseTableData.baseOccupancy},
+        NULL,
+        ${baseTableData.images || null},
+        ${baseTableData.totalUnits},
+        ${baseTableData.isActive ?? true},
+        NOW(),
+        NOW(),
+        ${baseTableData.basePriceLow || null},
+        ${baseTableData.basePriceHigh || null},
+        ${baseTableData.minNightsDefault ?? 1},
+        ${baseTableData.extraNightPrice || null}
+      ) RETURNING *;
+    `;
+  }
+  
+  // Executar a query
+  console.log("⚡ Executando INSERT...");
+  const result = await db.execute(query);
+  
+  // Extrair o resultado inserido
+  let inserted = null;
+  
+  if (result && typeof result === 'object') {
+    // Formato do Drizzle/pg: { rows: [...] }
+    if ('rows' in result && Array.isArray((result as any).rows)) {
+      console.log("📦 Encontrado rows array, length:", (result as any).rows.length);
+      if ((result as any).rows.length > 0) {
+        inserted = (result as any).rows[0];
+      }
+    }
+    // Formato do Postgres.js: array diretamente
+    else if (Array.isArray(result) && result.length > 0) {
+      console.log("📦 Resultado é array direto, length:", result.length);
+      inserted = result[0];
+    }
+    // Formato com índices numéricos
+    else {
+      // Tentar encontrar qualquer propriedade que pareça um registro
+      for (const key in result) {
+        if (result[key] && typeof result[key] === 'object' && result[key].id) {
+          console.log(`📦 Encontrado registro em result[${key}]`);
+          inserted = result[key];
+          break;
+        }
+      }
+    }
+  }
+  
+  if (!inserted) {
+    console.error("❌ Falha ao criar room type - nenhum registro retornado");
+    console.error("📦 Resultado completo:", JSON.stringify(result, null, 2));
+    throw new Error("Falha ao criar room type - nenhum registro retornado");
+  }
+  
+  console.log("✅ Registro inserido:", JSON.stringify(inserted, null, 2));
+  
+  const roomType = convertToViewFormat(inserted);
   console.log("✅ Room type criado com sucesso:", roomType.id);
   return roomType;
 };
@@ -171,15 +382,8 @@ export const updateRoomType = async (
   console.log("🔵 [SERVICE UPDATE] Atualizando room type:", id);
   console.log("📦 Dados recebidos no service:", JSON.stringify(data, null, 2));
   
-  // Log detalhado dos campos
   console.log("📝 Campos recebidos:", Object.keys(data));
-  console.log("🔍 Valor de 'name':", data.name);
-  console.log("🔍 Valor de 'base_price':", data.base_price);
-  console.log("🔍 Valor de 'capacity':", data.capacity);
-  console.log("🔍 Valor de 'total_units':", data.total_units);
-  console.log("🔍 Valor de 'min_nights_default':", data.min_nights_default);
   
-  // Validar dados
   const validation = validateRoomTypeData(data);
   if (!validation.isValid) {
     console.error("❌ Validação falhou:", validation.errors);
@@ -193,67 +397,75 @@ export const updateRoomType = async (
     throw new Error("Tipo de quarto não encontrado");
   }
   
-  // Construir objeto de update dinamicamente
-  const updateFields: any = {};
+  // Converter para formato da tabela base
+  const baseTableData = convertToBaseTableFormat(data);
   
-  // Mapear campos do frontend para o banco de dados
-  // CORREÇÃO: Usar apenas min_nights_default (não existe min_nights no TypeScript)
-  if (data.name !== undefined) updateFields.name = data.name;
-  if (data.description !== undefined) updateFields.description = data.description;
-  if (data.capacity !== undefined) updateFields.capacity = data.capacity;
-  if (data.base_occupancy !== undefined) updateFields.base_occupancy = data.base_occupancy;
-  if (data.base_price !== undefined) updateFields.base_price = data.base_price;
-  if (data.total_units !== undefined) updateFields.total_units = data.total_units;
-  if (data.extra_adult_price !== undefined) updateFields.extra_adult_price = data.extra_adult_price;
-  if (data.extra_child_price !== undefined) updateFields.extra_child_price = data.extra_child_price;
-  if (data.amenities !== undefined) updateFields.amenities = data.amenities;
+  // Construir a query de update dinamicamente usando sql
+  const setClauses = [];
   
-  // CORREÇÃO IMPORTANTE: 
-  // O campo no banco é min_nights_default, e é esse que deve ser usado
-  // NÃO existe min_nights no TypeScript (o schema não tem esse campo)
-  if (data.min_nights_default !== undefined) {
-    updateFields.min_nights_default = data.min_nights_default;
-    console.log("🔄 Usando min_nights_default:", data.min_nights_default);
+  for (const [key, value] of Object.entries(baseTableData)) {
+    if (value !== undefined) {
+      // Tratamento especial para arrays
+      if (key === 'amenities' && Array.isArray(value)) {
+        if (value.length > 0) {
+          const arrayValues = value.map(v => sql`${v}`);
+          setClauses.push(sql`${sql.identifier(key)} = ARRAY[${sql.join(arrayValues, sql`, `)}]`);
+        } else {
+          setClauses.push(sql`${sql.identifier(key)} = NULL`);
+        }
+      } else {
+        setClauses.push(sql`${sql.identifier(key)} = ${value}`);
+      }
+    }
   }
   
-  if (data.images !== undefined) updateFields.images = data.images;
-  if (data.is_active !== undefined) updateFields.is_active = data.is_active;
+  // Adicionar updatedAt manualmente
+  setClauses.push(sql`"updatedAt" = NOW()`);
   
-  // Campos adicionais que podem ser enviados
-  if (data.base_price_low !== undefined) updateFields.base_price_low = data.base_price_low;
-  if (data.base_price_high !== undefined) updateFields.base_price_high = data.base_price_high;
-  if (data.extra_night_price !== undefined) updateFields.extra_night_price = data.extra_night_price;
-  if (data.slug !== undefined) updateFields.slug = data.slug;
-  
-  console.log("🔄 Campos para atualizar no banco:", JSON.stringify(updateFields, null, 2));
-  
-  // Verificar se há campos para atualizar
-  if (Object.keys(updateFields).length === 0) {
+  if (setClauses.length === 0) {
     console.log("⚠️ Nenhum campo para atualizar");
+    return existingRoomType;
+  }
+  
+  console.log("🔄 Executando update na tabela base");
+  
+  // Usar sql com template string e sql.join
+  const result = await db.execute(sql`
+    UPDATE "roomTypes"
+    SET ${sql.join(setClauses, sql`, `)}
+    WHERE id = ${id}
+    RETURNING *;
+  `);
+  
+  console.log("📦 Resultado bruto do update:", JSON.stringify(result, null, 2));
+  
+  // Tentar diferentes formas de acessar o resultado
+  let updated = null;
+  
+  if (result && typeof result === 'object') {
+    // Formato do Drizzle: { rows: [...] }
+    if ('rows' in result && Array.isArray((result as any).rows) && (result as any).rows.length > 0) {
+      updated = (result as any).rows[0];
+    }
+    // Formato do Postgres.js: array diretamente
+    else if (Array.isArray(result) && result.length > 0) {
+      updated = result[0];
+    }
+    // Formato com campo '0'
+    else if ('0' in result) {
+      updated = (result as any)['0'];
+    }
+  }
+  
+  if (!updated) {
+    console.log("❌ Falha ao atualizar room type - nenhum registro retornado");
+    console.log("📦 Estrutura do resultado:", Object.keys(result || {}));
     return null;
   }
   
-  // Atualizar timestamp
-  updateFields.updated_at = new Date();
-  
-  try {
-    // Executar atualização
-    const result = await db.update(roomTypes)
-      .set(updateFields)
-      .where(eq(roomTypes.id, id))
-      .returning();
-    
-    console.log("✅ Update executado no banco, resultado:", result.length > 0 ? "SUCESSO" : "FALHA");
-    console.log("📊 Resultado completo:", result[0] || null);
-    
-    return result[0] || null;
-  } catch (error: any) {
-    console.error("❌ [SERVICE] Erro ao atualizar room type no banco:", error);
-    console.error("📝 Stack trace:", error.stack || 'N/A');
-    console.error("📝 SQL State:", error.code || 'N/A');
-    console.error("📝 Constraint violada:", error.constraint || 'N/A');
-    throw new Error(`Erro no banco de dados: ${error.message || 'Erro desconhecido'}`);
-  }
+  const roomType = convertToViewFormat(updated);
+  console.log("✅ Room type atualizado com sucesso:", roomType.id);
+  return roomType;
 };
 
 /**
@@ -277,9 +489,9 @@ export const checkAvailabilityForDates = async (
   unitsNeeded: number = 1
 ): Promise<{ available: boolean; minUnits: number; message: string }> => {
   // Buscar o room type primeiro para obter total_units
-  const [roomType] = await db.select({ totalUnits: roomTypes.total_units })
-    .from(roomTypes)
-    .where(eq(roomTypes.id, roomTypeId))
+  const [roomType] = await db.select({ totalUnits: roomTypesView.total_units })
+    .from(roomTypesView)
+    .where(eq(roomTypesView.id, roomTypeId))
     .limit(1);
 
   const totalUnits = roomType?.totalUnits ?? 0;
@@ -352,9 +564,9 @@ export const updateAvailabilityAfterBooking = async (
     const current = new Date(start);
 
     const [roomType] = await db
-      .select({ totalUnits: roomTypes.total_units, basePrice: roomTypes.base_price })
-      .from(roomTypes)
-      .where(eq(roomTypes.id, roomTypeId))
+      .select({ totalUnits: roomTypesView.total_units, basePrice: roomTypesView.base_price })
+      .from(roomTypesView)
+      .where(eq(roomTypesView.id, roomTypeId))
       .limit(1);
 
     const totalUnits = roomType?.totalUnits ?? 0;
@@ -363,7 +575,7 @@ export const updateAvailabilityAfterBooking = async (
     console.log("📊 Total Units:", totalUnits, "Base Price:", basePrice);
 
     while (current < end) {
-      const dateObj = new Date(current); // Usar Date object
+      const dateObj = new Date(current);
       const dateStr = dateObj.toISOString().split('T')[0];
       
       console.log("📅 Processando data:", dateStr);
@@ -378,7 +590,6 @@ export const updateAvailabilityAfterBooking = async (
         .limit(1);
 
       if (!existing) {
-        // ✅ CORREÇÃO CRÍTICA: Cria registo sem price (deixa undefined/null)
         console.log("➕ Criando novo registro para", dateStr);
         
         const newRecord: any = {
@@ -391,13 +602,10 @@ export const updateAvailabilityAfterBooking = async (
           updatedAt: new Date(),
         };
         
-        // ✅ CORREÇÃO: NÃO envia price - deixa o campo undefined para usar base_price
-        // O schema deve permitir price ser NULL para usar base_price do roomType
         newRecord.price = null;
         
         await db.insert(roomAvailability).values(newRecord);
       } else {
-        // Atualiza existente
         console.log("✏️ Atualizando registro existente para", dateStr);
         const newUnits = Number(existing.availableUnits) - units;
         await db
@@ -441,9 +649,9 @@ export const releaseAvailabilityAfterCancellation = async (
     const current = new Date(start);
 
     const [roomType] = await db
-      .select({ totalUnits: roomTypes.total_units })
-      .from(roomTypes)
-      .where(eq(roomTypes.id, roomTypeId))
+      .select({ totalUnits: roomTypesView.total_units })
+      .from(roomTypesView)
+      .where(eq(roomTypesView.id, roomTypeId))
       .limit(1);
 
     const totalUnits = roomType?.totalUnits ?? 0;
@@ -467,7 +675,6 @@ export const releaseAvailabilityAfterCancellation = async (
         const newUnits = Number(existing.availableUnits) + units;
 
         if (newUnits >= totalUnits && existing.stopSell !== true && existing.price === null) {
-          // Volta ao padrão → remove registo (só se preço for null/default)
           console.log("🗑️ Removendo registro (voltou ao padrão) para", dateStr);
           await db.delete(roomAvailability).where(eq(roomAvailability.id, existing.id));
         } else {
@@ -497,7 +704,6 @@ export const releaseAvailabilityAfterCancellation = async (
 
 /**
  * Bulk update (preço, stopSell, etc.) - cria registo se não existir
- * ✅ CORREÇÃO MELHORADA: Suporte a reset: true e interação entre campos
  */
 export const bulkUpdateAvailability = async (
   roomTypeId: string,
@@ -507,7 +713,7 @@ export const bulkUpdateAvailability = async (
     stopSell?: boolean | null;
     minNights?: number;
     availableUnits?: number | null;
-    reset?: boolean;  // ✅ ADICIONAR ESTE CAMPO
+    reset?: boolean;
   }[]
 ): Promise<number> => {
   if (updates.length === 0) return 0;
@@ -516,7 +722,6 @@ export const bulkUpdateAvailability = async (
   console.log("🔍 RoomTypeId:", roomTypeId);
   console.log("📅 Updates recebidos:", updates.length);
   
-  // Buscar informações do room type
   const roomType = await getRoomTypeById(roomTypeId);
   if (!roomType) {
     console.error("❌ RoomType não encontrado:", roomTypeId);
@@ -533,77 +738,53 @@ export const bulkUpdateAvailability = async (
     roomTypeName: roomType.name
   });
 
-  // Processar updates em transação para garantir consistência
   await db.transaction(async (tx) => {
     for (const u of updates) {
       console.log("📅 Processando update para data:", u.date);
       
       const dateObj = new Date(u.date);
       
-      // Buscar registro existente
       const [existing] = await tx.select().from(roomAvailability).where(and(
         eq(roomAvailability.roomTypeId, roomTypeId),
         eq(roomAvailability.date, dateObj)
       ));
 
-      // ✅ 1. DETERMINAR VALORES COM RESET
       const isReset = u.reset === true;
       
       console.log("🔄 Estado do reset para", u.date, ":", isReset);
-      console.log("📦 Dados recebidos:", {
-        price: u.price,
-        stopSell: u.stopSell,
-        availableUnits: u.availableUnits,
-        minNights: u.minNights,
-        reset: u.reset
-      });
-
-      // ✅ 2. LÓGICA COM RESET
+      
       let priceValue = isReset 
-        ? null  // Reset explícito: remove price override (usa base_price)
+        ? null
         : (u.price !== undefined ? u.price : existing?.price ?? null);
       
       let stopSellValue = isReset
-        ? false  // Reset explícito: desbloqueia
+        ? false
         : (u.stopSell !== undefined ? u.stopSell : existing?.stopSell ?? false);
       
       let unitsValue = isReset
-        ? null  // Reset explícito: volta ao padrão (será null no banco)
+        ? null
         : (u.availableUnits !== undefined ? u.availableUnits : existing?.availableUnits ?? maxUnits);
       
       let minNightsValue = isReset
-        ? 1  // Reset explícito: volta ao mínimo padrão
+        ? 1
         : (u.minNights ?? existing?.minNights ?? 1);
 
-      console.log("📊 Valores determinados após reset:", {
-        priceValue,
-        stopSellValue,
-        unitsValue,
-        minNightsValue
-      });
-
-      // ✅ 3. INTERAÇÃO ENTRE CAMPOS: stopSell = true → availableUnits = 0
       if (stopSellValue === true) {
         unitsValue = 0;
         console.log(`🔒 [STOP SELL] Forçando availableUnits para 0 para ${u.date}`);
       }
 
-      // ✅ 4. VALIDAÇÃO FINAL
-      // Se unitsValue é null (reset), não atualizar o campo
-      // Se unitsValue é número, validar contra maxUnits
       if (unitsValue !== null && (unitsValue < 0 || unitsValue > maxUnits)) {
         throw new Error(`Unidades inválidas para ${u.date}: ${unitsValue} (máximo: ${maxUnits})`);
       }
 
-      // ✅ 5. LÓGICA DE RESET EXPLÍCITO: se reset = true e existe registro, deletar
       if (isReset && existing) {
         console.log("🗑️ [RESET EXPLÍCITO] Removendo registro para", u.date);
         await tx.delete(roomAvailability).where(eq(roomAvailability.id, existing.id));
         updatedCount++;
-        continue; // Pula para próximo update
+        continue;
       }
 
-      // ✅ 6. LÓGICA DE RESET PARA NULL VALUES: se todos campos são null/default, deletar
       const isAllNull = priceValue === null && 
                        stopSellValue === false && 
                        unitsValue === null && 
@@ -616,18 +797,16 @@ export const bulkUpdateAvailability = async (
         continue;
       }
 
-      // ✅ 7. PREPARAR DADOS PARA INSERT/UPDATE
       const dataToInsert: any = {
         hotelId,
         roomTypeId,
         date: dateObj,
-        price: priceValue, // Pode ser null (usa base_price)
+        price: priceValue,
         stopSell: stopSellValue,
         minNights: minNightsValue,
         updatedAt: new Date(),
       };
       
-      // ✅ 8. ADICIONAR availableUnits APENAS SE NÃO FOR NULL
       if (unitsValue !== null) {
         dataToInsert.availableUnits = unitsValue;
       }
@@ -638,7 +817,6 @@ export const bulkUpdateAvailability = async (
         availableUnits: dataToInsert.availableUnits ?? 'null (usa maxUnits)'
       });
 
-      // ✅ 9. EXECUTAR INSERT/UPDATE
       if (existing) {
         await tx.update(roomAvailability).set(dataToInsert).where(eq(roomAvailability.id, existing.id));
         console.log("✏️ Atualizado registro existente para", u.date);
@@ -659,7 +837,6 @@ export const bulkUpdateAvailability = async (
 
 /**
  * Obtém o calendário de disponibilidade para um tipo de quarto em um período
- * Lógica implícita: preenche dias sem registo com valores padrão do roomType
  */
 export const getAvailabilityCalendar = async (
   roomTypeId: string,
@@ -703,7 +880,6 @@ export const getAvailabilityCalendar = async (
 
   console.log("📊 Registros encontrados:", availability.length);
 
-  // Preenche dias sem registo com valores padrão
   const result: Array<{
     date: string;
     price: string;
@@ -720,7 +896,6 @@ export const getAvailabilityCalendar = async (
       return entryDateStr === dateStr;
     });
 
-    // ✅ CORREÇÃO: Se entry existe mas price é null, usa basePrice
     const entryPrice = entry?.price;
     const finalPrice = (entryPrice !== null && entryPrice !== undefined) 
       ? entryPrice 
@@ -758,14 +933,14 @@ export const getHotelAvailabilitySummary = async (
 
   const result = await db
     .select({
-      roomType: roomTypes,
+      roomType: roomTypesView,
       date: roomAvailability.date,
       price: roomAvailability.price,
       availableUnits: roomAvailability.availableUnits,
       stopSell: roomAvailability.stopSell,
     })
     .from(roomAvailability)
-    .innerJoin(roomTypes, eq(roomTypes.id, roomAvailability.roomTypeId))
+    .innerJoin(roomTypesView, eq(roomTypesView.id, roomAvailability.roomTypeId))
     .where(
       and(
         eq(roomAvailability.hotelId, hotelId),
@@ -773,7 +948,7 @@ export const getHotelAvailabilitySummary = async (
         lte(roomAvailability.date, endDateObj)
       )
     )
-    .orderBy(roomTypes.name, roomAvailability.date);
+    .orderBy(roomTypesView.name, roomAvailability.date);
 
   console.log("📊 Registros encontrados:", result.length);
   return result;
@@ -806,14 +981,12 @@ export const hasActiveBookings = async (roomTypeId: string): Promise<boolean> =>
 
 /**
  * Inicializa ou atualiza disponibilidade para um tipo de quarto
- * ✅ CORREÇÃO APLICADA: O parâmetro defaultPrice agora é opcional e pode ser null
- * ✅ CORREÇÃO APLICADA: Só insere price se defaultPrice > 0, caso contrário null (usa base_price do room_type)
  */
 export const initializeAvailability = async (
   roomTypeId: string,
   startDate: string,
   endDate: string,
-  defaultPrice?: number | null,  // ✅ CORREÇÃO: Agora opcional e pode ser null
+  defaultPrice?: number | null,
   defaultUnits: number = 1,
   minNights: number = 1
 ): Promise<number> => {
@@ -822,7 +995,6 @@ export const initializeAvailability = async (
   console.log("📆 Start:", startDate, "End:", endDate);
   console.log("💰 Preço padrão:", defaultPrice ?? 'null (usa base_price)', "Unidades:", defaultUnits, "Noites mínimas:", minNights);
   
-  // Buscar informações do tipo de quarto
   const roomType = await getRoomTypeById(roomTypeId);
   if (!roomType || !roomType.hotel_id) {
     throw new Error("Tipo de quarto não encontrado ou sem hotel associado");
@@ -832,12 +1004,10 @@ export const initializeAvailability = async (
   const end = new Date(endDate);
   let createdCount = 0;
 
-  // Criar entrada para cada dia no período
   const currentDate = new Date(start);
   while (currentDate <= end) {
     const dateObj = new Date(currentDate);
 
-    // Verificar se já existe entrada para esta data
     const existing = await db
       .select()
       .from(roomAvailability)
@@ -849,16 +1019,15 @@ export const initializeAvailability = async (
       );
 
     if (existing.length === 0) {
-      // ✅ CORREÇÃO CRÍTICA: Só insere price se defaultPrice for um número positivo > 0
       const priceValue = defaultPrice && defaultPrice > 0 ? defaultPrice.toString() : null;
 
       await db.insert(roomAvailability).values({
         roomTypeId: roomTypeId,
         hotelId: roomType.hotel_id,
         date: dateObj,
-        price: priceValue,  // ✅ CORREÇÃO: null = usa base_price do roomType
+        price: priceValue,
         availableUnits: defaultUnits,
-        stopSell: null, // Inicialmente null (ou false)
+        stopSell: null,
         minNights: minNights,
         maxStay: null,
         minStay: 1
@@ -1060,7 +1229,6 @@ export const syncAvailabilityWithTotalUnits = async (
   const totalUnits = roomType.total_units;
   console.log("🏨 Total de unidades:", totalUnits);
 
-  // Para cada entrada de disponibilidade, ajustar availableUnits se necessário
   await db
     .update(roomAvailability)
     .set({
@@ -1071,7 +1239,6 @@ export const syncAvailabilityWithTotalUnits = async (
       eq(roomAvailability.roomTypeId, roomTypeId)
     );
 
-  // Contar quantas entradas foram atualizadas
   const result = await db
     .select({ count: sql<number>`count(*)` })
     .from(roomAvailability)
@@ -1120,7 +1287,6 @@ export const checkPriceConsistency = async (
     
     const differencePercent = Math.abs((currentPrice - previousPrice) / previousPrice) * 100;
     
-    // Considerar inconsistência se a diferença for maior que 30%
     if (differencePercent > 30) {
       inconsistencies.push({
         date: current.date,
@@ -1192,12 +1358,10 @@ export const updateBasePriceForFutureDates = async (
       and(
         eq(roomAvailability.roomTypeId, roomTypeId),
         gte(roomAvailability.date, effectiveDate),
-        // Só atualiza registros que não têm preço específico (null)
         sql`${roomAvailability.price} IS NULL`
       )
     );
 
-  // Obter número de linhas afetadas
   const countResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(roomAvailability)
