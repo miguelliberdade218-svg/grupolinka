@@ -1,14 +1,19 @@
-// src/shared/components/HotelCard.tsx
-// Card moderno de hotel para listagem em busca
-// ✅ CORRIGIDO: Problema de imagens 404 resolvido com fallback
-// ✅ CORREÇÃO: Melhor tratamento de erros e dados seguros
+/**
+ * src/shared/components/HotelCard.tsx
+ * Card moderno de hotel para listagem em busca
+ * ✅ CORRIGIDO: Usa fotos reais da tabela room_type_photos
+ * ✅ CORREÇÃO: Remove dependência de placeholder problemático
+ * ✅ CORREÇÃO: Adiciona loading state e tratamento de erros
+ */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'wouter';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
-import { Star, MapPin, Heart } from 'lucide-react';
+import { Star, MapPin, Heart, Image as ImageIcon } from 'lucide-react';
+import { photoGalleryService } from '@/services/photoGalleryService';
 import type { Hotel as ServiceHotel } from '@/services/hotelService';
+import type { RoomTypePhoto } from '@/shared/types/hotel-photos';
 
 interface HotelCardProps {
   hotel: ServiceHotel & { base_price?: string };
@@ -34,6 +39,38 @@ export const HotelCard: React.FC<HotelCardProps> = ({
   isFavorite = false,
   onToggleFavorite,
 }) => {
+  const [photos, setPhotos] = useState<RoomTypePhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  // ✅ CORREÇÃO: Carregar fotos do hotel quando o componente montar
+  useEffect(() => {
+    const loadHotelPhotos = async () => {
+      try {
+        setLoadingPhotos(true);
+        console.log(`📸 Carregando fotos para hotel ${hotel.id} - ${hotel.name}`);
+        
+        // Buscar fotos destacadas do hotel
+        const hotelPhotos = await photoGalleryService.getHotelFeaturedPhotos(hotel.id);
+        
+        if (hotelPhotos && hotelPhotos.length > 0) {
+          console.log(`✅ ${hotelPhotos.length} fotos carregadas para ${hotel.name}`);
+          setPhotos(hotelPhotos);
+        } else {
+          console.log(`ℹ️ Nenhuma foto encontrada para ${hotel.name}`);
+          setPhotos([]);
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao carregar fotos do hotel ${hotel.id}:`, error);
+        setPhotos([]);
+      } finally {
+        setLoadingPhotos(false);
+      }
+    };
+
+    loadHotelPhotos();
+  }, [hotel.id, hotel.name]);
+
   // ✅ CORREÇÃO: Funções auxiliares para dados seguros
   const getSafeRating = (): number => {
     if (typeof hotel.rating === 'number') return hotel.rating;
@@ -47,12 +84,6 @@ export const HotelCard: React.FC<HotelCardProps> = ({
     return 0;
   };
 
-  const getSafeImages = (): string[] => {
-    if (!hotel.images) return [];
-    if (Array.isArray(hotel.images)) return hotel.images;
-    return [];
-  };
-
   const getSafeDescription = (): string => {
     return hotel.description || 'Descrição não disponível';
   };
@@ -64,40 +95,73 @@ export const HotelCard: React.FC<HotelCardProps> = ({
   // ✅ CORREÇÃO: Dados seguros
   const safeRating = getSafeRating();
   const safeTotalReviews = getSafeTotalReviews();
-  const safeImages = getSafeImages();
   const safeDescription = getSafeDescription();
   const safeLocality = getSafeLocality();
   
-  // ✅ CORREÇÃO APLICADA: Imagem com fallback e tratamento de erro
-  const imageUrl = safeImages[0] || `https://via.placeholder.com/400x300?text=${encodeURIComponent(hotel.name || 'Hotel')}`;
-  
+  // ✅ CORREÇÃO: Determinar URL da imagem
+  const getImageUrl = () => {
+    if (loadingPhotos) {
+      return null; // Vai mostrar loading
+    }
+    
+    if (photos.length > 0) {
+      return photos[0].url;
+    }
+    
+    // Fallback para images antigas (caso existam)
+    if (hotel.images && hotel.images.length > 0) {
+      return hotel.images[0];
+    }
+    
+    return null; // Sem imagem
+  };
+
+  const imageUrl = getImageUrl();
+  const hasImage = imageUrl && !imgError;
+
+  // ✅ CORREÇÃO: Tratar erro de imagem sem loop infinito
+  const handleImageError = () => {
+    if (!imgError) {
+      console.log(`❌ Erro ao carregar imagem do hotel ${hotel.name}`);
+      setImgError(true);
+    }
+  };
+
   // ✅ CORREÇÃO: MinPrice seguro
   const safeMinPrice = minPrice || parseInt(hotel.base_price || '0') || 0;
 
   return (
     <div className="group relative bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-300">
-      {/* Imagem Hero com Gradient Overlay */}
+      {/* Imagem Hero */}
       <div className="relative h-48 overflow-hidden bg-gray-100">
-        {/* ✅ CORREÇÃO APLICADA: Imagem com fallback e tratamento de erro */}
-        <img
-          src={imageUrl}
-          alt={hotel.name || 'Hotel'}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          onError={(e) => {
-            // ✅ CORREÇÃO: Fallback para imagem placeholder com nome do hotel
-            (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(hotel.name || 'Hotel')}`;
-            e.currentTarget.className = 'w-full h-full object-cover bg-gray-200';
-          }}
-        />
-        {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+        {loadingPhotos ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="animate-pulse bg-gray-200 w-full h-full" />
+          </div>
+        ) : hasImage ? (
+          <img
+            src={imageUrl}
+            alt={hotel.name || 'Hotel'}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={handleImageError}
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-200">
+            <ImageIcon className="w-12 h-12 text-gray-400 mb-2" />
+            <span className="text-sm text-gray-500">Sem imagem</span>
+          </div>
+        )}
 
-        {/* Rating Badge - ✅ CORREÇÃO: Só mostrar se rating > 0 */}
+        {/* Gradient Overlay - só se tiver imagem */}
+        {hasImage && (
+          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+        )}
+
+        {/* Rating Badge */}
         {safeRating > 0 && (
           <div className="absolute top-3 left-3 flex items-center gap-1 bg-white/95 px-2 py-1 rounded-lg shadow-sm">
             <Star className="w-4 h-4 fill-primary text-primary" />
             <span className="text-sm font-semibold text-dark">
-              {/* ✅ CORREÇÃO CRÍTICA: Usar toFixed apenas em número */}
               {safeRating.toFixed(1)}
             </span>
           </div>
@@ -122,6 +186,13 @@ export const HotelCard: React.FC<HotelCardProps> = ({
             <Badge className="bg-alert text-white">Mais reservado</Badge>
           </div>
         )}
+
+        {/* ✅ Contador de fotos */}
+        {photos.length > 1 && hasImage && (
+          <div className="absolute bottom-3 right-3 bg-black/70 text-white text-xs px-2 py-1 rounded-full">
+            {photos.length} {photos.length === 1 ? 'foto' : 'fotos'}
+          </div>
+        )}
       </div>
 
       {/* Informações do Hotel */}
@@ -137,7 +208,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
           </div>
         </div>
 
-        {/* Reviews count - ✅ CORREÇÃO: Só mostrar se > 0 */}
+        {/* Reviews count */}
         {safeTotalReviews > 0 && (
           <p className="text-xs text-muted-foreground mb-3">
             {safeTotalReviews.toLocaleString()} {safeTotalReviews === 1 ? 'avaliação' : 'avaliações'}
@@ -149,7 +220,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
           {safeDescription}
         </p>
 
-        {/* Preço - ✅ CORREÇÃO: Mostrar apenas se showPrice for true */}
+        {/* Preço */}
         {showPrice && safeMinPrice > 0 && (
           <div className="mb-4 pb-4 border-t border-gray-100">
             <p className="text-xs text-muted-foreground">A partir de</p>

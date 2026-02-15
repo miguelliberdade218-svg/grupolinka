@@ -1,18 +1,11 @@
 /**
  * src/apps/main-app/pages/Hotels/details.tsx
  * Página de detalhes do hotel com galeria profissional de fotos de room types
- * Versão: 14/02/2026 - CORRIGIDO
- * 
- * Funcionalidades:
- * - Galeria de cada room type com todas as fotos
- * - Navegação por arrows entre fotos
- * - Visualização em tela cheia
- * - Informações detalhadas do room type
- * - Booking integrado
+ * Versão: 15/02/2026 - CORRIGIDO (min_nights)
  */
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useLocation } from 'wouter'; // ✅ useLocation em vez de useNavigate
+import { useParams, useLocation } from 'wouter';
 import {
   MapPin,
   Star,
@@ -24,12 +17,13 @@ import {
   Mail,
   Clock,
   CheckCircle,
+  ChevronLeft,
 } from 'lucide-react';
 import { HotelPhotoGallery } from '@/apps/main-app/components/HotelPhotoGallery';
 import { photoGalleryService } from '@/services/photoGalleryService';
 import { hotelService } from '@/services/hotelService';
-import type { Hotel } from '@/services/hotelService'; // ✅ Import do tipo do service
-import type { RoomType } from '@/services/hotelService'; // ✅ Import do tipo do service
+import type { Hotel } from '@/services/hotelService';
+import type { RoomType } from '@/services/hotelService';
 import type { RoomTypePhoto } from '@/shared/types/hotel-photos';
 
 interface RoomTypeWithPhotos {
@@ -39,10 +33,11 @@ interface RoomTypeWithPhotos {
 
 export const HotelDetailsPage: React.FC = () => {
   const { hotelId } = useParams<{ hotelId: string }>();
-  const [, setLocation] = useLocation(); // ✅ useLocation em vez de useNavigate
+  const [, setLocation] = useLocation();
 
   const [hotel, setHotel] = useState<Hotel | null>(null);
   const [roomTypes, setRoomTypes] = useState<RoomTypeWithPhotos[]>([]);
+  const [hotelPhotos, setHotelPhotos] = useState<RoomTypePhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRoomType, setSelectedRoomType] = useState<string | null>(null);
@@ -56,15 +51,24 @@ export const HotelDetailsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // ✅ CORREÇÃO: getHotelById retorna Hotel diretamente (não ApiResponse)
+      // Carregar hotel
       const hotelData = await hotelService.getHotelById(hotelId!);
       setHotel(hotelData);
 
-      // ✅ CORREÇÃO: getRoomTypesByHotel retorna ListResponse<RoomType>
+      // Carregar fotos destacadas do hotel (para a hero section)
+      try {
+        const featuredPhotos = await photoGalleryService.getHotelFeaturedPhotos(hotelId!);
+        setHotelPhotos(featuredPhotos || []);
+      } catch (err) {
+        console.error('Erro ao carregar fotos do hotel:', err);
+        setHotelPhotos([]);
+      }
+
+      // Carregar room types
       const roomTypesResponse = await hotelService.getRoomTypesByHotel(hotelId!);
       const roomTypesData = roomTypesResponse.success ? roomTypesResponse.data || [] : [];
 
-      // Para cada room type, carregar todas as fotos
+      // Para cada room type, carregar todas as suas fotos
       const roomTypesWithPhotos = await Promise.all(
         roomTypesData.map(async (rt) => {
           try {
@@ -89,7 +93,24 @@ export const HotelDetailsPage: React.FC = () => {
   };
 
   const handleGoBack = () => {
-    setLocation('/hotels/search'); // ✅ Volta para a página de busca
+    setLocation('/hotels/search');
+  };
+
+  const handleBooking = (roomTypeId: string) => {
+    // Aqui você pode implementar a lógica de reserva
+    console.log('Reservar quarto:', roomTypeId);
+    // setLocation(`/booking/${roomTypeId}`);
+  };
+
+  const formatPrice = (price: string | number): string => {
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    if (isNaN(numPrice) || numPrice <= 0) return 'Consulte';
+    return new Intl.NumberFormat('pt-MZ', {
+      style: 'currency',
+      currency: 'MZN',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(numPrice);
   };
 
   if (loading) {
@@ -109,9 +130,10 @@ export const HotelDetailsPage: React.FC = () => {
         <div className="max-w-4xl mx-auto">
           <button
             onClick={handleGoBack}
-            className="mb-4 text-orange-600 hover:text-orange-700 font-medium"
+            className="mb-4 flex items-center gap-2 text-orange-600 hover:text-orange-700 font-medium"
           >
-            ← Voltar
+            <ChevronLeft size={20} />
+            Voltar aos resultados
           </button>
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-4">
             <AlertCircle className="text-red-600 flex-shrink-0 mt-1" size={24} />
@@ -127,22 +149,28 @@ export const HotelDetailsPage: React.FC = () => {
 
   return (
     <div className="w-full min-h-screen bg-gray-50">
-      {/* Header Hero - Galeria Principal do Hotel */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Header com navegação */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-4">
           <button
             onClick={handleGoBack}
-            className="mb-4 text-orange-600 hover:text-orange-700 font-medium text-sm"
+            className="flex items-center gap-2 text-orange-600 hover:text-orange-700 font-medium"
           >
-            ← Voltar aos resultados
+            <ChevronLeft size={20} />
+            Voltar aos resultados
           </button>
+        </div>
+      </div>
 
+      {/* Hero Section - Galeria do Hotel */}
+      <div className="bg-white">
+        <div className="max-w-6xl mx-auto px-4 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Informações Principais */}
             <div className="lg:col-span-1">
               <h1 className="text-3xl font-bold text-gray-900 mb-2">{hotel.name}</h1>
 
-              {/* Rating - usando valores padrão para campos opcionais */}
+              {/* Rating */}
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex gap-1">
                   {[...Array(5)].map((_, i) => (
@@ -209,9 +237,17 @@ export const HotelDetailsPage: React.FC = () => {
               )}
             </div>
 
-            {/* Galeria de Fotos do Hotel - usando images do hotel */}
+            {/* Galeria de Fotos do Hotel - usando as fotos reais */}
             <div className="lg:col-span-2">
-              {hotel.images && hotel.images.length > 0 ? (
+              {hotelPhotos.length > 0 ? (
+                <HotelPhotoGallery
+                  photos={hotelPhotos}
+                  title={hotel.name}
+                  mode="full"
+                  className="w-full rounded-xl overflow-hidden shadow-md"
+                />
+              ) : hotel.images && hotel.images.length > 0 ? (
+                // Fallback para images antigas
                 <div className="bg-gray-100 rounded-xl overflow-hidden">
                   <img
                     src={hotel.images[0]}
@@ -227,7 +263,7 @@ export const HotelDetailsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Descrição e Amenities */}
+          {/* Descrição do Hotel */}
           {hotel.description && (
             <div className="mt-8 pt-8 border-t border-gray-200">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Sobre o hotel</h2>
@@ -235,6 +271,7 @@ export const HotelDetailsPage: React.FC = () => {
             </div>
           )}
 
+          {/* Amenities do Hotel */}
           {hotel.amenities && hotel.amenities.length > 0 && (
             <div className="mt-8">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Comodidades</h2>
@@ -251,7 +288,7 @@ export const HotelDetailsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Tipos de Quarto e Galerias */}
+      {/* Tipos de Quarto com suas Galerias */}
       <div className="max-w-6xl mx-auto px-4 py-12">
         <h2 className="text-3xl font-bold text-gray-900 mb-8">Tipos de Quarto</h2>
 
@@ -260,7 +297,7 @@ export const HotelDetailsPage: React.FC = () => {
             <p className="text-gray-600">Nenhum tipo de quarto disponível</p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-12">
             {roomTypes.map((roomData, index) => {
               const { roomType, photos } = roomData;
               const isSelected = selectedRoomType === roomType.id;
@@ -268,7 +305,8 @@ export const HotelDetailsPage: React.FC = () => {
               return (
                 <div
                   key={roomType.id}
-                  className={`bg-white rounded-xl border-2 overflow-hidden transition ${
+                  id={`room-${roomType.id}`}
+                  className={`bg-white rounded-xl border-2 overflow-hidden transition-all scroll-mt-24 ${
                     isSelected ? 'border-orange-600 shadow-lg' : 'border-gray-200'
                   }`}
                 >
@@ -280,7 +318,7 @@ export const HotelDetailsPage: React.FC = () => {
                           photos={photos}
                           title={roomType.name}
                           mode="full"
-                          className="w-full"
+                          className="w-full rounded-xl overflow-hidden shadow-md"
                         />
                       ) : (
                         <div className="bg-gray-100 rounded-lg aspect-video flex items-center justify-center">
@@ -300,7 +338,7 @@ export const HotelDetailsPage: React.FC = () => {
                       )}
 
                       {/* Características */}
-                      <div className="space-y-2 mb-6 flex-1">
+                      <div className="space-y-3 mb-6 flex-1">
                         <div className="flex items-center gap-2">
                           <Users size={18} className="text-orange-600" />
                           <span className="text-gray-700">
@@ -311,16 +349,24 @@ export const HotelDetailsPage: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <DollarSign size={18} className="text-orange-600" />
                           <span className="text-gray-700">
-                            <strong>{roomType.base_price} MZN</strong> por noite
+                            <strong>{formatPrice(roomType.base_price)}</strong> por noite
                           </span>
                         </div>
 
+                        {/* ✅ CORRIGIDO: min_nights em vez de min_nights_default */}
                         {roomType.min_nights && (
                           <div className="flex items-center gap-2">
                             <Clock size={18} className="text-orange-600" />
                             <span className="text-gray-700">
                               Mín. <strong>{roomType.min_nights} noites</strong>
                             </span>
+                          </div>
+                        )}
+
+                        {photos.length > 0 && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span className="font-medium">{photos.length}</span>
+                            {photos.length === 1 ? 'foto' : 'fotos'} disponíveis
                           </div>
                         )}
                       </div>
@@ -340,7 +386,7 @@ export const HotelDetailsPage: React.FC = () => {
                             ))}
                             {roomType.amenities.length > 5 && (
                               <p className="text-sm text-orange-600 font-medium">
-                                +{roomType.amenities.length - 5} amenities
+                                +{roomType.amenities.length - 5} comodidades
                               </p>
                             )}
                           </div>
@@ -349,18 +395,13 @@ export const HotelDetailsPage: React.FC = () => {
 
                       {/* CTA */}
                       <button
-                        onClick={() => setSelectedRoomType(roomType.id)}
+                        onClick={() => handleBooking(roomType.id)}
                         className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-lg transition"
                       >
                         Reservar Agora
                       </button>
                     </div>
                   </div>
-
-                  {/* Separador */}
-                  {index < roomTypes.length - 1 && (
-                    <div className="border-t border-gray-200" />
-                  )}
                 </div>
               );
             })}

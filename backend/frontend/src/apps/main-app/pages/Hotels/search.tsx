@@ -1,14 +1,7 @@
 /**
  * src/apps/main-app/pages/Hotels/search.tsx (REDESIGN)
  * Página de resultados de hotéis com galeria de fotos profissional
- * Versão: 14/02/2026 - CORRIGIDO
- * 
- * Melhorias:
- * - Fotos dos hotéis em destaque
- * - Cards maiores com melhor espaçamento
- * - Galeria interativa com arrows
- * - Layout moderno e responsivo
- * - Fotos destacadas do gestor visíveis
+ * Versão: 15/02/2026 - CORRIGIDO COM FOTOS REAIS
  */
 
 import React, { useState, useEffect } from 'react';
@@ -18,7 +11,7 @@ import { HotelPhotoGallery } from '@/apps/main-app/components/HotelPhotoGallery'
 import { photoGalleryService } from '@/services/photoGalleryService';
 import { hotelService } from '@/services/hotelService';
 import type { RoomTypePhoto } from '@/shared/types/hotel-photos';
-import type { Hotel } from '@/services/hotelService'; // ✅ Import do tipo do service
+import type { Hotel } from '@/services/hotelService';
 
 interface HotelResultCard {
   hotel: Hotel;
@@ -48,7 +41,6 @@ export const HotelsSearchPage: React.FC = () => {
       let hotelsData: Hotel[] = [];
 
       if (locality) {
-        // Usar searchHotels em vez de getHotelsByLocality (que pode não existir)
         const response = await hotelService.searchHotels({ locality });
         if (response.success && response.data) {
           hotelsData = response.data;
@@ -56,8 +48,8 @@ export const HotelsSearchPage: React.FC = () => {
           throw new Error(response.error || 'Erro ao carregar hotéis');
         }
       } else {
-        // Usar getHotels do hotelService (existe?)
-        const response = await hotelService.getHotelsByHost('all'); // Ajuste conforme necessário
+        // Buscar todos os hotéis ativos
+        const response = await hotelService.getHotelsByHost('all');
         if (response.success && response.data) {
           hotelsData = response.data;
         } else {
@@ -65,11 +57,11 @@ export const HotelsSearchPage: React.FC = () => {
         }
       }
 
-      // Para cada hotel, carregar fotos destacadas
+      // Para cada hotel, carregar fotos destacadas de todos os room types
       const hotelsWithPhotos = await Promise.all(
         hotelsData.map(async (hotel) => {
           try {
-            // Obter fotos destacadas do hotel
+            // Obter fotos destacadas do hotel (agregadas de todos os room types)
             const photosResponse = await photoGalleryService.getHotelFeaturedPhotos(hotel.id);
             const photos = photosResponse || [];
             
@@ -202,7 +194,7 @@ export const HotelsSearchPage: React.FC = () => {
                         {result.hotel.name}
                       </h2>
                       
-                      {/* Rating - usando campos opcionais */}
+                      {/* Rating */}
                       <div className="flex items-center gap-2 mb-3">
                         <div className="flex gap-1">
                           {[...Array(5)].map((_, i) => (
