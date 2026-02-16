@@ -1,4 +1,4 @@
-// src/apps/main-app/pages/HotelDetailsPage.tsx - VERSÃO CORRIGIDA COM IMPORT CORRETO
+// src/apps/main-app/pages/HotelDetailsPage.tsx - VERSÃO FINAL CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
@@ -8,17 +8,29 @@ import { Badge } from '@/shared/components/ui/badge';
 import { Separator } from '@/shared/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import { Skeleton } from '@/shared/components/ui/skeleton';
-import { MapPin, Phone, Mail, Star, Users, Calendar, Home, Shield, Coffee, Wifi } from 'lucide-react';
+import { MapPin, Phone, Mail, Star, Users, Calendar, Home, Shield, Coffee, Wifi, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { hotelService } from '@/services/hotelService'; // ✅ CORREÇÃO: Importação nomeada
+
+// ✅ IMPORTAÇÃO DA GALERIA PROFISSIONAL
+import { HotelPhotoGallery } from '@/apps/main-app/components/HotelPhotoGallery';
+
+// Serviços e tipos
+import { hotelService } from '@/services/hotelService';
+import { photoGalleryService } from '@/services/photoGalleryService';
 import type { Hotel, RoomType, ListResponse } from '@/services/hotelService';
+import type { HotelPhoto, RoomTypePhoto } from '@/shared/types/hotel-photos';
 
 const HotelDetailsPage = () => {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState('overview');
+  
+  // ✅ Estado para fotos do hotel - usando HotelPhoto
+  const [hotelPhotos, setHotelPhotos] = useState<HotelPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [photosError, setPhotosError] = useState(false);
 
-  // ✅ CORREÇÃO: hotelService.getHotelById retorna Hotel diretamente
+  // ✅ Buscar dados do hotel
   const { 
     data: hotel, 
     isLoading: isLoadingHotel, 
@@ -31,7 +43,7 @@ const HotelDetailsPage = () => {
     retry: 1,
   });
 
-  // ✅ CORREÇÃO: hotelService.getRoomTypesByHotel retorna ListResponse<RoomType>
+  // ✅ Buscar tipos de quarto
   const { 
     data: roomTypesResponse, 
     isLoading: isLoadingRoomTypes,
@@ -44,7 +56,96 @@ const HotelDetailsPage = () => {
     retry: 1,
   });
 
-  // ✅ CORREÇÃO CRÍTICA: Extrair dados corretamente da resposta
+  // ✅ FUNÇÃO AUXILIAR: Converter RoomTypePhoto para HotelPhoto
+  const convertRoomTypePhotoToHotelPhoto = (photo: RoomTypePhoto, hotelId: string): HotelPhoto => {
+    return {
+      id: photo.id,
+      hotel_id: hotelId, // ✅ Usar hotel_id em vez de room_type_id
+      url: photo.url,
+      alt_text: photo.alt_text,
+      is_primary: photo.is_primary,
+      is_featured: photo.is_featured,
+      order: photo.order,
+      created_at: photo.created_at,
+      updated_at: photo.updated_at,
+    };
+  };
+
+  // ✅ BUSCAR FOTOS DO HOTEL (PRIORIDADE MÁXIMA)
+  useEffect(() => {
+    const loadHotelPhotos = async () => {
+      if (!id || !hotel) return;
+      
+      setLoadingPhotos(true);
+      setPhotosError(false);
+      
+      try {
+        console.log(`📸 [HotelDetails] Carregando fotos para hotel ${id}`);
+        
+        // Tenta carregar do serviço primeiro
+        const photos = await photoGalleryService.getHotelPhotos(id);
+        
+        if (photos && photos.length > 0) {
+          console.log(`✅ [HotelDetails] ${photos.length} fotos carregadas do serviço`);
+          
+          // ✅ CORREÇÃO: Converter RoomTypePhoto[] para HotelPhoto[]
+          const convertedPhotos: HotelPhoto[] = photos.map(photo => 
+            convertRoomTypePhotoToHotelPhoto(photo, id)
+          );
+          
+          setHotelPhotos(convertedPhotos);
+        } else {
+          console.log(`ℹ️ [HotelDetails] Nenhuma foto encontrada no serviço`);
+          
+          // Fallback: se o hotel tiver images, converte para HotelPhoto
+          if (hotel?.images && hotel.images.length > 0) {
+            console.log(`📸 [HotelDetails] Usando ${hotel.images.length} imagens de fallback`);
+            
+            const fallbackPhotos: HotelPhoto[] = hotel.images.map((url, index) => ({
+              id: `hotel-fallback-${index}`,
+              hotel_id: id, // ✅ Usando hotel_id
+              url: url,
+              alt_text: `${hotel.name} - Foto ${index + 1}`,
+              is_primary: index === 0,
+              is_featured: index < 3,
+              order: index,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }));
+            
+            setHotelPhotos(fallbackPhotos);
+          }
+        }
+      } catch (error) {
+        console.error('❌ [HotelDetails] Erro ao carregar fotos:', error);
+        setPhotosError(true);
+        
+        // Fallback em caso de erro
+        if (hotel?.images && hotel.images.length > 0) {
+          const fallbackPhotos: HotelPhoto[] = hotel.images.map((url, index) => ({
+            id: `hotel-fallback-${index}`,
+            hotel_id: id,
+            url: url,
+            alt_text: `${hotel.name} - Foto ${index + 1}`,
+            is_primary: index === 0,
+            is_featured: index < 3,
+            order: index,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }));
+          setHotelPhotos(fallbackPhotos);
+        }
+      } finally {
+        setLoadingPhotos(false);
+      }
+    };
+
+    if (hotel) {
+      loadHotelPhotos();
+    }
+  }, [id, hotel]);
+
+  // ✅ Extrair room types da resposta
   const roomTypes = roomTypesResponse?.success 
     ? roomTypesResponse.data || [] 
     : [];
@@ -52,6 +153,7 @@ const HotelDetailsPage = () => {
   const isLoading = isLoadingHotel || isLoadingRoomTypes;
   const loadingRoomTypes = isLoadingRoomTypes;
 
+  // ✅ Efeito para erros
   useEffect(() => {
     if (isHotelError && hotelError) {
       console.error('Erro ao carregar hotel:', hotelError);
@@ -62,7 +164,6 @@ const HotelDetailsPage = () => {
     if (isRoomTypesError && roomTypesError) {
       console.error('Erro ao carregar tipos de quarto:', roomTypesError);
       
-      // Mostrar erro apenas se não for um hotel inválido
       if (!isHotelError) {
         toast.error('Erro ao carregar tipos de quarto');
       }
@@ -72,8 +173,6 @@ const HotelDetailsPage = () => {
   // ✅ Funções de auxílio
   const handleBookNow = () => {
     if (!hotel) return;
-    
-    // Navegar para página de reserva
     setLocation(`/hotels/${id}/book?step=1`);
   };
 
@@ -125,32 +224,14 @@ const HotelDetailsPage = () => {
     });
   };
 
-  // ✅ Função para fallback de imagem (CORRIGIDA)
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>, index: number, hotelName: string) => {
-    const target = e.target as HTMLImageElement;
-    
-    // Fallback para imagem local
-    target.src = `/placeholder-hotel-${(index % 3) + 1}.jpg`;
-    
-    // Se fallback local falhar, usa SVG inline
-    target.onerror = () => {
-      const safeHotelName = hotelName.substring(0, 20).replace(/[^\w\s]/gi, '');
-      target.src = `data:image/svg+xml;base64,${btoa(`
-        <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
-          <rect width="400" height="300" fill="#f3f4f6"/>
-          <text x="200" y="150" text-anchor="middle" fill="#6b7280" font-family="Arial" font-size="16">
-            ${safeHotelName}
-          </text>
-        </svg>
-      `)}`;
-    };
-  };
-
   // ✅ Estado de loading
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="space-y-4">
+          {/* Skeleton da Galeria - GRANDE */}
+          <Skeleton className="h-[500px] w-full rounded-xl" />
+          
           {/* Cabeçalho loading */}
           <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-6">
             <div className="space-y-2">
@@ -162,13 +243,6 @@ const HotelDetailsPage = () => {
               <Skeleton className="h-10 w-24" />
               <Skeleton className="h-10 w-32" />
             </div>
-          </div>
-
-          {/* Galeria loading */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-48 w-full rounded-lg" />
-            ))}
           </div>
 
           {/* Conteúdo loading */}
@@ -213,6 +287,52 @@ const HotelDetailsPage = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* ============================================ */}
+      {/* 🏨 ESPAÇO PRIVILEGIADO PARA AS FOTOS 🏨 */}
+      {/* GRANDE, IMPONENTE, EM DESTAQUE */}
+      {/* ============================================ */}
+      <div className="mb-8">
+        {loadingPhotos ? (
+          // Loading state para a galeria
+          <div className="relative w-full h-[500px] bg-gray-100 rounded-xl overflow-hidden">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-600">Carregando fotos do hotel...</p>
+              </div>
+            </div>
+          </div>
+        ) : hotelPhotos.length > 0 ? (
+          // ✅ GALERIA PROFISSIONAL EM MODO FULL
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <HotelPhotoGallery
+              photos={hotelPhotos}
+              title={hotel.name}
+              mode="full" // Modo full = experiência completa com navegação
+              className="w-full"
+            />
+          </div>
+        ) : (
+          // Fallback se não houver fotos
+          <div className="relative w-full h-[400px] bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl overflow-hidden flex items-center justify-center">
+            <div className="text-center">
+              <ImageIcon className="w-20 h-20 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">Galeria não disponível</h3>
+              <p className="text-gray-500">
+                Este hotel ainda não possui fotos cadastradas.
+              </p>
+            </div>
+          </div>
+        )}
+        
+        {/* Legenda ou informação adicional sobre as fotos */}
+        {hotelPhotos.length > 0 && (
+          <p className="text-sm text-gray-500 mt-2 text-center">
+            {hotelPhotos.length} foto{hotelPhotos.length !== 1 ? 's' : ''} disponível{hotelPhotos.length !== 1 ? 'is' : ''}
+          </p>
+        )}
+      </div>
+
       {/* Cabeçalho */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row justify-between items-start gap-4">
@@ -228,7 +348,6 @@ const HotelDetailsPage = () => {
             </div>
             
             <div className="flex flex-wrap items-center gap-3 mt-2">
-              {/* ✅ CORREÇÃO 1: Verificação robusta de hotel.rating antes de usar .toFixed() */}
               {hotel.rating !== null && hotel.rating !== undefined && hotel.rating > 0 && (
                 <div className="flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-md">
                   <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
@@ -247,7 +366,6 @@ const HotelDetailsPage = () => {
                 </Badge>
               )}
               
-              {/* ✅ CORREÇÃO 3: Verificação robusta para badge recomendado */}
               {hotel.rating !== null && hotel.rating !== undefined && hotel.rating >= 4 && (
                 <Badge variant="outline" className="border-yellow-400 text-yellow-700">
                   Recomendado
@@ -269,31 +387,7 @@ const HotelDetailsPage = () => {
         </div>
       </div>
 
-      {/* Galeria de Imagens */}
-      {hotel.images && hotel.images.length > 0 && (
-        <div className="mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {hotel.images.slice(0, 3).map((img: string, index: number) => (
-              <div key={index} className="rounded-lg overflow-hidden shadow-md">
-                <img
-                  src={img}
-                  alt={`${hotel.name} - Imagem ${index + 1}`}
-                  className="w-full h-48 md:h-64 object-cover hover:scale-105 transition-transform duration-300"
-                  // ✅ CORREÇÃO 2: Fallback robusto para imagens
-                  onError={(e) => handleImageError(e, index, hotel.name)}
-                />
-              </div>
-            ))}
-          </div>
-          {hotel.images.length > 3 && (
-            <p className="text-center text-sm text-muted-foreground mt-2">
-              + {hotel.images.length - 3} mais imagens disponíveis
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Tabs de Conteúdo */}
+      {/* Tabs de Conteúdo (mantido igual ao original) */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
           <TabsTrigger value="overview">
@@ -416,7 +510,7 @@ const HotelDetailsPage = () => {
               <CardDescription>
                 {loadingRoomTypes 
                   ? 'Carregando tipos de quarto...' 
-                  : `${roomTypes.length} tipo${roomTypes.length !== 1 ? 's' : ''} disponível${roomTypes.length !== 1 ? 's' : ''}`
+                  : `${roomTypes.length} tipo${roomTypes.length !== 1 ? 's' : ''} disponível${roomTypes.length !== 1 ? 'is' : ''}`
                 }
               </CardDescription>
             </CardHeader>

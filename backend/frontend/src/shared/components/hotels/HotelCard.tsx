@@ -2,6 +2,7 @@
  * src/shared/components/hotels/HotelCard.tsx
  * Card moderno de hotel para listagem em busca
  * ✅ CORRIGIDO: Navegação por setas funcionando
+ * ✅ CORRIGIDO: Link de detalhes usando ID em vez de slug
  */
 
 import React, { useState, useEffect } from 'react';
@@ -70,7 +71,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
     setImgError(false);
   }, [photos]);
 
-  // ✅ CORREÇÃO: Handlers de navegação simplificados
+  // Handlers de navegação simplificados
   const handlePrevPhoto = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -80,7 +81,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
       const newIndex = currentPhotoIndex === 0 ? photos.length - 1 : currentPhotoIndex - 1;
       console.log('👉 Novo índice:', newIndex);
       setCurrentPhotoIndex(newIndex);
-      setImgError(false); // Resetar erro ao mudar de foto
+      setImgError(false);
     }
   };
 
@@ -93,7 +94,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
       const newIndex = currentPhotoIndex === photos.length - 1 ? 0 : currentPhotoIndex + 1;
       console.log('👈 Novo índice:', newIndex);
       setCurrentPhotoIndex(newIndex);
-      setImgError(false); // Resetar erro ao mudar de foto
+      setImgError(false);
     }
   };
 
@@ -130,11 +131,20 @@ export const HotelCard: React.FC<HotelCardProps> = ({
     }
     
     if (photos.length > 0) {
-      return photos[currentPhotoIndex].url;
+      const photo = photos[currentPhotoIndex];
+      // Garantir que a URL seja absoluta se for relativa
+      if (photo.url.startsWith('/')) {
+        return `http://localhost:8000${photo.url}`;
+      }
+      return photo.url;
     }
     
     if (hotel.images && hotel.images.length > 0) {
-      return hotel.images[0];
+      const img = hotel.images[0];
+      if (img.startsWith('/')) {
+        return `http://localhost:8000${img}`;
+      }
+      return img;
     }
     
     return null;
@@ -167,31 +177,29 @@ export const HotelCard: React.FC<HotelCardProps> = ({
               alt={`${hotel.name || 'Hotel'} - foto ${currentPhotoIndex + 1}`}
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               onError={handleImageError}
-              key={currentPhotoIndex} // Forçar recarga ao mudar índice
+              key={currentPhotoIndex}
             />
             
-            {/* ✅ CORREÇÃO: Setas com z-index alto e handlers diretos */}
+            {/* Setas de navegação com z-index alto e handlers diretos */}
             {photos.length > 1 && (
               <>
                 {/* Seta esquerda */}
-                <div 
-                  className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-start pl-2 cursor-pointer z-20"
+                <button
                   onClick={handlePrevPhoto}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors z-20 w-8 h-8 flex items-center justify-center"
+                  aria-label="Foto anterior"
                 >
-                  <div className="bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors">
-                    <ChevronLeft className="w-5 h-5" />
-                  </div>
-                </div>
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
                 
                 {/* Seta direita */}
-                <div 
-                  className="absolute right-0 top-0 bottom-0 w-12 flex items-center justify-end pr-2 cursor-pointer z-20"
+                <button
                   onClick={handleNextPhoto}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors z-20 w-8 h-8 flex items-center justify-center"
+                  aria-label="Próxima foto"
                 >
-                  <div className="bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                </div>
+                  <ChevronRight className="w-5 h-5" />
+                </button>
 
                 {/* Indicador de posição */}
                 <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full z-20">
@@ -247,7 +255,7 @@ export const HotelCard: React.FC<HotelCardProps> = ({
         )}
       </div>
 
-      {/* Informações do Hotel (restante permanece igual) */}
+      {/* Informações do Hotel */}
       <div className="p-4">
         <div className="mb-3">
           <h3 className="text-lg font-semibold text-dark line-clamp-2 mb-1">
@@ -282,19 +290,18 @@ export const HotelCard: React.FC<HotelCardProps> = ({
         )}
 
         <div className="flex gap-2">
+          {/* ✅ CORREÇÃO: Usar hotel.id em vez de hotel.slug */}
           <Button
             variant="outline"
             size="sm"
             className="flex-1"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onViewDetails?.(hotel.id);
-            }}
             asChild
           >
-            <Link href={`/hotels/${hotel.id}`}>Ver detalhes</Link>
+            <Link href={`/hotels/${hotel.id}`}>
+              Ver detalhes
+            </Link>
           </Button>
+          
           <Button
             size="sm"
             className="flex-1 bg-primary hover:bg-primary/90 text-dark"

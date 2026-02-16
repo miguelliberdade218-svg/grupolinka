@@ -1,23 +1,34 @@
 /**
  * src/apps/main-app/components/HotelPhotoGallery.tsx
  * Galeria de fotos profissional para visualização em resultados e detalhes
- * Versão: 13/02/2026
+ * Versão: 16/02/2026
  * 
- * Modo "preview": Mostra apenas fotos destacadas (para resultados)
- * Modo "full": Mostra todas as fotos com navegação completa (para detalhes)
+ * ✅ CORRIGIDO: Agora aceita HotelPhoto ou RoomTypePhoto
+ * ✅ MELHORADO: Setas sempre visíveis no modo full
+ * ✅ MELHORADO: Fallback de imagem local (data URL)
  */
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, X, Maximize2 } from 'lucide-react';
-import type { RoomTypePhoto } from '@/shared/types/hotel-photos';
+import { ChevronLeft, ChevronRight, X, Maximize2, Star } from 'lucide-react';
+import type { RoomTypePhoto, HotelPhoto } from '@/shared/types/hotel-photos';
+
+// ✅ Tipo união para aceitar ambos os tipos de foto
+type AnyHotelPhoto = RoomTypePhoto | HotelPhoto;
 
 interface HotelPhotoGalleryProps {
-  photos: RoomTypePhoto[];
+  photos: AnyHotelPhoto[]; // ✅ Agora aceita qualquer tipo de foto
   title?: string;
   mode?: 'preview' | 'full' | 'grid';
-  onPhotoSelect?: (photo: RoomTypePhoto) => void;
+  onPhotoSelect?: (photo: AnyHotelPhoto) => void;
   className?: string;
 }
+
+// ============================================
+// ✅ FUNÇÃO AUXILIAR: Gerar fallback de imagem local
+// ============================================
+const generateFallbackImage = (text: string): string => {
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600' viewBox='0 0 800 600'%3E%3Crect width='800' height='600' fill='%23f3f4f6'/%3E%3Ctext x='400' y='300' font-family='system-ui, sans-serif' font-size='24' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'%3E${encodeURIComponent(text)}%3C/text%3E%3C/svg%3E`;
+};
 
 /**
  * Galeria em modo grid (múltiplas fotos)
@@ -28,6 +39,7 @@ const GridMode: React.FC<HotelPhotoGalleryProps> = ({
   className,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
   if (!photos.length) {
     return (
@@ -37,7 +49,20 @@ const GridMode: React.FC<HotelPhotoGalleryProps> = ({
     );
   }
 
-  const selected = selectedIndex !== null ? photos[selectedIndex] : null;
+  const handleImageError = (photoId: string, url: string) => {
+    console.error('❌ [HotelGallery] Erro ao carregar imagem:', { photoId, url });
+    setImageErrors(prev => ({ ...prev, [photoId]: true }));
+  };
+
+  const getImageUrl = (photo: AnyHotelPhoto): string => {
+    if (imageErrors[photo.id]) {
+      return generateFallbackImage('Imagem não disponível');
+    }
+    if (photo.url.startsWith('/')) {
+      return `http://localhost:8000${photo.url}`;
+    }
+    return photo.url;
+  };
 
   return (
     <>
@@ -53,9 +78,10 @@ const GridMode: React.FC<HotelPhotoGalleryProps> = ({
             className="relative group overflow-hidden rounded-lg aspect-video bg-gray-100"
           >
             <img
-              src={photo.url}
-              alt={photo.alt_text}
+              src={getImageUrl(photo)}
+              alt={photo.alt_text || ''}
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+              onError={() => handleImageError(photo.id, photo.url)}
             />
             
             {/* Overlay ao hover */}
@@ -68,12 +94,18 @@ const GridMode: React.FC<HotelPhotoGalleryProps> = ({
                 Principal
               </div>
             )}
+            
+            {photo.is_featured && !photo.is_primary && (
+              <div className="absolute top-2 left-2 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-medium">
+                Destaque
+              </div>
+            )}
           </button>
         ))}
       </div>
 
       {/* Modal Lightbox */}
-      {selected && selectedIndex !== null && (
+      {selectedIndex !== null && (
         <PhotoLightbox
           photos={photos}
           initialIndex={selectedIndex}
@@ -95,6 +127,7 @@ const PreviewMode: React.FC<HotelPhotoGalleryProps> = ({
   className,
 }) => {
   const [showGallery, setShowGallery] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const mainPhoto = photos[0];
 
   if (!mainPhoto) {
@@ -105,6 +138,16 @@ const PreviewMode: React.FC<HotelPhotoGalleryProps> = ({
     );
   }
 
+  const getMainImageUrl = (): string => {
+    if (imageError) {
+      return generateFallbackImage(title || 'Hotel');
+    }
+    if (mainPhoto.url.startsWith('/')) {
+      return `http://localhost:8000${mainPhoto.url}`;
+    }
+    return mainPhoto.url;
+  };
+
   return (
     <>
       <button
@@ -112,9 +155,10 @@ const PreviewMode: React.FC<HotelPhotoGalleryProps> = ({
         className={`relative group w-full overflow-hidden rounded-lg aspect-video bg-gray-100 ${className}`}
       >
         <img
-          src={mainPhoto.url}
-          alt={mainPhoto.alt_text}
+          src={getMainImageUrl()}
+          alt={mainPhoto.alt_text || ''}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          onError={() => setImageError(true)}
         />
 
         {/* Overlay com chamada para ação */}
@@ -134,8 +178,15 @@ const PreviewMode: React.FC<HotelPhotoGalleryProps> = ({
 
         {/* Badge de destaque */}
         {mainPhoto.is_featured && (
-          <div className="absolute top-4 left-4 bg-orange-600 text-white px-3 py-1 rounded-full text-xs font-medium">
+          <div className="absolute top-4 left-4 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-medium">
             Destaque
+          </div>
+        )}
+        
+        {/* Badge de principal */}
+        {mainPhoto.is_primary && (
+          <div className="absolute top-4 left-4 bg-orange-600 text-white px-3 py-1 rounded-full text-xs font-medium">
+            Principal
           </div>
         )}
       </button>
@@ -162,6 +213,7 @@ const FullMode: React.FC<HotelPhotoGalleryProps> = ({
   className,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [imageErrors, setImageErrors] = useState<Record<number, boolean>>({});
 
   if (!photos.length) {
     return (
@@ -179,31 +231,42 @@ const FullMode: React.FC<HotelPhotoGalleryProps> = ({
     setCurrentIndex(prev => (prev === photos.length - 1 ? 0 : prev + 1));
   };
 
+  const getImageUrl = (photo: AnyHotelPhoto, index: number): string => {
+    if (imageErrors[index]) {
+      return generateFallbackImage(title || 'Imagem');
+    }
+    if (photo.url.startsWith('/')) {
+      return `http://localhost:8000${photo.url}`;
+    }
+    return photo.url;
+  };
+
   const currentPhoto = photos[currentIndex];
 
   return (
     <div className={className}>
       {/* Viewer Principal */}
-      <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video mb-4 flex items-center justify-center group">
+      <div className="relative bg-gray-900 rounded-lg overflow-hidden aspect-video mb-4 flex items-center justify-center">
         <img
-          src={currentPhoto.url}
-          alt={currentPhoto.alt_text}
+          src={getImageUrl(currentPhoto, currentIndex)}
+          alt={currentPhoto.alt_text || ''}
           className="w-full h-full object-cover"
+          onError={() => setImageErrors(prev => ({ ...prev, [currentIndex]: true }))}
         />
 
-        {/* Navegação */}
+        {/* ✅ SETAS SEMPRE VISÍVEIS */}
         {photos.length > 1 && (
           <>
             <button
               onClick={goToPrevious}
-              className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition opacity-0 group-hover:opacity-100"
+              className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition z-10"
               aria-label="Foto anterior"
             >
               <ChevronLeft size={28} />
             </button>
             <button
               onClick={goToNext}
-              className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition opacity-0 group-hover:opacity-100"
+              className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition z-10"
               aria-label="Próxima foto"
             >
               <ChevronRight size={28} />
@@ -215,6 +278,13 @@ const FullMode: React.FC<HotelPhotoGalleryProps> = ({
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-full text-sm font-medium">
           {currentIndex + 1} / {photos.length}
         </div>
+
+        {/* Badge de principal */}
+        {currentPhoto.is_primary && (
+          <div className="absolute top-4 left-4 bg-orange-600 text-white px-3 py-1 rounded-full text-xs font-medium">
+            Principal
+          </div>
+        )}
       </div>
 
       {/* Títulos e Info */}
@@ -233,17 +303,23 @@ const FullMode: React.FC<HotelPhotoGalleryProps> = ({
             <button
               key={photo.id}
               onClick={() => setCurrentIndex(index)}
-              className={`flex-shrink-0 w-24 h-24 rounded-lg overflow-hidden border-2 transition ${
+              className={`flex-shrink-0 relative w-24 h-24 rounded-lg overflow-hidden border-2 transition ${
                 index === currentIndex
                   ? 'border-orange-600 scale-105'
                   : 'border-gray-300 hover:border-orange-400'
               }`}
             >
               <img
-                src={photo.url}
-                alt={photo.alt_text}
+                src={getImageUrl(photo, index)}
+                alt={photo.alt_text || ''}
                 className="w-full h-full object-cover"
+                onError={() => setImageErrors(prev => ({ ...prev, [index]: true }))}
               />
+              {photo.is_primary && (
+                <div className="absolute top-1 right-1 bg-orange-600 text-white rounded-full p-0.5">
+                  <Star size={10} fill="currentColor" />
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -256,7 +332,7 @@ const FullMode: React.FC<HotelPhotoGalleryProps> = ({
  * Lightbox para visualização em tela cheia
  */
 interface PhotoLightboxProps {
-  photos: RoomTypePhoto[];
+  photos: AnyHotelPhoto[];
   initialIndex: number;
   onClose: () => void;
   onNavigate?: (index: number) => void;
@@ -271,6 +347,7 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   title,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [imageErrors, setImageErrors] = useState<Record<number, boolean>>({});
 
   const goToPrevious = () => {
     const newIndex = currentIndex === 0 ? photos.length - 1 : currentIndex - 1;
@@ -284,6 +361,16 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     onNavigate?.(newIndex);
   };
 
+  const getImageUrl = (photo: AnyHotelPhoto, index: number): string => {
+    if (imageErrors[index]) {
+      return generateFallbackImage(title || 'Imagem');
+    }
+    if (photo.url.startsWith('/')) {
+      return `http://localhost:8000${photo.url}`;
+    }
+    return photo.url;
+  };
+
   const currentPhoto = photos[currentIndex];
 
   return (
@@ -291,7 +378,7 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       {/* Botão Fechar */}
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-full transition"
+        className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-full transition z-20"
         aria-label="Fechar galeria"
       >
         <X size={32} />
@@ -299,43 +386,51 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
       {/* Título */}
       {title && (
-        <div className="absolute top-4 left-4 text-white">
+        <div className="absolute top-4 left-4 text-white z-20">
           <h2 className="text-xl font-bold">{title}</h2>
         </div>
+      )}
+
+      {/* SETAS DE NAVEGAÇÃO NO LIGHTBOX */}
+      {photos.length > 1 && (
+        <>
+          <button
+            onClick={goToPrevious}
+            className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-4 rounded-full transition z-20"
+            aria-label="Foto anterior"
+          >
+            <ChevronLeft size={32} />
+          </button>
+          <button
+            onClick={goToNext}
+            className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-4 rounded-full transition z-20"
+            aria-label="Próxima foto"
+          >
+            <ChevronRight size={32} />
+          </button>
+        </>
       )}
 
       {/* Imagem Principal */}
       <div className="relative w-full max-w-4xl h-[70vh] mb-4 flex items-center justify-center">
         <img
-          src={currentPhoto.url}
-          alt={currentPhoto.alt_text}
+          src={getImageUrl(currentPhoto, currentIndex)}
+          alt={currentPhoto.alt_text || ''}
           className="max-w-full max-h-full object-contain"
+          onError={() => setImageErrors(prev => ({ ...prev, [currentIndex]: true }))}
         />
-
-        {/* Navegação */}
-        {photos.length > 1 && (
-          <>
-            <button
-              onClick={goToPrevious}
-              className="absolute left-0 top-1/2 -translate-y-1/2 text-white hover:text-orange-400 transition"
-              aria-label="Foto anterior"
-            >
-              <ChevronLeft size={48} />
-            </button>
-            <button
-              onClick={goToNext}
-              className="absolute right-0 top-1/2 -translate-y-1/2 text-white hover:text-orange-400 transition"
-              aria-label="Próxima foto"
-            >
-              <ChevronRight size={48} />
-            </button>
-          </>
-        )}
 
         {/* Contador */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white px-4 py-2 rounded-full text-sm">
           {currentIndex + 1} / {photos.length}
         </div>
+
+        {/* Badge de principal */}
+        {currentPhoto.is_primary && (
+          <div className="absolute top-4 left-4 bg-orange-600 text-white px-3 py-1 rounded-full text-xs font-medium">
+            Principal
+          </div>
+        )}
       </div>
 
       {/* Thumbnails */}
@@ -348,15 +443,21 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 setCurrentIndex(index);
                 onNavigate?.(index);
               }}
-              className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition ${
+              className={`flex-shrink-0 relative w-20 h-20 rounded-lg overflow-hidden border-2 transition ${
                 index === currentIndex ? 'border-orange-500' : 'border-gray-600'
               }`}
             >
               <img
-                src={photo.url}
-                alt={photo.alt_text}
+                src={getImageUrl(photo, index)}
+                alt={photo.alt_text || ''}
                 className="w-full h-full object-cover"
+                onError={() => setImageErrors(prev => ({ ...prev, [index]: true }))}
               />
+              {photo.is_primary && (
+                <div className="absolute top-1 right-1 bg-orange-600 text-white rounded-full p-0.5">
+                  <Star size={8} fill="currentColor" />
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -373,6 +474,8 @@ export const HotelPhotoGallery: React.FC<HotelPhotoGalleryProps> = ({
   mode = 'preview',
   ...props
 }) => {
+  console.log('📸 [HotelGallery] Modo:', mode, 'fotos:', photos.length);
+  
   switch (mode) {
     case 'grid':
       return <GridMode photos={photos} {...props} />;
@@ -383,3 +486,5 @@ export const HotelPhotoGallery: React.FC<HotelPhotoGalleryProps> = ({
       return <PreviewMode photos={photos} {...props} />;
   }
 };
+
+export default HotelPhotoGallery;

@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
+// src/apps/main-app/pages/HotelDetailsPage.tsx - VERSÃO CORRIGIDA
+// ✅ AGORA USA HotelPhotoGallery em vez de HotelGallery
+
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'wouter';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
-import { HotelGallery } from '@/shared/components/hotels/HotelGallery';
+import { HotelPhotoGallery } from '@/apps/main-app/components/HotelPhotoGallery'; // ✅ IMPORT CORRETO
 import { RoomTypeCard } from '@/shared/components/hotels/RoomTypeCard';
 import { Skeleton } from '@/shared/components/ui/skeleton';
 import { Badge } from '@/shared/components/ui/badge';
@@ -9,20 +12,46 @@ import { Button } from '@/shared/components/ui/button';
 import { MapPin, CheckCircle2, Star } from 'lucide-react';
 import { useHotelCompleteData } from '../hooks/useHotelCompleteData';
 import { Card } from '@/shared/components/ui/card';
+import { photoGalleryService } from '@/services/photoGalleryService';
+import type { RoomTypePhoto } from '@/shared/types/hotel-photos';
 
-/**
- * Página de detalhes do hotel com galeria completa
- * Mostra: fotos, quartos, comodidades, mapa, reviews
- * Contato apenas após reserva confirmada
- */
-export const HotelDetailPage: React.FC = () => {
+// LOG URGENTE PARA VERIFICAR SE O ARQUIVO ESTÁ SENDO CARREGADO
+console.log('🔥🔥🔥 [HotelDetailsPage] ARQUIVO CARREGADO!', import.meta.url);
+
+export const HotelDetailsPage: React.FC = () => {
   const { id: hotelId } = useParams<{ id: string }>();
+  
+  // LOG URGENTE PARA VERIFICAR SE O COMPONENTE ESTÁ SENDO RENDERIZADO
+  console.log('🔥🔥🔥 [HotelDetailsPage] COMPONENTE RENDERIZADO!', { hotelId });
+  
   const { data, isLoading, error } = useHotelCompleteData(hotelId);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [hotelPhotos, setHotelPhotos] = useState<RoomTypePhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+
+  // Carregar fotos do hotel
+  useEffect(() => {
+    const loadHotelPhotos = async () => {
+      if (!hotelId) return;
+      
+      setLoadingPhotos(true);
+      try {
+        console.log('📸 [HotelDetail] Carregando fotos do hotel:', hotelId);
+        const photos = await photoGalleryService.getHotelPhotos(hotelId);
+        console.log(`📸 [HotelDetail] ${photos.length} fotos carregadas:`, photos);
+        setHotelPhotos(photos);
+      } catch (error) {
+        console.error('❌ [HotelDetail] Erro ao carregar fotos:', error);
+      } finally {
+        setLoadingPhotos(false);
+      }
+    };
+
+    loadHotelPhotos();
+  }, [hotelId]);
 
   const handleBookNow = () => {
-    // Navega para a página de reserva ou abre modal
     console.log('Redirecionar para página de reserva');
   };
 
@@ -53,6 +82,13 @@ export const HotelDetailPage: React.FC = () => {
 
   const { hotel, roomTypes, reviews } = data;
 
+  console.log('🏨 [HotelDetail] Dados carregados:', {
+    hotelName: hotel.name,
+    hotelImages: hotel.images?.length,
+    hotelPhotos: hotelPhotos.length,
+    roomTypes: roomTypes?.length
+  });
+
   // Calcular o preço mínimo dos quartos disponíveis
   const minPrice = useMemo(() => {
     if (!roomTypes || roomTypes.length === 0) return null;
@@ -73,13 +109,37 @@ export const HotelDetailPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Galeria Hero */}
+      {/* ✅ GALERIA DO HOTEL - AGORA USA HotelPhotoGallery */}
       <div className="container mx-auto px-4 max-w-7xl py-6">
-        <HotelGallery
-          images={hotel.images}
-          roomTypes={roomTypes}
-          hotelName={hotel.name}
-        />
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          {hotelPhotos.length > 0 ? (
+            <HotelPhotoGallery
+              photos={hotelPhotos}
+              title={hotel.name}
+              mode="full"
+              className="w-full"
+            />
+          ) : hotel.images && hotel.images.length > 0 ? (
+            <div className="relative h-96 bg-gray-900">
+              <img
+                src={hotel.images[0].startsWith('/') ? `http://localhost:8000${hotel.images[0]}` : hotel.images[0]}
+                alt={hotel.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  console.log('❌ Erro na imagem de fallback:', hotel.images[0]);
+                  (e.target as HTMLImageElement).src = 'https://via.placeholder.com/800x600?text=Hotel';
+                }}
+              />
+              <div className="absolute bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full text-sm">
+                1/{hotel.images.length}
+              </div>
+            </div>
+          ) : (
+            <div className="h-96 bg-gray-200 flex items-center justify-center">
+              <p className="text-gray-500">Sem fotos do hotel</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Informações Principais */}
@@ -323,4 +383,4 @@ export const HotelDetailPage: React.FC = () => {
   );
 };
 
-export default HotelDetailPage;
+export default HotelDetailsPage;
