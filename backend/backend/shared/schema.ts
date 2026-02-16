@@ -9,6 +9,7 @@
 // ✅ ADICIONADO: Campo location_id na tabela hotels para referência a mozambique_locations
 // ✅ ADICIONADO: Campo pricePerDay na tabela eventSpaces (compatibilidade com frontend)
 // ✅ ADICIONADO: Tabela roomTypePhotos para fotos de tipos de quarto
+// ✅ ADICIONADO: Tabela eventSpacePhotos para fotos de espaços para eventos
 
 import { sql } from "drizzle-orm";
 import {
@@ -381,6 +382,24 @@ export const roomTypePhotos = pgTable('room_type_photos', {
   updated_at: timestamp('updated_at').defaultNow(),
   deleted_at: timestamp('deleted_at'),
 });
+
+// ==================== FOTOS DE ESPAÇOS PARA EVENTOS (NOVO) ====================
+export const eventSpacePhotos = pgTable('event_space_photos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  event_space_id: uuid('event_space_id').notNull().references(() => eventSpaces.id, { onDelete: 'cascade' }),
+  url: varchar('url', { length: 500 }).notNull(),
+  alt_text: varchar('alt_text', { length: 255 }),
+  order: integer('order').default(0),
+  is_featured: boolean('is_featured').default(false),
+  is_primary: boolean('is_primary').default(false),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+  deleted_at: timestamp('deleted_at'),
+}, (table) => ({
+  eventSpaceIdx: index('event_space_photos_event_space_id_idx').on(table.event_space_id),
+  featuredIdx: index('event_space_photos_featured_idx').on(table.event_space_id, table.is_featured),
+  primaryIdx: index('event_space_photos_primary_idx').on(table.event_space_id, table.is_primary).where(sql`is_primary = true AND deleted_at IS NULL`),
+}));
 
 // ==================== DISPONIBILIDADE DE QUARTOS ====================
 export const roomAvailability = pgTable("roomAvailability", {
@@ -1634,6 +1653,21 @@ export const insertRoomTypePhotoSchema = createInsertSchema(roomTypePhotos, {
   deleted_at: true,
 });
 
+// ✅ ADICIONADO: Schema para inserção de fotos de espaços para eventos
+export const insertEventSpacePhotoSchema = createInsertSchema(eventSpacePhotos, {
+  event_space_id: z.string().uuid(),
+  url: z.string().url(),
+  alt_text: z.string().max(255).optional(),
+  order: z.number().int().default(0),
+  is_featured: z.boolean().default(false),
+  is_primary: z.boolean().default(false),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  deleted_at: true,
+});
+
 export const insertRoomAvailabilitySchema = createInsertSchema(roomAvailability, {
   date: z.date(),
   price: z.number().positive(),
@@ -1743,6 +1777,10 @@ export type RoomAvailabilityInsert = typeof roomAvailability.$inferInsert;
 // ✅ ADICIONADO: Tipos para roomTypePhotos
 export type RoomTypePhoto = typeof roomTypePhotos.$inferSelect;
 export type NewRoomTypePhoto = typeof roomTypePhotos.$inferInsert;
+
+// ✅ ADICIONADO: Tipos para eventSpacePhotos
+export type EventSpacePhoto = typeof eventSpacePhotos.$inferSelect;
+export type NewEventSpacePhoto = typeof eventSpacePhotos.$inferInsert;
 
 // Tipos para as tabelas de reservas hoteleiras
 export type HotelBooking = typeof hotelBookings.$inferSelect;
@@ -2018,5 +2056,6 @@ export interface CompleteHotelSystem {
   user_roles: UserRole[];
   advance_payment_promotions: AdvancePaymentPromotion[];
   payment_options: PaymentOption[];
-  room_type_photos: RoomTypePhoto[]; // ✅ ADICIONADO
+  room_type_photos: RoomTypePhoto[];
+  event_space_photos: EventSpacePhoto[]; // ✅ ADICIONADO
 };

@@ -4,6 +4,7 @@
 // ✅ 2. Arrays NUNCA são undefined (sempre array vazio)
 // ✅ 3. Logs de debug para verificação
 // ✅ 4. TODOS OS ERROS DE TIPO CORRIGIDOS - DISTANCE_KM AGORA É unknown | number
+// ✅ 5. MIDDLEWARE PARA IGNORAR ROTAS DE FOTOS ADICIONADO NO TOPO
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -550,6 +551,15 @@ const isEventSpaceOwnerOrPublic = async (req: Request, res: Response, next: Next
 // ==================== ROUTER PRINCIPAL ====================
 const router = Router();
 const eventSpaceReviewsService = new EventSpaceReviewsService();
+
+// ==================== ✅ MIDDLEWARE CRÍTICO PARA FOTOS ====================
+// ✅ IGNORAR rotas de fotos - deixar passar para o eventSpacePhotoRoutes
+// ✅ ESTE MIDDLEWARE DEVE ESTAR NO TOPO, ANTES DE QUALQUER OUTRA ROTA!
+router.use('/spaces/:spaceId/photos', (req, res, next) => {
+  console.log(`⏭️ [eventController] Ignorando rota de fotos: /spaces/${req.params.spaceId}/photos - passando para o próximo handler`);
+  // 'route' faz o Express pular para o próximo router que corresponder à rota
+  next('route'); 
+});
 
 // ======================= ✅ GET BOOKING BY ID - ACESSO CONTROLADO POR EMAIL =======================
 /**

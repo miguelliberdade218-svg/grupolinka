@@ -7,6 +7,7 @@
  * ✅ NOVO: Inclui EventSpaceSelector para gestão de espaço ativo
  * ✅ NOVO: Adicionado botão Dashboard no Espaço Ativo com feedback de loading
  * ✅ MELHORADO: Feedback visual ao navegar para dashboard
+ * ✅ NOVO: Adicionado suporte para galeria de fotos nos cards e detalhes
  * Alinhado com eventSpaceService e shared/types/event-spaces.ts
  * CORRIGIDO: Implementa delete real, edição real, debounce, fallback imagem, acessibilidade
  */
@@ -19,7 +20,7 @@ import { Badge } from '@/shared/components/ui/badge';
 import { Input } from '@/shared/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import {
-  Loader2, // ✅ NOVO: Import para loading
+  Loader2,
   Plus,
   Edit,
   Trash,
@@ -35,10 +36,16 @@ import {
   Eye,
   Target,
   BarChart3,
+  // ✅ NOVO: Ícone para fotos
+  Camera,
 } from 'lucide-react';
 import { eventSpaceService } from '@/services/eventSpaceService';
+// ✅ NOVO: Import do serviço de fotos
+import { eventSpacePhotoService } from '@/services/eventSpacePhotoService';
 import { useToast } from '@/shared/hooks/use-toast';
 import type { EventSpace } from '@/shared/types/event-spaces';
+// ✅ NOVO: Import do tipo de foto
+import type { EventSpacePhoto } from '@/services/eventSpacePhotoService';
 import CreateEventSpaceFormModern from './CreateEventSpaceFormModern';
 import EditEventSpaceFormModern from './EditEventSpaceFormModern';
 import EventSpaceAvailabilityCalendar from './EventSpaceAvailabilityCalendar';
@@ -46,6 +53,8 @@ import EventSpaceBookingsList from './EventSpaceBookingsList';
 import EventSpaceReviewsList from './EventSpaceReviewsList';
 import { EventSpaceSelector } from './EventSpaceSelector';
 import { useActiveEventSpace } from '@/contexts/ActiveEventSpaceContext';
+// ✅ NOVO: Import do componente de galeria de fotos
+import { EventSpacePhotoGalleryEditor } from '../EventSpacePhotoGalleryEditor';
 
 interface EventSpacesManagementProps {
   hotelId: string;
@@ -71,14 +80,18 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   const [editingSpace, setEditingSpace] = useState<EventSpace | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  // ✅ NOVO: Estado para controlar a galeria de fotos
+  const [selectedSpaceForPhotos, setSelectedSpaceForPhotos] = useState<EventSpace | null>(null);
+  const [showPhotosModal, setShowPhotosModal] = useState(false);
+  // ✅ NOVO: Cache de fotos para cada espaço
+  const [photosCache, setPhotosCache] = useState<Record<string, EventSpacePhoto[]>>({});
   const { toast } = useToast();
 
-  // ✅ NOVO: Estado para feedback de loading do dashboard
   const [loadingDashboard, setLoadingDashboard] = useState<string | null>(null);
 
   const { activeEventSpace, setActiveEventSpace } = useActiveEventSpace();
 
-  // ✅ Estados para modais
+  // Estados para modais
   const [selectedSpaceForAvailability, setSelectedSpaceForAvailability] = useState<EventSpace | null>(null);
   const [selectedSpaceForBookings, setSelectedSpaceForBookings] = useState<EventSpace | null>(null);
   const [selectedSpaceForReviews, setSelectedSpaceForReviews] = useState<EventSpace | null>(null);
@@ -86,7 +99,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
   const [showBookingsModal, setShowBookingsModal] = useState(false);
   const [showReviewsModal, setShowReviewsModal] = useState(false);
 
-  // ✅ Preparar localização do hotel para passar aos formulários
+  // Preparar localização do hotel para passar aos formulários
   const hotelLocation = useMemo(() => ({
     locality: hotel?.locality || '',
     province: hotel?.province || '',
@@ -95,7 +108,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     location_id: hotel?.location_id || null,
   }), [hotel]);
 
-  // ✅ DEBOUNCE NA BUSCA
+  // DEBOUNCE NA BUSCA
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
@@ -109,6 +122,29 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     }
     loadSpaces();
   }, [hotelId]);
+
+  // ✅ NOVO: Função para carregar fotos de um espaço específico
+  const loadSpacePhotos = async (spaceId: string) => {
+    try {
+      const response = await eventSpacePhotoService.getEventSpacePhotos(spaceId);
+      setPhotosCache(prev => ({ ...prev, [spaceId]: response }));
+      return response;
+    } catch (error) {
+      console.error(`Erro ao carregar fotos do espaço ${spaceId}:`, error);
+      return [];
+    }
+  };
+
+  // ✅ NOVO: Carregar fotos para todos os espaços após carregá-los
+  useEffect(() => {
+    if (spaces.length > 0) {
+      spaces.forEach(space => {
+        if (!photosCache[space.id]) {
+          loadSpacePhotos(space.id);
+        }
+      });
+    }
+  }, [spaces]);
 
   const loadSpaces = async () => {
     setLoading(true);
@@ -187,6 +223,12 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     });
   };
 
+  // ✅ NOVO: Handler para abrir a galeria de fotos
+  const handlePhotosClick = (space: EventSpace) => {
+    setSelectedSpaceForPhotos(space);
+    setShowPhotosModal(true);
+  };
+
   const handleAvailabilityClick = (space: EventSpace) => {
     setSelectedSpaceForAvailability(space);
     setActiveTab('availability');
@@ -204,11 +246,9 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     setShowReviewsModal(true);
   };
 
-  // ✅ MELHORADO: Handler para dashboard específico do espaço com feedback
   const handleDashboardClick = (space: EventSpace) => {
     setLoadingDashboard(space.id);
     navigate(`/hotels-app/events/spaces/${space.id}/dashboard`);
-    // Limpar após navegação
     setTimeout(() => setLoadingDashboard(null), 1000);
   };
 
@@ -254,7 +294,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
     return (
       <CreateEventSpaceFormModern
         hotelId={hotelId}
-        hotelLocation={hotelLocation} // ✅ CORREÇÃO: Passando hotelLocation
+        hotelLocation={hotelLocation}
         onSuccess={handleCreateSuccess}
         onCancel={() => setShowCreateForm(false)}
       />
@@ -267,7 +307,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         hotelId={hotelId}
         spaceId={editingSpace.id}
         initialData={editingSpace}
-        hotelLocation={hotelLocation} // ✅ CORREÇÃO: Passando hotelLocation
+        hotelLocation={hotelLocation}
         onSuccess={handleEditSuccess}
         onCancel={() => setEditingSpace(null)}
       />
@@ -276,7 +316,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* ✅ HEADER COM SELETOR DE ESPAÇO ATIVO */}
+      {/* HEADER COM SELETOR DE ESPAÇO ATIVO */}
       <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex-1">
@@ -299,7 +339,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
           </div>
         </div>
         
-        {/* ✅ DETALHES DO ESPAÇO ATIVO */}
+        {/* DETALHES DO ESPAÇO ATIVO */}
         {activeEventSpace && (
           <div className="mt-4 p-4 bg-white rounded-lg border border-violet-100">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -338,14 +378,13 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-600">Área:</span>
-                    <span className="font-medium">{activeEventSpace.areaSqm ? `${activeEventSpace.areaSqm} m²` : '—'}</span>
+                    <Camera className="h-4 w-4 text-gray-500" />
+                    <span>{photosCache[activeEventSpace.id]?.length || 0} fotos</span>
                   </div>
                 </div>
               </div>
               
               <div className="flex flex-wrap gap-2">
-                {/* ✅ BOTÃO DASHBOARD MELHORADO COM FEEDBACK */}
                 <Button
                   size="sm"
                   variant="outline"
@@ -368,6 +407,16 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                 >
                   <Edit className="h-4 w-4 mr-2" />
                   Editar
+                </Button>
+                {/* ✅ NOVO: Botão de fotos no espaço ativo */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handlePhotosClick(activeEventSpace)}
+                  className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Fotos ({photosCache[activeEventSpace.id]?.length || 0})
                 </Button>
                 <Button
                   size="sm"
@@ -393,7 +442,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         )}
       </div>
 
-      {/* ✅ HEADER DA LISTA DE ESPAÇOS */}
+      {/* HEADER DA LISTA DE ESPAÇOS */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -567,6 +616,12 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                             Ativo
                           </Badge>
                         )}
+                        {/* ✅ NOVO: Badge com contagem de fotos */}
+                        {photosCache[space.id]?.length > 0 && (
+                          <Badge className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-2 py-0.5">
+                            {photosCache[space.id].length} 📸
+                          </Badge>
+                        )}
                       </div>
                     </div>
 
@@ -628,7 +683,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                         </div>
                       )}
 
-                      {/* ✅ Botões de ação completos */}
+                      {/* ✅ Botões de ação com NOVO botão de fotos */}
                       <div className="flex gap-2 pt-3 border-t border-gray-100">
                         <Button
                           variant="outline"
@@ -640,6 +695,17 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           <Edit className="h-4 w-4 mr-2" />
                           Editar
                         </Button>
+                        {/* ✅ NOVO: Botão de fotos no card */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 border-orange-200 text-orange-700 hover:bg-orange-50 hover:text-orange-800 focus-visible:ring-orange-500"
+                          onClick={() => handlePhotosClick(space)}
+                          aria-label={`Gerenciar fotos de ${space.name}`}
+                        >
+                          <Camera className="h-4 w-4 mr-2" />
+                          {photosCache[space.id]?.length || 0} 📸
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -649,6 +715,18 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                         >
                           <Calendar className="h-4 w-4 mr-2" />
                           Disponibilidade
+                        </Button>
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800 focus-visible:ring-amber-500"
+                          onClick={() => handleReviewsClick(space)}
+                          aria-label={`Ver avaliações de ${space.name}`}
+                        >
+                          <Star className="h-4 w-4 mr-2" />
+                          Avaliações
                         </Button>
                         <Button
                           variant="outline"
@@ -662,7 +740,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                         </Button>
                       </div>
                       
-                      {/* ✅ Botão para definir como espaço ativo */}
+                      {/* Botão para definir como espaço ativo */}
                       {activeEventSpace?.id !== space.id && (
                         <Button
                           variant="ghost"
@@ -690,7 +768,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
           )}
         </TabsContent>
 
-        {/* ✅ TAB DE DISPONIBILIDADE HABILITADA */}
+        {/* TAB DE DISPONIBILIDADE HABILITADA */}
         <TabsContent value="availability" className="space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -791,7 +869,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
           )}
         </TabsContent>
 
-        {/* ✅ TAB DE RESERVAS HABILITADA */}
+        {/* TAB DE RESERVAS HABILITADA */}
         <TabsContent value="bookings" className="space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -882,7 +960,6 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
                           <Eye className="h-4 w-4 mr-2" />
                           Ver Reservas & Pagamentos
                         </Button>
-                        {/* ✅ BOTÃO DASHBOARD NA TAB DE RESERVAS */}
                         <Button
                           onClick={() => handleDashboardClick(space)}
                           variant="outline"
@@ -906,7 +983,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
           )}
         </TabsContent>
 
-        {/* ✅ TAB DE AVALIAÇÕES HABILITADA */}
+        {/* TAB DE AVALIAÇÕES HABILITADA */}
         <TabsContent value="reviews" className="space-y-6">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -1015,7 +1092,7 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         </TabsContent>
       </Tabs>
 
-      {/* ✅ MODAL DE DISPONIBILIDADE */}
+      {/* MODAL DE DISPONIBILIDADE */}
       {showAvailabilityModal && selectedSpaceForAvailability && (
         <EventSpaceAvailabilityCalendar 
           hotelId={hotelId}
@@ -1025,13 +1102,46 @@ export const EventSpacesManagementModern: React.FC<EventSpacesManagementProps> =
         />
       )}
 
-      {/* ✅ MODAL DE AVALIAÇÕES */}
+      {/* MODAL DE AVALIAÇÕES */}
       {showReviewsModal && selectedSpaceForReviews && (
         <EventSpaceReviewsList 
           spaceId={selectedSpaceForReviews.id}
           spaceName={selectedSpaceForReviews.name}
           onClose={() => setShowReviewsModal(false)}
         />
+      )}
+
+      {/* ✅ NOVO: MODAL DE FOTOS */}
+      {showPhotosModal && selectedSpaceForPhotos && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-900">
+                Fotos do Espaço: {selectedSpaceForPhotos.name}
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowPhotosModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </Button>
+            </div>
+            <div className="p-6">
+              <EventSpacePhotoGalleryEditor
+                eventSpaceId={selectedSpaceForPhotos.id}
+                onPhotosUpdated={(photos) => {
+                  // Atualizar o cache quando as fotos mudarem
+                  setPhotosCache(prev => ({
+                    ...prev,
+                    [selectedSpaceForPhotos.id]: photos
+                  }));
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -9,11 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui
 import { Skeleton } from '@/shared/components/ui/skeleton';
 import { MapPin, Phone, Mail, Star, Users, Calendar, Ruler, Building, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { eventSpaceService, ServiceResponse } from '@/services/eventSpaceService';
+import { eventSpaceService } from '@/services/eventSpaceService';
+import { eventSpacePhotoService } from '@/services/eventSpacePhotoService';
+import { EventSpacePhotoGallery } from '@/apps/main-app/components/EventSpacePhotoGallery';
+import type { EventSpacePhoto } from '@/services/eventSpacePhotoService';
 import type { 
   EventSpaceDetailsResponse, 
   EventSpaceData,
-  EventSpace 
+  EventSpace
 } from '@/shared/types/event-spaces';
 
 // ✅ CORREÇÃO: Interface Hotel baseada no que existe no EventSpace
@@ -30,19 +33,31 @@ interface Hotel {
   location_id?: string | null;
 }
 
+// ✅ Interface para resposta do serviço (definida localmente)
+interface ServiceResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+}
+
 const EventSpaceDetailsPage = () => {
   const { id } = useParams();
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState('overview');
   
-  // ✅ Estado para dados do formulário de reserva
+  // Estado para fotos do espaço
+  const [spacePhotos, setSpacePhotos] = useState<EventSpacePhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  
+  // Estado para dados do formulário de reserva
   const [selectedDates, setSelectedDates] = useState<{ start: Date | null; end: Date | null }>({
     start: null,
     end: null,
   });
   const [participants, setParticipants] = useState<number>(50);
 
-  // ✅ Query para buscar detalhes do espaço
+  // Query para buscar detalhes do espaço
   const { 
     data: spaceDetailsResponse, 
     isLoading, 
@@ -52,6 +67,27 @@ const EventSpaceDetailsPage = () => {
     queryFn: () => eventSpaceService.getEventSpaceDetails(id!),
     enabled: !!id,
   });
+
+  // Carregar fotos do espaço
+  useEffect(() => {
+    const loadPhotos = async () => {
+      if (!id) return;
+      
+      setLoadingPhotos(true);
+      try {
+        const response = await eventSpacePhotoService.getEventSpacePhotos(id);
+        if (response.success && response.data) {
+          setSpacePhotos(response.data);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar fotos:', error);
+      } finally {
+        setLoadingPhotos(false);
+      }
+    };
+
+    loadPhotos();
+  }, [id]);
 
   useEffect(() => {
     if (error) {
@@ -67,153 +103,92 @@ const EventSpaceDetailsPage = () => {
     }
   }, [error, spaceDetailsResponse, setLocation]);
 
-  // ✅ CORREÇÃO: Extrair dados corretamente da resposta
+  // Extrair dados corretamente da resposta
   const spaceDetails: EventSpaceDetailsResponse | null = 
     spaceDetailsResponse?.success && spaceDetailsResponse.data 
       ? spaceDetailsResponse.data
       : null;
 
-  // ✅ CORREÇÃO: Acessar os dados corretamente (estrutura da API)
+  // Acessar os dados corretamente (estrutura da API)
   const space: EventSpaceData | EventSpace | null = spaceDetails?.space || null;
   const hotel: Hotel | null = spaceDetails?.hotel || null;
 
   // ============================================
-  // ✅ CORREÇÃO 1: Função getAmenities() aprimorada
+  // Funções auxiliares
   // ============================================
   const getAmenities = (): string[] => {
-    // 1. Tentar space.amenities (EventSpaceData)
     if (space?.amenities && Array.isArray(space.amenities) && space.amenities.length > 0) {
-      console.log('✅ Amenities encontradas em space.amenities:', space.amenities);
       return space.amenities;
     }
     
-    // 2. Tentar spaceDetails.amenities (nível superior da resposta)
     if (spaceDetails?.amenities && Array.isArray(spaceDetails.amenities) && spaceDetails.amenities.length > 0) {
-      console.log('✅ Amenities encontradas em spaceDetails.amenities:', spaceDetails.amenities);
       return spaceDetails.amenities;
     }
     
-    // 3. Tentar equipment.amenities
     if (space?.equipment?.amenities && Array.isArray(space.equipment.amenities) && space.equipment.amenities.length > 0) {
-      console.log('✅ Amenities encontradas em equipment.amenities:', space.equipment.amenities);
       return space.equipment.amenities;
     }
     
-    // 4. Tentar data.amenities (resposta direta)
     if (spaceDetailsResponse?.data?.amenities && Array.isArray(spaceDetailsResponse.data.amenities)) {
-      console.log('✅ Amenities encontradas em data.amenities:', spaceDetailsResponse.data.amenities);
       return spaceDetailsResponse.data.amenities;
     }
     
-    // 5. Tentar (space as any).amenitiesList
     if ((space as any)?.amenitiesList && Array.isArray((space as any).amenitiesList)) {
-      console.log('✅ Amenities encontradas em amenitiesList:', (space as any).amenitiesList);
       return (space as any).amenitiesList;
     }
     
-    console.log('⚠️ Nenhuma amenity encontrada');
     return [];
   };
 
-  // ============================================
-  // ✅ CORREÇÃO 2: Função getBasePrice()
-  // ============================================
   const getBasePrice = (): number => {
-    // 1. Tentar space.basePricePerDay (camelCase)
     if (space?.basePricePerDay) {
       const price = parseFloat(space.basePricePerDay);
-      if (!isNaN(price) && price > 0) {
-        console.log('✅ Preço encontrado em space.basePricePerDay:', price);
-        return price;
-      }
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    // 2. Tentar spaceDetails.base_price_per_day (snake_case)
     if (spaceDetails?.base_price_per_day) {
       const price = parseFloat(spaceDetails.base_price_per_day);
-      if (!isNaN(price) && price > 0) {
-        console.log('✅ Preço encontrado em spaceDetails.base_price_per_day:', price);
-        return price;
-      }
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    // 3. Tentar space.base_price_per_day
     if ((space as any)?.base_price_per_day) {
       const price = parseFloat((space as any).base_price_per_day);
-      if (!isNaN(price) && price > 0) {
-        console.log('✅ Preço encontrado em space.base_price_per_day:', price);
-        return price;
-      }
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    // 4. Tentar spaceDetailsResponse?.data?.base_price_per_day
     if (spaceDetailsResponse?.data?.base_price_per_day) {
       const price = parseFloat(spaceDetailsResponse.data.base_price_per_day);
-      if (!isNaN(price) && price > 0) {
-        console.log('✅ Preço encontrado em data.base_price_per_day:', price);
-        return price;
-      }
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    console.log('⚠️ Nenhum preço encontrado, usando 0');
     return 0;
   };
 
-  // ============================================
-  // ✅ CORREÇÃO 3: Função getLocation()
-  // ============================================
   const getLocation = (): string => {
-    // 1. Tentar location completa do espaço
-    if (space?.location) {
-      console.log('✅ Localização encontrada em space.location:', space.location);
-      return space.location;
-    }
+    if (space?.location) return space.location;
     
-    // 2. Tentar locality + province do espaço
     if (space?.locality && space?.province) {
-      const location = `${space.locality}, ${space.province}`;
-      console.log('✅ Localização encontrada em space.locality/province:', location);
-      return location;
+      return `${space.locality}, ${space.province}`;
     }
     
-    // 3. Tentar locality + province do hotel
     if (hotel?.locality && hotel?.province) {
-      const location = `${hotel.locality}, ${hotel.province}`;
-      console.log('✅ Localização encontrada em hotel.locality/province:', location);
-      return location;
+      return `${hotel.locality}, ${hotel.province}`;
     }
     
-    // 4. Tentar nome do hotel + cidade
     if (hotel?.name && hotel?.locality) {
-      const location = `${hotel.name}, ${hotel.locality}`;
-      console.log('✅ Localização encontrada em hotel.name/locality:', location);
-      return location;
+      return `${hotel.name}, ${hotel.locality}`;
     }
     
-    // 5. Tentar apenas locality do hotel
-    if (hotel?.locality) {
-      console.log('✅ Localização encontrada em hotel.locality:', hotel.locality);
-      return hotel.locality;
-    }
+    if (hotel?.locality) return hotel.locality;
     
-    console.log('⚠️ Nenhuma localização encontrada');
     return 'Localização não disponível';
   };
 
-  // ============================================
-  // ✅ CORREÇÃO 4: Função getCapacity()
-  // ============================================
   const getCapacity = (): { min: number; max: number } => {
     const min = space?.capacityMin || (space as any)?.capacity_min || 0;
     const max = space?.capacityMax || (space as any)?.capacity_max || min || 0;
-    
-    console.log('✅ Capacidade extraída:', { min, max });
     return { min, max };
   };
-
-  // ============================================
-  // ✅ FUNÇÕES AUXILIARES ADICIONAIS
-  // ============================================
 
   const getRatingInfo = () => {
     if (!space) return { rating: 0, reviewCount: 0, bookingCount: 0 };
@@ -222,16 +197,6 @@ const EventSpaceDetailsPage = () => {
       rating: (space as EventSpaceData).rating || (space as any).average_rating || 0,
       reviewCount: (space as EventSpaceData).totalReviews || (space as any).review_count || 0,
       bookingCount: (space as EventSpaceData).total_bookings || 0
-    };
-  };
-
-  const getLocationInfo = () => {
-    if (!hotel) return { address: '', locality: '', province: '' };
-    
-    return {
-      address: hotel.address || '',
-      locality: hotel.locality || '',
-      province: hotel.province || ''
     };
   };
 
@@ -274,11 +239,12 @@ const EventSpaceDetailsPage = () => {
   };
 
   // ============================================
-  // ✅ HOOK DE DEBUG
+  // Debug
   // ============================================
   useEffect(() => {
     console.log('🔍 =========== DEBUG EVENT SPACE DETAIL ===========');
     console.log('🔍 spaceId:', id);
+    console.log('🔍 spacePhotos:', spacePhotos.length);
     console.log('🔍 spaceDetailsResponse:', spaceDetailsResponse);
     console.log('🔍 spaceDetails:', spaceDetails);
     console.log('🔍 space:', space);
@@ -288,9 +254,9 @@ const EventSpaceDetailsPage = () => {
     console.log('🔍 amenities:', getAmenities());
     console.log('🔍 capacity:', getCapacity());
     console.log('🔍 ===============================================');
-  }, [id, spaceDetailsResponse, spaceDetails, space, hotel]);
+  }, [id, spaceDetailsResponse, spaceDetails, space, hotel, spacePhotos]);
 
-  // ✅ Handler para continuar para detalhes da reserva
+  // Handlers
   const handleContinueToDetails = () => {
     if (!selectedDates.start || !selectedDates.end) {
       toast.error('Por favor, selecione as datas do evento');
@@ -316,7 +282,7 @@ const EventSpaceDetailsPage = () => {
     setLocation(`/event-spaces/${id}/book?step=1`);
   };
 
-  // ✅ Formatação de preço
+  // Formatação de preço
   const formatPrice = (price: string | number): string => {
     const priceNum = typeof price === 'string' ? parseFloat(price) : price;
     if (isNaN(priceNum) || priceNum === 0) return 'Sob consulta';
@@ -327,7 +293,7 @@ const EventSpaceDetailsPage = () => {
     });
   };
 
-  // ✅ Loading state
+  // Loading state
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -370,7 +336,7 @@ const EventSpaceDetailsPage = () => {
     );
   }
 
-  // ✅ Error state
+  // Error state
   if (!spaceDetailsResponse?.success || !space || !hotel) {
     const errorMessage = spaceDetailsResponse?.error || 'Espaço de evento não encontrado';
     
@@ -414,10 +380,9 @@ const EventSpaceDetailsPage = () => {
     );
   }
 
-  // ✅ Extrair dados usando as funções corrigidas
+  // Extrair dados usando as funções corrigidas
   const amenities = getAmenities();
   const ratingInfo = getRatingInfo();
-  const locationInfo = getLocationInfo();
   const cateringInfo = getCateringInfo();
   const priceInfo = getPriceInfo();
   const otherInfo = getOtherInfo();
@@ -425,7 +390,61 @@ const EventSpaceDetailsPage = () => {
   const location = getLocation();
   const { min: capacityMin, max: capacityMax } = getCapacity();
 
-  // ✅ Formulário de reserva rápida
+  // Renderização da Galeria de Fotos
+  const renderPhotoGallery = () => {
+    if (loadingPhotos) {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-48 md:h-64 w-full rounded-lg" />
+          ))}
+        </div>
+      );
+    }
+
+    if (spacePhotos.length > 0) {
+      return (
+        <div className="mb-8">
+          <EventSpacePhotoGallery
+            photos={spacePhotos}
+            title={space.name}
+            mode="full"
+          />
+        </div>
+      );
+    }
+
+    // Fallback para imagens do espaço (caso não tenha fotos no serviço)
+    if (space.images && space.images.length > 0) {
+      return (
+        <div className="mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {space.images.slice(0, 3).map((img: string, index: number) => (
+              <div key={index} className="rounded-lg overflow-hidden shadow-md">
+                <img
+                  src={img}
+                  alt={`${space.name} - Imagem ${index + 1}`}
+                  className="w-full h-48 md:h-64 object-cover hover:scale-105 transition-transform duration-300"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          {space.images.length > 3 && (
+            <p className="text-center text-sm text-muted-foreground mt-2">
+              + {space.images.length - 3} mais imagens disponíveis
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  // Formulário de reserva rápida
   const renderQuickBookingForm = () => {
     const today = new Date().toISOString().split('T')[0];
     
@@ -553,30 +572,8 @@ const EventSpaceDetailsPage = () => {
       {/* Formulário de Reserva Rápida */}
       {renderQuickBookingForm()}
 
-      {/* Galeria de Imagens */}
-      {space.images && space.images.length > 0 && (
-        <div className="mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {space.images.slice(0, 3).map((img: string, index: number) => (
-              <div key={index} className="rounded-lg overflow-hidden shadow-md">
-                <img
-                  src={img}
-                  alt={`${space.name} - Imagem ${index + 1}`}
-                  className="w-full h-48 md:h-64 object-cover hover:scale-105 transition-transform duration-300"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-          {space.images.length > 3 && (
-            <p className="text-center text-sm text-muted-foreground mt-2">
-              + {space.images.length - 3} mais imagens disponíveis
-            </p>
-          )}
-        </div>
-      )}
+      {/* Galeria de Fotos */}
+      {renderPhotoGallery()}
 
       {/* Informações Rápidas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

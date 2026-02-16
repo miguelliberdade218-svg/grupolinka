@@ -33,19 +33,19 @@ import { eventSpaceService } from '@/services/eventSpaceService';
 import { locationsService, LocationSuggestion as ServiceLocationSuggestion } from '@/services/locationsService';
 import EventSpaceCard from '@/shared/components/event-spaces/EventSpaceCard';
 import EventSpaceDetailModal from '@/shared/components/EventSpaceDetailModal';
+import { EventSpacePhotoGallery } from '@/apps/main-app/components/EventSpacePhotoGallery';
 import { useToast } from '@/shared/hooks/use-toast';
 import { debounce } from 'lodash';
 import { EventSpace, EventSpaceSearchParams as SearchParamsType } from '@/shared/types/event-spaces';
 import { calculateDistance, parseCoordinate } from '@/utils/calculateDistance';
+import { eventSpacePhotoService } from '@/services/eventSpacePhotoService';
+import type { EventSpacePhoto } from '@/services/eventSpacePhotoService';
 
 // ============================================
-// ✅ CORREÇÃO 1: Tipo específico para sortBy
+// Tipos específicos
 // ============================================
 type SortByType = 'distance' | 'price' | 'capacity' | 'rating';
 
-// ============================================
-// ✅ CORREÇÃO 2: Interface estendida com tipos corretos
-// ============================================
 interface ExtendedSearchParams extends SearchParamsType {
   sortBy?: SortByType;
   page?: number;
@@ -57,9 +57,6 @@ interface ExtendedSearchParams extends SearchParamsType {
   district?: string;
 }
 
-// ============================================
-// ✅ CORREÇÃO 3: Interface local atualizada - CORRIGIDA
-// ============================================
 interface LocationSuggestion {
   id: string;
   name: string;
@@ -73,18 +70,18 @@ interface LocationSuggestion {
 }
 
 // ============================================
-// ✅ CORREÇÃO 4: Interface ExtendedEventSpace - CORRIGIDA
+// ✅ INTERFACE COMPLETA COM TODOS OS CAMPOS OPCIONAIS
 // ============================================
 interface ExtendedEventSpace extends Omit<EventSpace, 'location'> {
   distance: number | null;
   location?: string;
   thumbnail?: string;
+  photos?: EventSpacePhoto[];
   capacityTheater?: number | null;
   capacityClassroom?: number | null;
   capacityBanquet?: number | null;
   capacityStanding?: number | null;
   capacityCocktail?: number | null;
-  // ✅ CORREÇÃO: Usar o mesmo tipo do hotel da interface EventSpace
   hotel?: {
     id?: string;
     name: string;
@@ -98,12 +95,34 @@ interface ExtendedEventSpace extends Omit<EventSpace, 'location'> {
     contact_phone?: string | null;
     contact_email?: string | null;
   } | null;
-  // ✅ CORREÇÃO: amenities é obrigatório
   amenities: string[];
+  
+  // ✅ CAMPOS ADICIONAIS (todos opcionais)
+  price_per_day?: string;
+  pricePerDay?: string;
+  base_price_per_day?: string;
+  imageUrl?: string;
+  primary_image?: string;
+  hotel_name?: string;
+  hotelName?: string;
+  weekend_surcharge_percent?: number;
+  weekendSurcharge?: number;
+  capacity_min?: number;
+  capacity_max?: number;
+  offers_catering?: boolean;
+  cateringAvailable?: boolean;
+  is_featured?: boolean;
+  featured?: boolean;
+  active?: boolean;
+  area_sqm?: number;
+  area?: number;
+  security_deposit?: string | null;
+  deposit?: string | number | null;
+  address?: string;
 }
 
 // ============================================
-// ✅ CORREÇÃO 5: Função auxiliar para calcular distância segura
+// Funções auxiliares
 // ============================================
 const calculateSafeDistance = (
   lat1: number | null | undefined, 
@@ -123,11 +142,7 @@ const calculateSafeDistance = (
   }
 };
 
-// ============================================
-// ✅ CORREÇÃO 6: Função para converter dados da API - COMPLETA
-// ============================================
 function convertToEventSpace(data: any): ExtendedEventSpace {
-  // Preço - PRIORIDADE MÁXIMA PARA price_per_day
   let basePrice = '0';
   if (data.price_per_day) {
     basePrice = String(data.price_per_day);
@@ -139,7 +154,6 @@ function convertToEventSpace(data: any): ExtendedEventSpace {
     basePrice = String(data.base_price_per_day);
   }
 
-  // ✅ CORREÇÃO: Criar objeto hotel que corresponda ao tipo do EventSpace
   const hotel = data.hotel ? {
     id: data.hotel.id,
     name: data.hotel.name || 'Hotel não especificado',
@@ -202,7 +216,6 @@ function convertToEventSpace(data: any): ExtendedEventSpace {
     hotel: hotel,
   };
 
-  // ✅ CORREÇÃO: Amenities - Suporte a múltiplos formatos
   let amenitiesList: string[] = [];
   if (data.amenities && Array.isArray(data.amenities)) {
     if (data.amenities.length > 0) {
@@ -231,7 +244,6 @@ function convertToEventSpace(data: any): ExtendedEventSpace {
     distance = typeof data.distance === 'number' ? data.distance : parseFloat(String(data.distance)) || null;
   }
   
-  // ✅ CORREÇÃO: Localização - Prioridade correta
   let location = undefined;
   if (data.location) {
     location = data.location;
@@ -259,6 +271,29 @@ function convertToEventSpace(data: any): ExtendedEventSpace {
     capacityStanding: data.capacityStanding || data.capacity_standing || null,
     capacityCocktail: data.capacityCocktail || data.capacity_cocktail || null,
     amenities: amenitiesList,
+    
+    // ✅ Campos adicionais
+    price_per_day: data.price_per_day,
+    pricePerDay: data.pricePerDay,
+    base_price_per_day: data.base_price_per_day,
+    imageUrl: data.imageUrl,
+    primary_image: data.primary_image,
+    hotel_name: data.hotel_name,
+    hotelName: data.hotelName,
+    weekend_surcharge_percent: data.weekend_surcharge_percent,
+    weekendSurcharge: data.weekendSurcharge,
+    capacity_min: data.capacity_min,
+    capacity_max: data.capacity_max,
+    offers_catering: data.offers_catering,
+    cateringAvailable: data.cateringAvailable,
+    is_featured: data.is_featured,
+    featured: data.featured,
+    active: data.active,
+    area_sqm: data.area_sqm,
+    area: data.area,
+    security_deposit: data.security_deposit,
+    deposit: data.deposit,
+    address: data.address,
   };
 
   return extendedSpace;
@@ -271,10 +306,9 @@ export default function EventSpacesSearchPage() {
   const [searchParams, setSearchParams] = useState<ExtendedSearchParams>({});
   const [showFilters, setShowFilters] = useState(true);
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
+  const [spacesPhotos, setSpacesPhotos] = useState<Record<string, EventSpacePhoto[]>>({});
+  const [loadingPhotos, setLoadingPhotos] = useState<Record<string, boolean>>({});
   
-  // ============================================
-  // ✅ CORREÇÃO 7: Estados separados para localização
-  // ============================================
   const [locationQuery, setLocationQuery] = useState('');
   const [locality, setLocality] = useState('');
   const [province, setProvince] = useState('');
@@ -286,7 +320,7 @@ export default function EventSpacesSearchPage() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // ============================================
-  // ✅ CORREÇÃO 8: Obter parâmetros da URL
+  // Obter parâmetros da URL
   // ============================================
   useEffect(() => {
     const params = new URLSearchParams(search);
@@ -335,7 +369,7 @@ export default function EventSpacesSearchPage() {
   }, [search]);
 
   // ============================================
-  // ✅ CORREÇÃO 9: Buscar sugestões - TIPAGEM CORRETA
+  // Buscar sugestões de localização
   // ============================================
   const fetchSuggestions = useCallback(
     debounce(async (query: string) => {
@@ -397,7 +431,36 @@ export default function EventSpacesSearchPage() {
   }, []);
 
   // ============================================
-  // ✅ CORREÇÃO 10: Buscar espaços para eventos - TIPAGEM CORRETA
+  // ✅ Função para carregar fotos de um espaço
+  // ============================================
+  const loadSpacePhotos = async (spaceId: string) => {
+    if (loadingPhotos[spaceId]) return;
+    if (spacesPhotos[spaceId] && spacesPhotos[spaceId].length > 0) return;
+    
+    setLoadingPhotos(prev => ({ ...prev, [spaceId]: true }));
+    
+    try {
+      const response = await eventSpacePhotoService.getEventSpacePhotos(spaceId);
+      
+      const photos = (response.success && response.data) ? response.data : [];
+      
+      setSpacesPhotos(prev => ({
+        ...prev,
+        [spaceId]: photos
+      }));
+    } catch (error) {
+      console.error(`Erro ao carregar fotos do espaço ${spaceId}:`, error);
+      setSpacesPhotos(prev => ({
+        ...prev,
+        [spaceId]: []
+      }));
+    } finally {
+      setLoadingPhotos(prev => ({ ...prev, [spaceId]: false }));
+    }
+  };
+
+  // ============================================
+  // Buscar espaços para eventos
   // ============================================
   const { data: spacesResponse, isLoading, refetch, error } = useQuery({
     queryKey: ['eventSpacesSearch', searchParams],
@@ -499,7 +562,7 @@ export default function EventSpacesSearchPage() {
   });
 
   // ============================================
-  // ✅ CORREÇÃO 11: Converter dados da API
+  // Converter dados da API
   // ============================================
   const spaces: ExtendedEventSpace[] = React.useMemo(() => {
     if (!spacesResponse?.data) return [];
@@ -511,7 +574,18 @@ export default function EventSpacesSearchPage() {
   const totalResults = spaces.length || 0;
 
   // ============================================
-  // ✅ CORREÇÃO 12: Ordenar espaços - TIPAGEM CORRETA
+  // Carregar fotos para espaços visíveis
+  // ============================================
+  useEffect(() => {
+    if (spaces.length > 0) {
+      spaces.forEach(space => {
+        loadSpacePhotos(space.id);
+      });
+    }
+  }, [spaces]);
+
+  // ============================================
+  // Ordenar espaços
   // ============================================
   const sortedSpaces = useCallback(() => {
     const spacesCopy = [...spaces];
@@ -549,7 +623,7 @@ export default function EventSpacesSearchPage() {
   }, [spaces, searchParams.sortBy]);
 
   // ============================================
-  // ✅ CORREÇÃO 13: Manipulador de seleção de localização
+  // Manipuladores de eventos
   // ============================================
   const handleLocationSelect = (suggestion: LocationSuggestion) => {
     console.log('📍 [EventSpaces] Localização selecionada:', {
@@ -582,9 +656,6 @@ export default function EventSpacesSearchPage() {
     setLocationSuggestions([]);
   };
 
-  // ============================================
-  // ✅ CORREÇÃO 14: Handle search
-  // ============================================
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -652,15 +723,13 @@ export default function EventSpacesSearchPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ============================================
-  // ✅ CORREÇÃO 15: Handler para mudança de ordenação
-  // ============================================
   const handleSortChange = (value: string) => {
     if (value === 'distance' || value === 'price' || value === 'capacity' || value === 'rating') {
       setSearchParams(prev => ({ ...prev, sortBy: value }));
     }
   };
 
+  // Opções para os selects
   const eventTypeOptions = [
     { id: 'conference', label: 'Conferência', icon: <Briefcase className="w-4 h-4" /> },
     { id: 'wedding', label: 'Casamento', icon: <Heart className="w-4 h-4" /> },
@@ -684,7 +753,7 @@ export default function EventSpacesSearchPage() {
   ];
 
   // ============================================
-  // ✅ CORREÇÃO 16: Renderizar paginação
+  // Renderizar paginação
   // ============================================
   const renderPagination = () => {
     const pages = [];
@@ -715,7 +784,7 @@ export default function EventSpacesSearchPage() {
   };
 
   // ============================================
-  // ✅ CORREÇÃO 17: Paginar espaços
+  // Paginar espaços
   // ============================================
   const paginatedSpaces = React.useMemo(() => {
     const startIndex = (currentPage - 1) * 9;
@@ -723,10 +792,12 @@ export default function EventSpacesSearchPage() {
   }, [sortedSpaces, currentPage]);
 
   // ============================================
-  // ✅ DEBUG: Console log para verificar dados
+  // Debug
   // ============================================
   console.log('🔍 DEBUG - EventSpacesSearchPage:', {
     totalSpaces: spaces.length,
+    totalPages,
+    currentPage,
     searchParams: {
       locality: searchParams.locality,
       province: searchParams.province,
@@ -736,13 +807,6 @@ export default function EventSpacesSearchPage() {
       radius: searchParams.radius,
       sortBy: searchParams.sortBy,
     },
-    sampleSpace: spaces.length > 0 ? {
-      name: spaces[0].name,
-      basePricePerDay: spaces[0].basePricePerDay,
-      distance: spaces[0].distance,
-      location: spaces[0].location,
-      amenitiesCount: spaces[0].amenities?.length || 0,
-    } : null,
   });
 
   return (
@@ -1206,10 +1270,13 @@ export default function EventSpacesSearchPage() {
                     </div>
                   </div>
 
-                  {/* Lista de espaços */}
+                  {/* ============================================ */}
+                  {/* ✅ LISTA DE ESPAÇOS CORRIGIDA - COM FOTOS */}
+                  {/* ============================================ */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {paginatedSpaces.map((space) => {
                       const distance = space.distance;
+                      const spacePhotos = spacesPhotos[space.id] || [];
                       
                       let distanceColor = 'bg-gray-100 text-gray-800 border-gray-300';
                       let distanceText = 'Localização não disponível';
@@ -1227,6 +1294,84 @@ export default function EventSpacesSearchPage() {
                         }
                       }
                       
+                      // ✅ Criar objeto com valores padrão para campos obrigatórios
+                      // ✅ CORREÇÃO: security_deposit convertido de null para undefined
+                      const cardSpace = {
+                        // Campos obrigatórios do EventSpace
+                        id: space.id,
+                        name: space.name,
+                        description: space.description || null,
+                        capacityMin: space.capacityMin || 0,
+                        capacityMax: space.capacityMax || 0,
+                        areaSqm: space.areaSqm || null,
+                        basePricePerDay: space.basePricePerDay || '0',
+                        weekendSurchargePercent: space.weekendSurchargePercent || 0,
+                        offersCatering: space.offersCatering || false,
+                        spaceType: space.spaceType || null,
+                        isActive: space.isActive !== false,
+                        isFeatured: space.isFeatured || false,
+                        rating: space.rating || 0,
+                        totalReviews: space.totalReviews || 0,
+                        locality: space.locality || null,
+                        province: space.province || null,
+                        location: space.location || null,
+                        images: space.images || [],
+                        hotel: space.hotel || null,
+                        
+                        // Campos adicionais (todos opcionais)
+                        photos: spacePhotos,
+                        distance: space.distance,
+                        thumbnail: space.thumbnail,
+                        capacityTheater: space.capacityTheater,
+                        capacityClassroom: space.capacityClassroom,
+                        capacityBanquet: space.capacityBanquet,
+                        capacityStanding: space.capacityStanding,
+                        capacityCocktail: space.capacityCocktail,
+                        
+                        // Preços
+                        price_per_day: space.price_per_day,
+                        pricePerDay: space.pricePerDay,
+                        base_price_per_day: space.base_price_per_day,
+                        
+                        // Imagens
+                        imageUrl: space.imageUrl,
+                        primary_image: space.primary_image,
+                        
+                        // Hotel
+                        hotel_name: space.hotel_name,
+                        hotelName: space.hotelName,
+                        
+                        // Weekend surcharge
+                        weekend_surcharge_percent: space.weekend_surcharge_percent,
+                        weekendSurcharge: space.weekendSurcharge,
+                        
+                        // Capacidade (snake_case)
+                        capacity_min: space.capacity_min,
+                        capacity_max: space.capacity_max,
+                        
+                        // Catering
+                        offers_catering: space.offers_catering,
+                        cateringAvailable: space.cateringAvailable,
+                        
+                        // Featured/Active
+                        is_featured: space.is_featured,
+                        featured: space.featured,
+                        active: space.active,
+                        
+                        // Área
+                        area_sqm: space.area_sqm,
+                        area: space.area,
+                        
+                        // ✅ Depósito - converter null para undefined
+                        security_deposit: space.security_deposit === null ? undefined : space.security_deposit,
+                        deposit: space.deposit === null ? undefined : 
+                                (typeof space.deposit === 'number' ? space.deposit : 
+                                (space.deposit ? parseFloat(String(space.deposit)) : undefined)),
+                        
+                        // Endereço
+                        address: space.address,
+                      };
+                      
                       return (
                         <div key={space.id} className="group relative animate-in fade-in slide-in-from-bottom-2 duration-300">
                           <div className="absolute top-3 right-3 z-10">
@@ -1236,7 +1381,7 @@ export default function EventSpacesSearchPage() {
                           </div>
 
                           <EventSpaceCard
-                            space={space}
+                            space={cardSpace}
                             showPrice={true}
                             onBook={() => {
                               toast({

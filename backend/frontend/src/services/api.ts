@@ -1,4 +1,4 @@
-// src/services/apiService.ts - VERSÃO CORRIGIDA 12/02/2026
+// src/services/apiService.ts - VERSÃO CORRIGIDA 16/02/2026
 // ✅ CORREÇÃO COMPLETA: Todas as rotas /api/v2/hotels substituídas por /api/hotels
 // ✅ CORREÇÃO: Funções de normalização de status de hotel adicionadas
 // ✅ CORREÇÃO: Métodos de booking atualizados para usar rotas corretas
@@ -9,6 +9,8 @@
 // ✅ NOVO: Método debugEventSpaceData adicionado para diagnóstico
 // Mantém rides e events intactos
 // ✅ NOVO: Métodos para fotos de hotéis (room type photos) adicionados
+// ✅ NOVO: Métodos para fotos de event spaces adicionados
+// ✅ CORREÇÃO CRÍTICA: Adicionada detecção de FormData no método request para uploads funcionarem
 
 import { auth } from '@/shared/lib/firebaseConfig';
 import { formatDateOnly, formatTimeOnly, formatLongDate, formatWeekday, formatDateTime } from '../utils/dateFormatter';
@@ -84,6 +86,13 @@ import type {
   PhotoUploadResponse,
   PhotoListResponse,
 } from '@/shared/types/hotel-photos';
+
+// ====================== 🆕 TIPOS PARA FOTOS DE EVENT SPACES ======================
+import type {
+  EventSpacePhoto,
+  EventSpacePhotoUpdateRequest,
+  EventSpacePhotoReorderRequest,
+} from '@/shared/types/event-space-photos';
 
 // ====================== EXPORTAÇÕES ======================
 export type { Booking };
@@ -661,11 +670,17 @@ class ApiService {
       credentials: 'include',
     };
     
-    if (data && method !== 'GET') {
+    // ✅ CORREÇÃO CRÍTICA: Detectar FormData e NÃO fazer stringify
+    if (data instanceof FormData) {
+      // Para FormData, não definir Content-Type (o browser define automaticamente com boundary)
+      delete headers['Content-Type'];
+      config.body = data;
+      console.log(`📸 Enviando FormData com ${Array.from((data as FormData).entries()).length} campos`);
+    } else if (data && method !== 'GET') {
+      // Para dados normais, fazer JSON.stringify
       config.body = JSON.stringify(data);
+      console.log(`🔐 ${method} ${url}`, `Data: ${JSON.stringify(data).substring(0, 200)}...`);
     }
-    
-    console.log(`🔐 ${method} ${url}`, data ? `Data: ${JSON.stringify(data).substring(0, 200)}...` : '');
     
     try {
       const response = await fetch(url, config);
@@ -1608,6 +1623,239 @@ class ApiService {
     }
   }
 
+  // ====================== 🆕 NOVOS MÉTODOS PARA FOTOS DE EVENT SPACES ======================
+
+  /**
+   * Upload de uma foto para um event space
+   */
+  async uploadEventSpacePhoto(
+    eventSpaceId: string,
+    file: File,
+    data?: { alt_text?: string; is_featured?: boolean; is_primary?: boolean }
+  ): Promise<ApiResponse<EventSpacePhoto>> {
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      if (data?.alt_text) formData.append('alt_text', data.alt_text);
+      if (data?.is_featured !== undefined) formData.append('is_featured', String(data.is_featured));
+      if (data?.is_primary !== undefined) formData.append('is_primary', String(data.is_primary));
+
+      // ✅ Usando o método request que agora detecta FormData automaticamente
+      return await this.post<ApiResponse<EventSpacePhoto>>(
+        `/api/events/spaces/${eventSpaceId}/photos`,
+        formData
+      );
+    } catch (error) {
+      console.error('[uploadEventSpacePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao fazer upload',
+      };
+    }
+  }
+
+  /**
+   * Upload de múltiplas fotos para um event space
+   */
+  async uploadMultipleEventSpacePhotos(
+    eventSpaceId: string,
+    files: File[],
+    options?: { is_featured?: boolean }
+  ): Promise<ApiResponse<EventSpacePhoto[]>> {
+    try {
+      const uploadPromises = files.map(file => 
+        this.uploadEventSpacePhoto(eventSpaceId, file, {
+          is_featured: options?.is_featured,
+          is_primary: false
+        })
+      );
+      
+      const results = await Promise.all(uploadPromises);
+      
+      // Verificar se todos foram bem sucedidos
+      const allSuccess = results.every(r => r.success);
+      const allData = results.flatMap(r => r.data ? [r.data] : []);
+      
+      return {
+        success: allSuccess,
+        data: allData,
+        error: allSuccess ? undefined : 'Alguns uploads falharam'
+      };
+    } catch (error) {
+      console.error('[uploadMultipleEventSpacePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao fazer upload',
+      };
+    }
+  }
+
+  /**
+   * Listar fotos de um event space
+   */
+  async getEventSpacePhotos(eventSpaceId: string): Promise<ApiResponse<EventSpacePhoto[]>> {
+    try {
+      return await this.get<ApiResponse<EventSpacePhoto[]>>(
+        `/api/events/spaces/${eventSpaceId}/photos`
+      );
+    } catch (error) {
+      console.error('[getEventSpacePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao listar fotos',
+      };
+    }
+  }
+
+  /**
+   * Obter fotos destacadas de um event space
+   */
+  async getEventSpaceFeaturedPhotos(eventSpaceId: string): Promise<ApiResponse<EventSpacePhoto[]>> {
+    try {
+      return await this.get<ApiResponse<EventSpacePhoto[]>>(
+        `/api/events/spaces/${eventSpaceId}/photos/featured`
+      );
+    } catch (error) {
+      console.error('[getEventSpaceFeaturedPhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao listar fotos destacadas',
+      };
+    }
+  }
+
+  /**
+   * Obter uma foto específica de um event space
+   */
+  async getEventSpacePhoto(eventSpaceId: string, photoId: string): Promise<ApiResponse<EventSpacePhoto>> {
+    try {
+      return await this.get<ApiResponse<EventSpacePhoto>>(
+        `/api/events/spaces/${eventSpaceId}/photos/${photoId}`
+      );
+    } catch (error) {
+      console.error('[getEventSpacePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar foto',
+      };
+    }
+  }
+
+  /**
+   * Atualizar meta-dados de uma foto de event space
+   */
+  async updateEventSpacePhoto(
+    eventSpaceId: string,
+    photoId: string,
+    updates: EventSpacePhotoUpdateRequest
+  ): Promise<ApiResponse<EventSpacePhoto>> {
+    try {
+      return await this.put<ApiResponse<EventSpacePhoto>>(
+        `/api/events/spaces/${eventSpaceId}/photos/${photoId}`,
+        updates
+      );
+    } catch (error) {
+      console.error('[updateEventSpacePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao atualizar foto',
+      };
+    }
+  }
+
+  /**
+   * Alternar status featured de uma foto de event space
+   */
+  async toggleEventSpacePhotoFeatured(
+    eventSpaceId: string,
+    photoId: string
+  ): Promise<ApiResponse<EventSpacePhoto>> {
+    try {
+      return await this.patch<ApiResponse<EventSpacePhoto>>(
+        `/api/events/spaces/${eventSpaceId}/photos/${photoId}/toggle-featured`,
+        {}
+      );
+    } catch (error) {
+      console.error('[toggleEventSpacePhotoFeatured]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao alternar destaque',
+      };
+    }
+  }
+
+  /**
+   * Deletar uma foto de event space (soft delete)
+   */
+  async deleteEventSpacePhoto(eventSpaceId: string, photoId: string): Promise<ApiResponse<null>> {
+    try {
+      return await this.delete<ApiResponse<null>>(
+        `/api/events/spaces/${eventSpaceId}/photos/${photoId}`
+      );
+    } catch (error) {
+      console.error('[deleteEventSpacePhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao deletar foto',
+      };
+    }
+  }
+
+  /**
+   * Reordenar fotos de um event space
+   */
+  async reorderEventSpacePhotos(
+    eventSpaceId: string,
+    photoIds: string[]
+  ): Promise<ApiResponse<EventSpacePhoto[]>> {
+    try {
+      return await this.put<ApiResponse<EventSpacePhoto[]>>(
+        `/api/events/spaces/${eventSpaceId}/photos/reorder`,
+        { photoIds }
+      );
+    } catch (error) {
+      console.error('[reorderEventSpacePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao reordenar fotos',
+      };
+    }
+  }
+
+  /**
+   * Obter foto principal de um event space
+   */
+  async getEventSpacePrimaryPhoto(eventSpaceId: string): Promise<ApiResponse<EventSpacePhoto | null>> {
+    try {
+      return await this.get<ApiResponse<EventSpacePhoto | null>>(
+        `/api/events/spaces/${eventSpaceId}/photos/primary`
+      );
+    } catch (error) {
+      console.error('[getEventSpacePrimaryPhoto]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao buscar foto principal',
+      };
+    }
+  }
+
+  /**
+   * Contar fotos de um event space
+   */
+  async countEventSpacePhotos(eventSpaceId: string): Promise<ApiResponse<{ total: number; featured: number; withPrimary: boolean }>> {
+    try {
+      return await this.get<ApiResponse<{ total: number; featured: number; withPrimary: boolean }>>(
+        `/api/events/spaces/${eventSpaceId}/photos/count`
+      );
+    } catch (error) {
+      console.error('[countEventSpacePhotos]', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao contar fotos',
+      };
+    }
+  }
+
   // ====================== RIDES API (INTACTA) ======================
   
   async searchRides(params: any): Promise<any> {
@@ -2116,29 +2364,11 @@ class ApiService {
       if (data?.is_featured !== undefined) formData.append('is_featured', String(data.is_featured));
       if (data?.is_primary !== undefined) formData.append('is_primary', String(data.is_primary));
 
-      const headers = await this.getAuthHeaders();
-      // Remove Content-Type para que o browser defina com boundary correto
-      delete headers['Content-Type'];
-
-      const response = await fetch(`${this.baseURL}/api/hotels/room-types/${roomTypeId}/photos`, {
-        method: 'POST',
-        headers,
-        body: formData,
-        credentials: 'include',
-        mode: 'cors',
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
-      }
-
-      const result = await response.json();
-      return {
-        success: result.success ?? true,
-        data: result.data,
-        error: result.error,
-      };
+      // ✅ Usando o método request que agora detecta FormData automaticamente
+      return await this.post<ApiResponse<RoomTypePhoto>>(
+        `/api/hotels/room-types/${roomTypeId}/photos`,
+        formData
+      );
     } catch (error) {
       console.error('[uploadRoomTypePhoto]', error);
       return {
@@ -2157,34 +2387,23 @@ class ApiService {
     options?: { is_featured?: boolean }
   ): Promise<ApiResponse<RoomTypePhoto[]>> {
     try {
-      const formData = new FormData();
-      files.forEach(file => formData.append('photos', file));
-      if (options?.is_featured !== undefined) formData.append('is_featured', String(options.is_featured));
-
-      const headers = await this.getAuthHeaders();
-      delete headers['Content-Type'];
-
-      const response = await fetch(
-        `${this.baseURL}/api/hotels/room-types/${roomTypeId}/photos/multiple`,
-        {
-          method: 'POST',
-          headers,
-          body: formData,
-          credentials: 'include',
-          mode: 'cors',
-        }
+      const uploadPromises = files.map(file => 
+        this.uploadRoomTypePhoto(roomTypeId, file, {
+          is_featured: options?.is_featured,
+          is_primary: false
+        })
       );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
-      }
-
-      const result = await response.json();
+      
+      const results = await Promise.all(uploadPromises);
+      
+      // Verificar se todos foram bem sucedidos
+      const allSuccess = results.every(r => r.success);
+      const allData = results.flatMap(r => r.data ? [r.data] : []);
+      
       return {
-        success: result.success ?? true,
-        data: result.data,
-        error: result.error,
+        success: allSuccess,
+        data: allData,
+        error: allSuccess ? undefined : 'Alguns uploads falharam'
       };
     } catch (error) {
       console.error('[uploadMultipleRoomTypePhotos]', error);

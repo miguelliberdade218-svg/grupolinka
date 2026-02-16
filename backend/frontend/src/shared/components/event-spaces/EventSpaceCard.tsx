@@ -1,15 +1,9 @@
 /**
  * src/apps/hotels-app/components/event-spaces/EventSpaceCard.tsx
- * Card moderno de espaço de evento - VERSÃO FINAL 12/02/2026
- * ✅ CORRIGIDO: Campo location corrigido, adicionado suporte para info do hotel
- * ✅ CORRIGIDO: Problema de imagens 404 resolvido com fallback
- * ✅ CORRIGIDO: Extração de amenities e preço com fallbacks
- * ✅ CORREÇÃO CRÍTICA: Adicionado suporte para pricePerDay e price_per_day (campos reais do banco)
- * ✅ CORREÇÃO CRÍTICA: getLocation() agora verifica TODAS as possibilidades
- * ✅ CORREÇÃO CRÍTICA: getAmenities() agora suporta objetos com name - TYPE ERROR FIXED
- * ✅ CORREÇÃO CRÍTICA: ExtendedEventSpace agora estende EventSpace corretamente
- * Alinhado com shared/types/event-spaces.ts
- * Design inspirado em Booking.com / Airbnb
+ * Card moderno de espaço de evento - VERSÃO FINAL 16/02/2026
+ * ✅ CORRIGIDO: Prioridade para photos carregadas do serviço
+ * ✅ CORRIGIDO: Fallback local de imagem (data URL)
+ * ✅ CORRIGIDO: Interface completa com todos os campos necessários
  */
 
 import React from 'react';
@@ -18,30 +12,14 @@ import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
 import { Star, MapPin, Users, Heart, Building } from 'lucide-react';
 import type { EventSpace } from '@/shared/types/event-spaces';
+import type { EventSpacePhoto } from '@/services/eventSpacePhotoService';
 
 // ============================================
-// ✅ INTERFACES LOCAIS PARA TIPAGEM CORRETA
+// ✅ INTERFACE COMPLETA - TODOS OS CAMPOS POSSÍVEIS
 // ============================================
-interface AmenityObject {
-  id?: string;
-  name: string;
-  description?: string;
-}
-
-interface EquipmentAmenity {
-  id?: string;
-  name: string;
-  description?: string;
-}
-
-// ============================================
-// ✅ CORREÇÃO CRÍTICA: ExtendedEventSpace NÃO estende EventSpace
-// ============================================
-interface ExtendedEventSpace {
+interface CardSpace {
   // Campos obrigatórios do EventSpace
   id: string;
-  hotelId: string;
-  hotel_id: string;
   name: string;
   description: string | null;
   capacityMin: number;
@@ -50,63 +28,37 @@ interface ExtendedEventSpace {
   basePricePerDay: string;
   weekendSurchargePercent: number;
   offersCatering: boolean;
-  cateringDiscountPercent: number;
-  cateringMenuUrls: string[];
   spaceType: string | null;
-  naturalLight: boolean;
-  hasStage: boolean;
-  loadingAccess: boolean;
-  dressingRooms: number | null;
-  insuranceRequired: boolean;
-  alcoholAllowed: boolean;
-  approvalRequired: boolean;
-  noiseRestriction: string | null;
-  securityDeposit: string | null;
-  allowedEventTypes: string[];
-  prohibitedEventTypes: string[];
-  equipment: Record<string, any>;
-  setupOptions: string[];
-  images: string[];
-  floorPlanImage: string | null;
-  virtualTourUrl: string | null;
   isActive: boolean;
   isFeatured: boolean;
-  slug: string;
   rating: number;
   totalReviews: number;
   locality: string | null;
   province: string | null;
-  lat: string | null;
-  lng: string | null;
-  location_id: string | null;
-  inherits_hotel_location: boolean;
-  createdAt: string;
-  updatedAt: string;
-  amenities: string[];
+  location: string | null;
+  images: string[];
   hotel?: {
     id?: string;
     name: string;
     locality: string;
     province: string;
-    address?: string | null;
-    city?: string | null;
-    lat?: string | null;
-    lng?: string | null;
-    location_id?: string | null;
-    contact_phone?: string | null;
-    contact_email?: string | null;
   } | null;
-  location?: string | null;
 
-  // ✅ CAMPOS ADICIONAIS (todos opcionais e com tipos corretos)
+  // ✅ CAMPOS ADICIONAIS (rating)
+  average_rating?: number;
+  avgRating?: number;
+  
+  // ✅ CAMPOS ADICIONAIS (reviews)
+  review_count?: number;
+  reviewCount?: number;
+  
+  // ✅ OUTROS CAMPOS ADICIONAIS
+  distance?: number | null;
+  thumbnail?: string;
+  photos?: EventSpacePhoto[];
   price_per_day?: string;
   pricePerDay?: string;
   base_price_per_day?: string;
-  amenities_list?: string[];
-  average_rating?: number;
-  avgRating?: number;
-  review_count?: number;
-  reviewCount?: number;
   imageUrl?: string;
   primary_image?: string;
   hotel_name?: string;
@@ -125,20 +77,10 @@ interface ExtendedEventSpace {
   security_deposit?: string | number;
   deposit?: string | number;
   address?: string;
-  data?: {
-    amenities?: string[];
-  };
-  distance?: number | null;
-  thumbnail?: string;
-  capacityTheater?: number | null;
-  capacityClassroom?: number | null;
-  capacityBanquet?: number | null;
-  capacityStanding?: number | null;
-  capacityCocktail?: number | null;
 }
 
 interface EventSpaceCardProps {
-  space: EventSpace | ExtendedEventSpace;
+  space: CardSpace;
   showPrice?: boolean;
   onBook?: (spaceId: string) => void;
   isFavorite?: boolean;
@@ -147,9 +89,13 @@ interface EventSpaceCardProps {
   showHotelInfo?: boolean;
 }
 
-/**
- * Card de espaço de evento otimizado e alinhado com schema real
- */
+// ============================================
+// ✅ FUNÇÃO AUXILIAR: Gerar fallback de imagem local
+// ============================================
+const generateFallbackImage = (text: string): string => {
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%23f3f4f6'/%3E%3Ctext x='200' y='150' font-family='system-ui, sans-serif' font-size='16' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'%3E${encodeURIComponent(text)}%3C/text%3E%3C/svg%3E`;
+};
+
 export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   space,
   showPrice = true,
@@ -160,44 +106,27 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   showHotelInfo = false,
 }) => {
   // ============================================
-  // ✅ HELPER: Type guard para acessar propriedades com segurança
-  // ============================================
-  const spaceAny = space as ExtendedEventSpace;
-
-  // ============================================
-  // ✅ CORREÇÃO CRÍTICA 1: Extração de preço com suporte a TODOS os formatos
+  // ✅ Extração de preço
   // ============================================
   const getBasePrice = (): number => {
-    // 1. PRIORIDADE MÁXIMA: price_per_day (string)
-    if (spaceAny.price_per_day) {
-      const price = parseFloat(String(spaceAny.price_per_day));
-      if (!isNaN(price) && price > 0) {
-        return price;
-      }
+    if (space.price_per_day) {
+      const price = parseFloat(String(space.price_per_day));
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    // 2. PRIORIDADE MÁXIMA: pricePerDay (string)
-    if (spaceAny.pricePerDay) {
-      const price = parseFloat(String(spaceAny.pricePerDay));
-      if (!isNaN(price) && price > 0) {
-        return price;
-      }
+    if (space.pricePerDay) {
+      const price = parseFloat(String(space.pricePerDay));
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    // 3. Tentar basePricePerDay (string)
     if (space.basePricePerDay) {
       const price = parseFloat(String(space.basePricePerDay));
-      if (!isNaN(price) && price > 0) {
-        return price;
-      }
+      if (!isNaN(price) && price > 0) return price;
     }
     
-    // 4. Tentar base_price_per_day (string)
-    if (spaceAny.base_price_per_day) {
-      const price = parseFloat(String(spaceAny.base_price_per_day));
-      if (!isNaN(price) && price > 0) {
-        return price;
-      }
+    if (space.base_price_per_day) {
+      const price = parseFloat(String(space.base_price_per_day));
+      if (!isNaN(price) && price > 0) return price;
     }
     
     return 0;
@@ -214,98 +143,28 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
     : 'Sob consulta';
 
   // ============================================
-  // ✅ CORREÇÃO 2: Extração de amenities com fallback MÚLTIPLO - TYPESCRIPT FIXED
-  // ============================================
-  const getAmenities = (): string[] => {
-    const result: string[] = [];
-    
-    // 1. Tentar space.amenities (array de strings ou objetos)
-    if (space.amenities && Array.isArray(space.amenities) && space.amenities.length > 0) {
-      const amenities = space.amenities;
-      
-      // Se for array de strings
-      if (amenities.length > 0 && typeof amenities[0] === 'string') {
-        return amenities as string[];
-      }
-      
-      // Se for array de objetos com name
-      if (amenities.length > 0 && typeof amenities[0] === 'object' && amenities[0] !== null) {
-        const amenityObjects = amenities as unknown as AmenityObject[];
-        if (amenityObjects[0]?.name) {
-          return amenityObjects.map((a: AmenityObject) => a.name);
-        }
-      }
-    }
-    
-    // 2. Tentar space.equipment?.amenities
-    if (space.equipment?.amenities && Array.isArray(space.equipment.amenities) && space.equipment.amenities.length > 0) {
-      const equipmentAmenities = space.equipment.amenities;
-      
-      if (equipmentAmenities.length > 0 && typeof equipmentAmenities[0] === 'string') {
-        return equipmentAmenities as string[];
-      }
-      
-      if (equipmentAmenities.length > 0 && typeof equipmentAmenities[0] === 'object' && equipmentAmenities[0] !== null) {
-        const equipmentObjects = equipmentAmenities as unknown as EquipmentAmenity[];
-        if (equipmentObjects[0]?.name) {
-          return equipmentObjects.map((a: EquipmentAmenity) => a.name);
-        }
-      }
-    }
-    
-    // 3. Tentar amenities_list
-    if (spaceAny.amenities_list && Array.isArray(spaceAny.amenities_list) && spaceAny.amenities_list.length > 0) {
-      return spaceAny.amenities_list;
-    }
-    
-    // 4. Tentar data.amenities (de resposta da API)
-    if (spaceAny.data?.amenities && Array.isArray(spaceAny.data.amenities) && spaceAny.data.amenities.length > 0) {
-      return spaceAny.data.amenities;
-    }
-    
-    return result;
-  };
-
-  const amenities = getAmenities();
-
-  // ============================================
-  // ✅ CORREÇÃO 3: Extração de localização com TODOS os fallbacks
+  // ✅ Extração de localização
   // ============================================
   const getLocation = (): string => {
-    // 1. Tentar location direta do espaço (prioridade máxima)
-    if (space.location) {
-      return space.location;
-    }
+    if (space.location) return space.location;
     
-    // 2. Tentar localidade + província do espaço
     if (space.locality && space.province) {
       return `${space.locality}, ${space.province}`;
     }
     
-    // 3. Tentar localização do hotel
     if (space.hotel?.locality && space.hotel?.province) {
       return `${space.hotel.locality}, ${space.hotel.province}`;
     }
     
-    // 4. Tentar nome do hotel + localidade
     if (space.hotel?.name && space.hotel?.locality) {
       return `${space.hotel.name}, ${space.hotel.locality}`;
     }
     
-    // 5. Tentar apenas locality do hotel
-    if (space.hotel?.locality) {
-      return space.hotel.locality;
-    }
+    if (space.hotel?.locality) return space.hotel.locality;
     
-    // 6. Tentar apenas locality do espaço
-    if (space.locality) {
-      return space.locality;
-    }
+    if (space.locality) return space.locality;
     
-    // 7. Tentar address ou endereço completo
-    if (spaceAny.address) {
-      return spaceAny.address;
-    }
+    if (space.address) return space.address;
     
     return 'Localização não informada';
   };
@@ -313,166 +172,168 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   const location = getLocation();
 
   // ============================================
-  // ✅ CORREÇÃO 4: Extração de rating com múltiplas fontes
+  // ✅ Extração de rating - CORRIGIDO
   // ============================================
   const getRating = (): number => {
-    return space.rating || spaceAny.average_rating || spaceAny.avgRating || 0;
+    // Prioridade: rating (original) > average_rating > avgRating
+    if (space.rating) return space.rating;
+    if (space.average_rating) return space.average_rating;
+    if (space.avgRating) return space.avgRating;
+    return 0;
   };
 
   const getTotalReviews = (): number => {
-    return space.totalReviews || spaceAny.review_count || spaceAny.reviewCount || 0;
+    // Prioridade: totalReviews (original) > review_count > reviewCount
+    if (space.totalReviews) return space.totalReviews;
+    if (space.review_count) return space.review_count;
+    if (space.reviewCount) return space.reviewCount;
+    return 0;
   };
 
   const rating = getRating();
   const totalReviews = getTotalReviews();
 
   // ============================================
-  // ✅ CORREÇÃO 5: Extração de imagem com fallback robusto
+  // ✅ EXTRAÇÃO DE IMAGEM COM PRIORIDADE PARA PHOTOS
   // ============================================
   const getImageUrl = (): string => {
-    // 1. Tentar images array
+    // ✅ PRIORIDADE 1: Fotos carregadas pelo serviço
+    if (space.photos && Array.isArray(space.photos) && space.photos.length > 0) {
+      const photo = space.photos[0];
+      if (photo.url.startsWith('/')) {
+        return `http://localhost:8000${photo.url}`;
+      }
+      return photo.url;
+    }
+    
+    // PRIORIDADE 2: images array
     if (space.images && Array.isArray(space.images) && space.images.length > 0) {
-      // Se for array de strings
       if (typeof space.images[0] === 'string') {
         return space.images[0];
       }
-      // Se for array de objetos com url
-      if (space.images[0] && typeof space.images[0] === 'object' && (space.images[0] as any)?.url) {
-        return (space.images[0] as any).url;
-      }
-      // Se for array de objetos com imageUrl
-      if (space.images[0] && typeof space.images[0] === 'object' && (space.images[0] as any)?.imageUrl) {
-        return (space.images[0] as any).imageUrl;
-      }
     }
     
-    // 2. Tentar imageUrl direto
-    if (spaceAny.imageUrl) {
-      return spaceAny.imageUrl;
+    // PRIORIDADE 3: imageUrl direto
+    if (space.imageUrl) {
+      return space.imageUrl;
     }
     
-    // 3. Tentar primary_image
-    if (spaceAny.primary_image) {
-      return spaceAny.primary_image;
+    // PRIORIDADE 4: primary_image
+    if (space.primary_image) {
+      return space.primary_image;
     }
     
-    // Fallback com nome do espaço
-    return `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
+    // PRIORIDADE 5: thumbnail
+    if (space.thumbnail) {
+      return space.thumbnail;
+    }
+    
+    // FALLBACK LOCAL
+    return generateFallbackImage(space.name);
   };
 
   const imageUrl = getImageUrl();
 
   // ============================================
-  // ✅ CORREÇÃO 6: Extração do nome do hotel
+  // ✅ Extração do nome do hotel
   // ============================================
   const getHotelName = (): string => {
-    return space.hotel?.name || spaceAny.hotel_name || spaceAny.hotelName || 'Hotel não especificado';
+    return space.hotel?.name || space.hotel_name || space.hotelName || 'Hotel não especificado';
   };
 
   const hotelName = getHotelName();
 
   // ============================================
-  // ✅ CORREÇÃO 7: Extração do weekend surcharge
+  // ✅ Extração do weekend surcharge
   // ============================================
   const getWeekendSurcharge = (): number => {
     return space.weekendSurchargePercent || 
-           spaceAny.weekend_surcharge_percent || 
-           spaceAny.weekendSurcharge || 
+           space.weekend_surcharge_percent || 
+           space.weekendSurcharge || 
            0;
   };
 
   const weekendSurcharge = getWeekendSurcharge();
 
   // ============================================
-  // ✅ CORREÇÃO 8: Extração da capacidade com validação
+  // ✅ Extração da capacidade
   // ============================================
   const getCapacityMin = (): number => {
-    const min = Number(space.capacityMin || spaceAny.capacity_min || 0);
-    return min > 0 ? min : 0;
+    return Number(space.capacityMin || space.capacity_min || 0);
   };
 
   const getCapacityMax = (): number => {
-    const min = getCapacityMin();
-    const max = Number(space.capacityMax || spaceAny.capacity_max || 0);
-    return max > 0 ? max : min;
+    return Number(space.capacityMax || space.capacity_max || getCapacityMin());
   };
 
   const capacityMin = getCapacityMin();
   const capacityMax = getCapacityMax();
 
   // ============================================
-  // ✅ CORREÇÃO 9: Verificar se oferece catering
+  // ✅ Verificar se oferece catering
   // ============================================
   const getOffersCatering = (): boolean => {
     return space.offersCatering || 
-           spaceAny.offers_catering || 
-           spaceAny.cateringAvailable || 
+           space.offers_catering || 
+           space.cateringAvailable || 
            false;
   };
 
   const offersCatering = getOffersCatering();
 
   // ============================================
-  // ✅ CORREÇÃO 10: Verificar se é destaque
+  // ✅ Verificar se é destaque
   // ============================================
   const getIsFeatured = (): boolean => {
     return space.isFeatured || 
-           spaceAny.is_featured || 
-           spaceAny.featured || 
+           space.is_featured || 
+           space.featured || 
            false;
   };
 
   const isFeatured = getIsFeatured();
 
   // ============================================
-  // ✅ CORREÇÃO 11: Verificar se está ativo
+  // ✅ Verificar se está ativo
   // ============================================
   const getIsActive = (): boolean => {
-    return space.isActive !== false && spaceAny.active !== false;
+    return space.isActive !== false && space.active !== false;
   };
 
   const isActive = getIsActive();
 
   // ============================================
-  // ✅ CORREÇÃO 12: Extração da área
+  // ✅ Extração da área
   // ============================================
   const getArea = (): number | null => {
-    return space.areaSqm || spaceAny.area_sqm || spaceAny.area || null;
+    return space.areaSqm || space.area_sqm || space.area || null;
   };
 
   const area = getArea();
 
   // ============================================
-  // ✅ CORREÇÃO 13: Extração do depósito de segurança
+  // ✅ Extração do depósito de segurança
   // ============================================
   const getSecurityDeposit = (): number => {
-    const deposit = Number(space.securityDeposit || 
-                          spaceAny.security_deposit || 
-                          spaceAny.deposit || 
-                          0);
-    return !isNaN(deposit) && deposit > 0 ? deposit : 0;
+    const deposit = space.security_deposit || space.deposit;
+    if (deposit === null || deposit === undefined) return 0;
+    
+    const num = typeof deposit === 'string' ? parseFloat(deposit) : deposit;
+    return !isNaN(num) && num > 0 ? num : 0;
   };
 
   const securityDeposit = getSecurityDeposit();
 
   // ============================================
-  // ✅ DEBUG (remover em produção)
+  // ✅ DEBUG
   // ============================================
   console.log('🔍 EventSpaceCard:', {
     id: space.id,
     name: space.name,
-    price_per_day: spaceAny.price_per_day,
-    pricePerDay: spaceAny.pricePerDay,
-    basePrice,
-    displayPrice,
-    location,
-    amenitiesCount: amenities.length,
+    hasPhotos: space.photos?.length || 0,
+    imageUrl: imageUrl.substring(0, 50) + '...',
     rating,
-    totalReviews,
-    capacity: `${capacityMin}-${capacityMax}`,
-    offersCatering,
-    isFeatured,
-    isActive
+    totalReviews
   });
 
   return (
@@ -487,7 +348,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
           onError={(e) => {
-            (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
+            (e.target as HTMLImageElement).src = generateFallbackImage(space.name);
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
@@ -543,7 +404,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           {space.name}
         </h3>
 
-        {/* Rating (se disponível) */}
+        {/* Rating */}
         {rating > 0 && (
           <div className="flex items-center gap-1">
             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
@@ -556,7 +417,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           </div>
         )}
 
-        {/* Localização corrigida - AGORA COM TODOS OS FALLBACKS */}
+        {/* Localização */}
         <div className="flex items-center gap-1.5 text-sm text-gray-600">
           <MapPin className="h-4 w-4 text-violet-600 flex-shrink-0" />
           <span className="line-clamp-1">{location}</span>
@@ -575,7 +436,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           )}
         </div>
 
-        {/* Info do hotel (opcional) */}
+        {/* Info do hotel */}
         {showHotelInfo && (space.hotel || hotelName !== 'Hotel não especificado') && (
           <div className="flex items-center gap-1.5 text-sm text-gray-600">
             <Building className="h-4 w-4 text-violet-600" />
@@ -588,26 +449,6 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
           <p className="text-sm text-gray-600 line-clamp-2">
             {space.description}
           </p>
-        )}
-
-        {/* Amenidades (máx 3 + +N) - AGORA COM SUPORTE A OBJETOS E TYPESCRIPT FIXED */}
-        {amenities.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {amenities.slice(0, 3).map((amenity: string) => (
-              <Badge
-                key={amenity}
-                variant="secondary"
-                className="text-xs bg-gray-100 text-gray-700 px-2.5 py-0.5"
-              >
-                {amenity}
-              </Badge>
-            ))}
-            {amenities.length > 3 && (
-              <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700 px-2.5 py-0.5">
-                +{amenities.length - 3}
-              </Badge>
-            )}
-          </div>
         )}
 
         {/* Preço e ações */}

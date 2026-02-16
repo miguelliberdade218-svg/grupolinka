@@ -38,6 +38,9 @@ import hotelController from '../src/modules/hotels/hotelController';
 // ===== NOVO SISTEMA DE EVENTS =====
 import eventController from '../src/modules/events/eventSpaceController';
 
+// ===== ROTAS DE FOTOS DE EVENT SPACES =====
+import eventSpacePhotoRoutes from '../src/modules/events/eventSpacePhotoRoutes';
+
 // ===== ROTAS DE RIDES / DRIVERS / VEÍCULOS =====
 import providerRidesRoutes from './provider/rides';
 import providerDashboardRoutes from './provider/dashboard';
@@ -189,6 +192,18 @@ export async function registerRoutes(app: express.Express): Promise<void> {
       } else {
         console.log('❌ Subdiretório hotels não encontrado em:', hotelsPath);
       }
+
+      // ✅ NOVO: Verificar diretório de event spaces
+      const eventSpacesPath = path.join(uploadsPath, 'event-spaces');
+      if (!fs.existsSync(eventSpacesPath)) {
+        console.log('📁 Criando diretório event-spaces...');
+        fs.mkdirSync(eventSpacesPath, { recursive: true });
+        console.log('✅ Diretório event-spaces criado!');
+      } else {
+        console.log('✅ Diretório event-spaces já existe');
+        const eventSpaceFiles = fs.readdirSync(eventSpacesPath);
+        console.log('📁 Arquivos em uploads/event-spaces:', eventSpaceFiles.length);
+      }
     } else {
       console.log('❌ Diretório uploads NÃO encontrado em:', uploadsPath);
     }
@@ -216,8 +231,11 @@ export async function registerRoutes(app: express.Express): Promise<void> {
       exists: fs.existsSync(uploadsPath),
       hotelsPath: path.join(uploadsPath, 'hotels'),
       hotelsExists: fs.existsSync(path.join(uploadsPath, 'hotels')),
+      eventSpacesPath: path.join(uploadsPath, 'event-spaces'),
+      eventSpacesExists: fs.existsSync(path.join(uploadsPath, 'event-spaces')),
       files: fs.existsSync(uploadsPath) ? fs.readdirSync(uploadsPath) : [],
-      hotelFiles: fs.existsSync(path.join(uploadsPath, 'hotels')) ? fs.readdirSync(path.join(uploadsPath, 'hotels')) : []
+      hotelFiles: fs.existsSync(path.join(uploadsPath, 'hotels')) ? fs.readdirSync(path.join(uploadsPath, 'hotels')) : [],
+      eventSpaceFiles: fs.existsSync(path.join(uploadsPath, 'event-spaces')) ? fs.readdirSync(path.join(uploadsPath, 'event-spaces')) : []
     });
   });
 
@@ -433,8 +451,45 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/hotels', hotelController);
   console.log('Sistema de Hotéis registrado');
 
+  // ===== SISTEMA DE EVENTS COM FOTOS - ORDEM CORRIGIDA =====
+  // ✅ PRIMEIRO: Rotas específicas de fotos (mais específicas)
+  console.log('📸 [DEBUG] Registrando rotas de fotos em /api/events/spaces');
+  console.log('📸 [DEBUG] eventSpacePhotoRoutes importado:', !!eventSpacePhotoRoutes);
+  app.use('/api/events/spaces', eventSpacePhotoRoutes);
+  console.log('✅ Rotas de fotos de event spaces registradas em /api/events/spaces/:eventSpaceId/photos');
+
+  // ✅ DEPOIS: Rotas principais de events (mais genéricas)
+  console.log('🎪 [DEBUG] Registrando eventController em /api/events');
+  console.log('🎪 [DEBUG] eventController importado:', !!eventController);
   app.use('/api/events', eventController);
-  console.log('Sistema de Events registrado');
+  console.log('Sistema de Events registrado (controller principal)');
+
+  // ✅ LOG DE TODAS AS ROTAS REGISTRADAS (para debug)
+  console.log('📋 [DEBUG] Listando todas as rotas montadas:');
+  if (app._router && app._router.stack) {
+    app._router.stack.forEach((layer: any, index: number) => {
+      if (layer.route) {
+        // Rota direta
+        console.log(`  ${index}: ${Object.keys(layer.route.methods).join(', ').toUpperCase()} ${layer.route.path}`);
+      } else if (layer.name === 'router' && layer.handle && layer.handle.stack) {
+        // Router montado
+        console.log(`  ${index}: Router montado em ${layer.regexp}`);
+        // Mostrar primeiras 3 rotas do router (para não poluir muito)
+        const subRoutes = layer.handle.stack.slice(0, 3);
+        subRoutes.forEach((subLayer: any, subIndex: number) => {
+          if (subLayer.route) {
+            console.log(`    ↳ ${subIndex}: ${Object.keys(subLayer.route.methods).join(', ').toUpperCase()} ${subLayer.route.path}`);
+          }
+        });
+        if (layer.handle.stack.length > 3) {
+          console.log(`    ... e mais ${layer.handle.stack.length - 3} rotas`);
+        }
+      } else {
+        // Middleware
+        console.log(`  ${index}: Middleware ${layer.name || 'anonymous'}`);
+      }
+    });
+  }
 
   app.use('/api/provider/rides', providerRidesRoutes);
   app.use('/api/provider/dashboard', providerDashboardRoutes);
@@ -477,7 +532,7 @@ export async function registerRoutes(app: express.Express): Promise<void> {
         services: {
           auth: 'operational',
           hotels: 'operational',
-          events: 'operational (disponibilidade implícita)',
+          events: 'operational (com suporte a fotos)',
           rides: 'operational',
           vehicles: 'operational',
           partnerships: 'operational',
