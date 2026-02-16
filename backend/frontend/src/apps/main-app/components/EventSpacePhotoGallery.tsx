@@ -7,7 +7,7 @@
  * Modo "full": Mostra todas as fotos com navegação completa (para detalhes)
  * Modo "grid": Mostra todas as fotos em grade
  * 
- * ✅ CORREÇÃO: Adicionado fallback de imagem local (data URL)
+ * ✅ CORREÇÃO: Adicionado setas de navegação
  */
 
 import React, { useState } from 'react';
@@ -67,7 +67,6 @@ const GridMode: React.FC<EventSpacePhotoGalleryProps> = ({
               alt={photo.alt_text || ''}
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
               onError={(e) => {
-                // ✅ Fallback LOCAL em caso de erro
                 (e.target as HTMLImageElement).src = generateFallbackImage('Imagem não disponível');
               }}
             />
@@ -136,7 +135,6 @@ const PreviewMode: React.FC<EventSpacePhotoGalleryProps> = ({
           alt={mainPhoto.alt_text || ''}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           onError={(e) => {
-            // ✅ Fallback LOCAL em caso de erro
             (e.target as HTMLImageElement).src = generateFallbackImage(title || 'Imagem');
           }}
         />
@@ -221,24 +219,23 @@ const FullMode: React.FC<EventSpacePhotoGalleryProps> = ({
           alt={currentPhoto.alt_text || ''}
           className="w-full h-full object-cover"
           onError={(e) => {
-            // ✅ Fallback LOCAL em caso de erro
             (e.target as HTMLImageElement).src = generateFallbackImage(title || 'Imagem');
           }}
         />
 
-        {/* Navegação */}
+        {/* ✅ SETAS DE NAVEGAÇÃO - SEMPRE VISÍVEIS */}
         {photos.length > 1 && (
           <>
             <button
               onClick={goToPrevious}
-              className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition opacity-0 group-hover:opacity-100"
+              className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition"
               aria-label="Foto anterior"
             >
               <ChevronLeft size={28} />
             </button>
             <button
               onClick={goToNext}
-              className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition opacity-0 group-hover:opacity-100"
+              className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition"
               aria-label="Próxima foto"
             >
               <ChevronRight size={28} />
@@ -286,7 +283,6 @@ const FullMode: React.FC<EventSpacePhotoGalleryProps> = ({
                 alt={photo.alt_text || ''}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  // ✅ Fallback LOCAL em caso de erro
                   (e.target as HTMLImageElement).src = generateFallbackImage('Erro');
                 }}
               />
@@ -342,7 +338,7 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       {/* Botão Fechar */}
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-full transition"
+        className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-full transition z-10"
         aria-label="Fechar galeria"
       >
         <X size={32} />
@@ -350,9 +346,29 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
       {/* Título */}
       {title && (
-        <div className="absolute top-4 left-4 text-white">
+        <div className="absolute top-4 left-4 text-white z-10">
           <h2 className="text-xl font-bold">{title}</h2>
         </div>
+      )}
+
+      {/* ✅ SETAS DE NAVEGAÇÃO NO LIGHTBOX */}
+      {photos.length > 1 && (
+        <>
+          <button
+            onClick={goToPrevious}
+            className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-4 rounded-full transition z-10"
+            aria-label="Foto anterior"
+          >
+            <ChevronLeft size={32} />
+          </button>
+          <button
+            onClick={goToNext}
+            className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white p-4 rounded-full transition z-10"
+            aria-label="Próxima foto"
+          >
+            <ChevronRight size={32} />
+          </button>
+        </>
       )}
 
       {/* Imagem Principal */}
@@ -362,30 +378,9 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           alt={currentPhoto.alt_text || ''}
           className="max-w-full max-h-full object-contain"
           onError={(e) => {
-            // ✅ Fallback LOCAL em caso de erro
             (e.target as HTMLImageElement).src = generateFallbackImage(title || 'Imagem');
           }}
         />
-
-        {/* Navegação */}
-        {photos.length > 1 && (
-          <>
-            <button
-              onClick={goToPrevious}
-              className="absolute left-0 top-1/2 -translate-y-1/2 text-white hover:text-orange-400 transition"
-              aria-label="Foto anterior"
-            >
-              <ChevronLeft size={48} />
-            </button>
-            <button
-              onClick={goToNext}
-              className="absolute right-0 top-1/2 -translate-y-1/2 text-white hover:text-orange-400 transition"
-              aria-label="Próxima foto"
-            >
-              <ChevronRight size={48} />
-            </button>
-          </>
-        )}
 
         {/* Contador */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white px-4 py-2 rounded-full text-sm">
@@ -419,7 +414,6 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 alt={photo.alt_text || ''}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  // ✅ Fallback LOCAL em caso de erro
                   (e.target as HTMLImageElement).src = generateFallbackImage('Erro');
                 }}
               />

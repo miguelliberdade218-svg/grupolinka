@@ -19,7 +19,7 @@ import type {
   EventSpace
 } from '@/shared/types/event-spaces';
 
-// ✅ CORREÇÃO: Interface Hotel baseada no que existe no EventSpace
+// ✅ Interface Hotel baseada no que existe no EventSpace
 interface Hotel {
   id?: string;
   name: string;
@@ -40,6 +40,11 @@ interface ServiceResponse<T> {
   error?: string;
   message?: string;
 }
+
+// ✅ Função auxiliar para fallback de imagem local
+const generateFallbackImage = (text: string): string => {
+  return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%23f3f4f6'/%3E%3Ctext x='200' y='150' font-family='system-ui, sans-serif' font-size='16' fill='%236b7280' text-anchor='middle' dominant-baseline='middle'%3E${encodeURIComponent(text)}%3C/text%3E%3C/svg%3E`;
+};
 
 const EventSpaceDetailsPage = () => {
   const { id } = useParams();
@@ -68,19 +73,26 @@ const EventSpaceDetailsPage = () => {
     enabled: !!id,
   });
 
-  // Carregar fotos do espaço
+  // ✅ Carregar fotos do espaço - COM LOGS
   useEffect(() => {
     const loadPhotos = async () => {
       if (!id) return;
       
       setLoadingPhotos(true);
+      console.log('📸 [DetailsPage] Carregando fotos para espaço:', id);
+      
       try {
         const response = await eventSpacePhotoService.getEventSpacePhotos(id);
+        console.log('📸 [DetailsPage] Resposta do serviço:', response);
+        
         if (response.success && response.data) {
+          console.log('📸 [DetailsPage] Fotos carregadas:', response.data.length);
           setSpacePhotos(response.data);
+        } else {
+          console.log('📸 [DetailsPage] Nenhuma foto encontrada ou erro:', response.error);
         }
       } catch (error) {
-        console.error('Erro ao carregar fotos:', error);
+        console.error('📸 [DetailsPage] Erro ao carregar fotos:', error);
       } finally {
         setLoadingPhotos(false);
       }
@@ -390,8 +402,10 @@ const EventSpaceDetailsPage = () => {
   const location = getLocation();
   const { min: capacityMin, max: capacityMax } = getCapacity();
 
-  // Renderização da Galeria de Fotos
+  // ✅ Renderização da Galeria de Fotos - COM LOGS
   const renderPhotoGallery = () => {
+    console.log('📸 [DetailsPage] Renderizando galeria - loadingPhotos:', loadingPhotos, 'spacePhotos:', spacePhotos.length);
+    
     if (loadingPhotos) {
       return (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -403,6 +417,7 @@ const EventSpaceDetailsPage = () => {
     }
 
     if (spacePhotos.length > 0) {
+      console.log('📸 [DetailsPage] Renderizando EventSpacePhotoGallery com', spacePhotos.length, 'fotos em modo full');
       return (
         <div className="mb-8">
           <EventSpacePhotoGallery
@@ -416,6 +431,7 @@ const EventSpaceDetailsPage = () => {
 
     // Fallback para imagens do espaço (caso não tenha fotos no serviço)
     if (space.images && space.images.length > 0) {
+      console.log('📸 [DetailsPage] Usando fallback de imagens do espaço:', space.images.length);
       return (
         <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -426,7 +442,7 @@ const EventSpaceDetailsPage = () => {
                   alt={`${space.name} - Imagem ${index + 1}`}
                   className="w-full h-48 md:h-64 object-cover hover:scale-105 transition-transform duration-300"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(space.name)}`;
+                    (e.target as HTMLImageElement).src = generateFallbackImage(space.name);
                   }}
                 />
               </div>

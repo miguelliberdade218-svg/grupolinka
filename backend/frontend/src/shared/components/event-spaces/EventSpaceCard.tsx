@@ -1,24 +1,22 @@
 /**
  * src/apps/hotels-app/components/event-spaces/EventSpaceCard.tsx
- * Card moderno de espaço de evento - VERSÃO FINAL 16/02/2026
- * ✅ CORRIGIDO: Prioridade para photos carregadas do serviço
- * ✅ CORRIGIDO: Fallback local de imagem (data URL)
- * ✅ CORRIGIDO: Interface completa com todos os campos necessários
+ * Card moderno de espaço de evento - VERSÃO CORRIGIDA
+ * ✅ CORRIGIDO: Lógica de exibição de fotos
+ * ✅ NOVO: Mini galeria com setas para navegar entre fotos
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'wouter';
 import { Badge } from '@/shared/components/ui/badge';
 import { Button } from '@/shared/components/ui/button';
-import { Star, MapPin, Users, Heart, Building } from 'lucide-react';
+import { Star, MapPin, Users, Heart, Building, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { EventSpace } from '@/shared/types/event-spaces';
 import type { EventSpacePhoto } from '@/services/eventSpacePhotoService';
 
 // ============================================
-// ✅ INTERFACE COMPLETA - TODOS OS CAMPOS POSSÍVEIS
+// ✅ INTERFACE COMPLETA
 // ============================================
 interface CardSpace {
-  // Campos obrigatórios do EventSpace
   id: string;
   name: string;
   description: string | null;
@@ -43,16 +41,8 @@ interface CardSpace {
     locality: string;
     province: string;
   } | null;
-
-  // ✅ CAMPOS ADICIONAIS (rating)
-  average_rating?: number;
-  avgRating?: number;
   
-  // ✅ CAMPOS ADICIONAIS (reviews)
-  review_count?: number;
-  reviewCount?: number;
-  
-  // ✅ OUTROS CAMPOS ADICIONAIS
+  // Campos adicionais
   distance?: number | null;
   thumbnail?: string;
   photos?: EventSpacePhoto[];
@@ -74,8 +64,8 @@ interface CardSpace {
   active?: boolean;
   area_sqm?: number;
   area?: number;
-  security_deposit?: string | number;
-  deposit?: string | number;
+  security_deposit?: string | undefined;
+  deposit?: number | undefined;
   address?: string;
 }
 
@@ -105,6 +95,89 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   className = '',
   showHotelInfo = false,
 }) => {
+  // ✅ Estado para controlar a foto atual no card
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [imageSources, setImageSources] = useState<string[]>([]);
+
+  // ✅ Construir lista de imagens disponíveis
+  useEffect(() => {
+    const sources: string[] = [];
+    
+    // 1. Adicionar fotos do serviço (prioridade máxima)
+    if (space.photos && Array.isArray(space.photos) && space.photos.length > 0) {
+      space.photos.forEach(photo => {
+        if (photo.url) {
+          // Se a URL for relativa, adicionar o host
+          if (photo.url.startsWith('/')) {
+            sources.push(`http://localhost:8000${photo.url}`);
+          } else {
+            sources.push(photo.url);
+          }
+        }
+      });
+    }
+    
+    // 2. Adicionar imagens do array images
+    if (space.images && Array.isArray(space.images) && space.images.length > 0) {
+      space.images.forEach(img => {
+        if (typeof img === 'string' && img) {
+          sources.push(img);
+        }
+      });
+    }
+    
+    // 3. Adicionar imageUrl se existir
+    if (space.imageUrl) {
+      sources.push(space.imageUrl);
+    }
+    
+    // 4. Adicionar primary_image se existir
+    if (space.primary_image) {
+      sources.push(space.primary_image);
+    }
+    
+    // 5. Adicionar thumbnail se existir
+    if (space.thumbnail) {
+      sources.push(space.thumbnail);
+    }
+    
+    // Remover duplicatas (manter URLs únicas)
+    const uniqueSources = [...new Set(sources)];
+    setImageSources(uniqueSources);
+    
+    console.log('📸 [Card] Imagens disponíveis:', {
+      id: space.id,
+      name: space.name,
+      total: uniqueSources.length,
+      sources: uniqueSources
+    });
+    
+  }, [space]);
+
+  const hasMultipleImages = imageSources.length > 1;
+  
+  // ✅ Navegação
+  const goToPrevious = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCurrentPhotoIndex(prev => 
+      prev === 0 ? imageSources.length - 1 : prev - 1
+    );
+  };
+
+  const goToNext = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCurrentPhotoIndex(prev => 
+      prev === imageSources.length - 1 ? 0 : prev + 1
+    );
+  };
+
+  // ✅ Imagem atual
+  const currentImage = imageSources.length > 0 
+    ? imageSources[currentPhotoIndex] 
+    : generateFallbackImage(space.name);
+
   // ============================================
   // ✅ Extração de preço
   // ============================================
@@ -113,22 +186,18 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
       const price = parseFloat(String(space.price_per_day));
       if (!isNaN(price) && price > 0) return price;
     }
-    
     if (space.pricePerDay) {
       const price = parseFloat(String(space.pricePerDay));
       if (!isNaN(price) && price > 0) return price;
     }
-    
     if (space.basePricePerDay) {
       const price = parseFloat(String(space.basePricePerDay));
       if (!isNaN(price) && price > 0) return price;
     }
-    
     if (space.base_price_per_day) {
       const price = parseFloat(String(space.base_price_per_day));
       if (!isNaN(price) && price > 0) return price;
     }
-    
     return 0;
   };
 
@@ -147,92 +216,36 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   // ============================================
   const getLocation = (): string => {
     if (space.location) return space.location;
-    
     if (space.locality && space.province) {
       return `${space.locality}, ${space.province}`;
     }
-    
     if (space.hotel?.locality && space.hotel?.province) {
       return `${space.hotel.locality}, ${space.hotel.province}`;
     }
-    
     if (space.hotel?.name && space.hotel?.locality) {
       return `${space.hotel.name}, ${space.hotel.locality}`;
     }
-    
     if (space.hotel?.locality) return space.hotel.locality;
-    
     if (space.locality) return space.locality;
-    
     if (space.address) return space.address;
-    
     return 'Localização não informada';
   };
 
   const location = getLocation();
 
   // ============================================
-  // ✅ Extração de rating - CORRIGIDO
+  // ✅ Extração de rating
   // ============================================
   const getRating = (): number => {
-    // Prioridade: rating (original) > average_rating > avgRating
-    if (space.rating) return space.rating;
-    if (space.average_rating) return space.average_rating;
-    if (space.avgRating) return space.avgRating;
-    return 0;
+    return space.rating || 0;
   };
 
   const getTotalReviews = (): number => {
-    // Prioridade: totalReviews (original) > review_count > reviewCount
-    if (space.totalReviews) return space.totalReviews;
-    if (space.review_count) return space.review_count;
-    if (space.reviewCount) return space.reviewCount;
-    return 0;
+    return space.totalReviews || 0;
   };
 
   const rating = getRating();
   const totalReviews = getTotalReviews();
-
-  // ============================================
-  // ✅ EXTRAÇÃO DE IMAGEM COM PRIORIDADE PARA PHOTOS
-  // ============================================
-  const getImageUrl = (): string => {
-    // ✅ PRIORIDADE 1: Fotos carregadas pelo serviço
-    if (space.photos && Array.isArray(space.photos) && space.photos.length > 0) {
-      const photo = space.photos[0];
-      if (photo.url.startsWith('/')) {
-        return `http://localhost:8000${photo.url}`;
-      }
-      return photo.url;
-    }
-    
-    // PRIORIDADE 2: images array
-    if (space.images && Array.isArray(space.images) && space.images.length > 0) {
-      if (typeof space.images[0] === 'string') {
-        return space.images[0];
-      }
-    }
-    
-    // PRIORIDADE 3: imageUrl direto
-    if (space.imageUrl) {
-      return space.imageUrl;
-    }
-    
-    // PRIORIDADE 4: primary_image
-    if (space.primary_image) {
-      return space.primary_image;
-    }
-    
-    // PRIORIDADE 5: thumbnail
-    if (space.thumbnail) {
-      return space.thumbnail;
-    }
-    
-    // FALLBACK LOCAL
-    return generateFallbackImage(space.name);
-  };
-
-  const imageUrl = getImageUrl();
 
   // ============================================
   // ✅ Extração do nome do hotel
@@ -315,7 +328,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
   // ✅ Extração do depósito de segurança
   // ============================================
   const getSecurityDeposit = (): number => {
-    const deposit = space.security_deposit || space.deposit;
+    const deposit = space.security_deposit;
     if (deposit === null || deposit === undefined) return 0;
     
     const num = typeof deposit === 'string' ? parseFloat(deposit) : deposit;
@@ -331,9 +344,8 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
     id: space.id,
     name: space.name,
     hasPhotos: space.photos?.length || 0,
-    imageUrl: imageUrl.substring(0, 50) + '...',
-    rating,
-    totalReviews
+    imageSourcesCount: imageSources.length,
+    currentImage: currentImage.substring(0, 50) + '...',
   });
 
   return (
@@ -343,18 +355,47 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
       {/* Imagem principal + overlay */}
       <div className="relative h-52 overflow-hidden bg-gray-100">
         <img
-          src={imageUrl}
+          src={currentImage}
           alt={space.name}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           loading="lazy"
           onError={(e) => {
+            console.log('📸 [Card] Erro ao carregar imagem:', currentImage);
             (e.target as HTMLImageElement).src = generateFallbackImage(space.name);
           }}
         />
+        
+        {/* ✅ SETAS DE NAVEGAÇÃO NO CARD */}
+        {hasMultipleImages && (
+          <>
+            <button
+              onClick={goToPrevious}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-1.5 rounded-full transition opacity-0 group-hover:opacity-100 z-10"
+              aria-label="Foto anterior"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              onClick={goToNext}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-1.5 rounded-full transition opacity-0 group-hover:opacity-100 z-10"
+              aria-label="Próxima foto"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </>
+        )}
+        
+        {/* ✅ INDICADOR DE POSIÇÃO */}
+        {hasMultipleImages && (
+          <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full z-10">
+            {currentPhotoIndex + 1} / {imageSources.length}
+          </div>
+        )}
+
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
 
         {/* Badges de status */}
-        <div className="absolute top-3 right-3 flex flex-col gap-2">
+        <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
           {isFeatured && (
             <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-medium shadow-sm">
               Destaque
@@ -376,7 +417,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
         {onToggleFavorite && (
           <button
             onClick={() => onToggleFavorite(space.id)}
-            className="absolute top-3 left-3 p-2 bg-white/90 rounded-full hover:bg-white transition-colors shadow-sm"
+            className="absolute top-3 left-3 p-2 bg-white/90 rounded-full hover:bg-white transition-colors shadow-sm z-10"
             aria-label={isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
           >
             <Heart
@@ -389,7 +430,7 @@ export const EventSpaceCard: React.FC<EventSpaceCardProps> = ({
 
         {/* Tipo de espaço */}
         {space.spaceType && (
-          <div className="absolute bottom-3 left-3">
+          <div className="absolute bottom-3 left-3 z-10">
             <Badge className="bg-black/70 text-white text-xs capitalize px-3 py-1">
               {space.spaceType}
             </Badge>
