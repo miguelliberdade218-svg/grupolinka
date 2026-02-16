@@ -73,7 +73,7 @@ const EventSpaceDetailsPage = () => {
     enabled: !!id,
   });
 
-  // ✅ Carregar fotos do espaço - COM LOGS
+  // ✅ Carregar fotos do espaço - COM CORREÇÃO DAS URLs
   useEffect(() => {
     const loadPhotos = async () => {
       if (!id) return;
@@ -87,7 +87,15 @@ const EventSpaceDetailsPage = () => {
         
         if (response.success && response.data) {
           console.log('📸 [DetailsPage] Fotos carregadas:', response.data.length);
-          setSpacePhotos(response.data);
+          
+          // ✅ CORREÇÃO: Garantir que as URLs sejam absolutas
+          const photosWithFullUrls = response.data.map(photo => ({
+            ...photo,
+            url: photo.url.startsWith('/') ? `http://localhost:8000${photo.url}` : photo.url
+          }));
+          
+          console.log('📸 [DetailsPage] URLs das fotos:', photosWithFullUrls.map(p => p.url));
+          setSpacePhotos(photosWithFullUrls);
         } else {
           console.log('📸 [DetailsPage] Nenhuma foto encontrada ou erro:', response.error);
         }
@@ -402,7 +410,7 @@ const EventSpaceDetailsPage = () => {
   const location = getLocation();
   const { min: capacityMin, max: capacityMax } = getCapacity();
 
-  // ✅ Renderização da Galeria de Fotos - COM LOGS
+  // ✅ Renderização da Galeria de Fotos - COM CORREÇÃO
   const renderPhotoGallery = () => {
     console.log('📸 [DetailsPage] Renderizando galeria - loadingPhotos:', loadingPhotos, 'spacePhotos:', spacePhotos.length);
     
@@ -418,6 +426,8 @@ const EventSpaceDetailsPage = () => {
 
     if (spacePhotos.length > 0) {
       console.log('📸 [DetailsPage] Renderizando EventSpacePhotoGallery com', spacePhotos.length, 'fotos em modo full');
+      console.log('📸 [DetailsPage] URLs das fotos:', spacePhotos.map(p => p.url));
+      
       return (
         <div className="mb-8">
           <EventSpacePhotoGallery
@@ -438,10 +448,11 @@ const EventSpaceDetailsPage = () => {
             {space.images.slice(0, 3).map((img: string, index: number) => (
               <div key={index} className="rounded-lg overflow-hidden shadow-md">
                 <img
-                  src={img}
+                  src={img.startsWith('/') ? `http://localhost:8000${img}` : img}
                   alt={`${space.name} - Imagem ${index + 1}`}
                   className="w-full h-48 md:h-64 object-cover hover:scale-105 transition-transform duration-300"
                   onError={(e) => {
+                    console.log('📸 [DetailsPage] Erro no fallback:', img);
                     (e.target as HTMLImageElement).src = generateFallbackImage(space.name);
                   }}
                 />
