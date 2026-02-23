@@ -2,6 +2,7 @@
 // Rotas REST para Reviews
 
 import { Router, Request, Response } from 'express';
+import { verifyFirebaseToken, type AuthenticatedRequest } from '../../../src/shared/firebaseAuth';
 import { z } from 'zod';
 import {
   createHotelReview,
@@ -14,9 +15,21 @@ import {
 const router = Router();
 
 // POST /api/reviews - Criar review
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', verifyFirebaseToken, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const review = await createHotelReview(req.body, req.user?.email);
+    const userId = authReq.user?.uid;
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Usuário não autenticado' 
+      });
+    }
+
+    // Obter email do usuário autenticado
+    const userEmail = authReq.user?.email || '';
+    
+    const review = await createHotelReview(req.body, userEmail);
 
     res.status(201).json({
       success: true,
@@ -71,9 +84,27 @@ router.get('/hotels/:hotelId/stats', async (req: Request, res: Response) => {
 });
 
 // PATCH /api/reviews/:id/verify - (Admin/Host) Verificar review
-router.patch('/:id/verify', async (req: Request, res: Response) => {
-  // Adiciona middleware de admin/host se necessário
+router.patch('/:id/verify', verifyFirebaseToken, async (req: Request, res: Response) => {
+  const authReq = req as AuthenticatedRequest;
   try {
+    const userId = authReq.user?.uid;
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Usuário não autenticado' 
+      });
+    }
+
+    // TODO: Verificar se usuário é admin ou host do hotel
+    // Por enquanto, apenas admin pode verificar
+    // const user = await authService.getUserById(userId);
+    // if (user.userType !== 'admin' && user.userType !== 'host') {
+    //   return res.status(403).json({ 
+    //     success: false, 
+    //     message: 'Acesso negado. Apenas administradores ou hosts podem verificar avaliações' 
+    //   });
+    // }
+
     const { verified = true } = req.body;
     const review = await verifyReview(req.params.id, verified);
     if (!review) return res.status(404).json({ success: false, message: 'Avaliação não encontrada' });

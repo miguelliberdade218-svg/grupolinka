@@ -7,6 +7,11 @@ import HotelsApp from './apps/hotels-app/App';
 import AdminApp from './apps/admin-app/App';
 import LoginPage from './pages/login';
 import SignupPage from './pages/signup';
+import SignupUnifiedPage from './pages/signup-unified';
+import DriversSignupPage from './pages/drivers-signup';
+import HotelsSignupPage from './pages/hotels-signup';
+import ForgotPasswordPage from './pages/forgot-password';
+import ResetPasswordPage from './pages/reset-password';
 import NotFoundPage from './pages/not-found';
 
 function AppRouter() {
@@ -15,6 +20,11 @@ function AppRouter() {
       {/* Rotas públicas */}
       <Route path="/login" component={LoginPage} />
       <Route path="/signup" component={SignupPage} />
+      <Route path="/signup-unified" component={SignupUnifiedPage} />
+      <Route path="/drivers-signup" component={DriversSignupPage} />
+      <Route path="/hotels-signup" component={HotelsSignupPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       
       {/* Rota de busca de viagens */}
       <Route path="/rides/search" component={SearchRides} />

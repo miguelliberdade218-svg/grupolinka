@@ -358,6 +358,21 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
         console.log('📱 Token disponível para APIs');
         console.log('🔐 Token length:', token.length);
         
+        // ✅ NOVO: Tentar obter capacidades do usuário após login
+        try {
+          // Importar a API de forma dinâmica para evitar dependência circular
+          const { sharedAuthApi } = await import('@/api/shared/auth');
+          const capabilitiesResponse = await sharedAuthApi.getCapabilities();
+          
+          if (capabilitiesResponse.success && capabilitiesResponse.data) {
+            localStorage.setItem('userCapabilities', JSON.stringify(capabilitiesResponse.data));
+            console.log('🎯 Capacidades do usuário salvas:', capabilitiesResponse.data);
+          }
+        } catch (capError) {
+          console.warn('⚠️ Não foi possível obter capacidades do usuário:', capError);
+          // Não falhar o login por causa disso
+        }
+        
       } catch (error) {
         console.error('❌ Erro ao salvar token:', error);
       }
@@ -365,6 +380,7 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
       // ✅ CORREÇÃO: Limpar dados ao fazer logout
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('userCapabilities'); // ✅ NOVO: Limpar capacidades
       console.log('🧹 Dados de autenticação removidos do localStorage');
     }
     // ✅ FIM DO CÓDIGO CORRIGIDO
@@ -382,6 +398,50 @@ export const getStoredToken = (): string | null => {
 export const getStoredUser = (): any => {
   const userStr = localStorage.getItem('user');
   return userStr ? JSON.parse(userStr) : null;
+};
+
+// ✅ NOVO: Função auxiliar para obter capacidades do usuário
+export const getStoredCapabilities = (): any => {
+  const capabilitiesStr = localStorage.getItem('userCapabilities');
+  return capabilitiesStr ? JSON.parse(capabilitiesStr) : null;
+};
+
+// ✅ NOVO: Função para verificar se usuário tem capacidade específica
+export const hasCapability = (capability: string): boolean => {
+  const capabilities = getStoredCapabilities();
+  if (!capabilities) return false;
+  
+  // Verificar capacidades comuns
+  switch (capability) {
+    case 'canBookServices':
+      return capabilities.canBookServices === true;
+    case 'canDrive':
+      return capabilities.canDrive === true;
+    case 'canManageHotels':
+      return capabilities.canManageHotels === true;
+    case 'isAdmin':
+      return capabilities.isAdmin === true;
+    default:
+      return capabilities[capability] === true;
+  }
+};
+
+// ✅ NOVO: Função para atualizar capacidades do usuário
+export const refreshUserCapabilities = async (): Promise<boolean> => {
+  try {
+    const { sharedAuthApi } = await import('@/api/shared/auth');
+    const response = await sharedAuthApi.getCapabilities();
+    
+    if (response.success && response.data) {
+      localStorage.setItem('userCapabilities', JSON.stringify(response.data));
+      console.log('🔄 Capacidades do usuário atualizadas:', response.data);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('❌ Erro ao atualizar capacidades:', error);
+    return false;
+  }
 };
 
 // Função auxiliar para verificar se o usuário está autenticado

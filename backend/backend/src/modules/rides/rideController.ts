@@ -1,10 +1,12 @@
 // ridesController.ts
 import { Router, Request, Response, NextFunction } from "express";
 import { insertRideSchema } from "../../../shared/schema";
-import { authStorage } from "../../shared/authStorage";
-import { type AuthenticatedRequest, type AuthenticatedUser } from "../../shared/types";
 import { z } from "zod";
 import fetch from "node-fetch";
+
+// ✅ IMPORTAR authService em vez de authStorage
+import { authService } from "../auth/services/authService.js";
+import { type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
 
 // ✅ Importar serviços
 import { rideService } from "../../services/rideService";
@@ -145,7 +147,7 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       toLat,
       toLng,
       radiusKm = '100',
-      maxResults = '50', // ✅ Aumentado para 50
+      maxResults = '50',
       status = 'available'
     } = req.query;
 
@@ -156,14 +158,13 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       });
     }
 
-    const validatedMaxResults = validateMaxResults(maxResults, 50, 50); // ✅ Padrão 50
+    const validatedMaxResults = validateMaxResults(maxResults, 50, 50);
     const radius = parseFloat(radiusKm as string);
 
     console.log('🧠 [UNIVERSAL-CONTROLLER] Busca universal inteligente:', {
       from, to, radius, maxResults: validatedMaxResults
     });
 
-    // ✅ CORREÇÃO: Usar get_rides_smart_final via rideService atualizado
     const universalRides = await rideService.getRidesUniversal({
       fromLocation: from as string,
       toLocation: to as string,
@@ -176,7 +177,6 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       status: status as string
     });
 
-    // ✅ CORREÇÃO: Estatísticas atualizadas com novos dados da função inteligente
     const stats = {
       total: universalRides.length,
       exact_matches: universalRides.filter(r => r.matchType === 'exact_match').length,
@@ -191,7 +191,6 @@ router.get("/search/universal", async (req: Request, res: Response) => {
       average_direction_score: universalRides.length > 0 
         ? Math.round(universalRides.reduce((sum, ride) => sum + (ride.direction_score || 0), 0) / universalRides.length)
         : 0,
-      // ✅ NOVAS ESTATÍSTICAS: Dados dos motoristas e veículos
       drivers_with_ratings: universalRides.filter(r => r.driver_rating && r.driver_rating > 0).length,
       average_driver_rating: universalRides.length > 0 
         ? parseFloat((universalRides.reduce((sum, ride) => sum + (ride.driver_rating || 0), 0) / universalRides.length).toFixed(1))
@@ -260,7 +259,6 @@ router.get("/search/universal", async (req: Request, res: Response) => {
 });
 
 // ✅✅✅ ROTA /smart/search CORRIGIDA - USANDO FUNÇÃO INTELIGENTE
-// GET /api/rides/smart/search - Busca inteligente pública COM RESPOSTA CONSISTENTE
 router.get("/smart/search", async (req: Request, res: Response) => {
   try {
     const {
@@ -269,10 +267,9 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       date,
       passengers = 1,
       radiusKm = 100,
-      maxResults = 50 // ✅ Novo parâmetro
+      maxResults = 50
     } = req.query;
 
-    // ✅ VALIDAÇÃO DOS PARÂMETROS OBRIGATÓRIOS
     if (typeof from !== 'string' || typeof to !== 'string' || !from.trim() || !to.trim()) {
       return res.status(400).json({
         success: false,
@@ -280,7 +277,6 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ PARSING DAS LOCALIZAÇÕES
     const parsedFrom = parseLocationInput(from);
     const parsedTo = parseLocationInput(to);
 
@@ -297,7 +293,6 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       maxResults
     });
 
-    // ✅✅✅ USAR A FUNÇÃO INTELIGENTE ATUALIZADA
     const matchingRides = await rideService.searchRidesSmartFinal({
       fromCity: parsedFrom.city,
       toCity: parsedTo.city,
@@ -324,7 +319,6 @@ router.get("/smart/search", async (req: Request, res: Response) => {
       }))
     });
 
-    // ✅✅✅ ESTATÍSTICAS MELHORADAS COM DADOS DA FUNÇÃO INTELIGENTE
     const stats = {
       total: matchingRides.length,
       exact_matches: matchingRides.filter(r => r.match_type === 'exact_match').length,
@@ -342,7 +336,6 @@ router.get("/smart/search", async (req: Request, res: Response) => {
         : 0
     };
 
-    // ✅ ENVIAR RESPOSTA PADRONIZADA
     res.json({
       success: true,
       total: matchingRides.length,
@@ -384,7 +377,6 @@ router.get("/between-cities", async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ CORREÇÃO: Usar normalizador assíncrono
     const normalizedFrom = await normalizeLocation(city_from as string);
     const normalizedTo = await normalizeLocation(city_to as string);
 
@@ -402,7 +394,6 @@ router.get("/between-cities", async (req: Request, res: Response) => {
       maxResults: validateMaxResults(maxResults, 50, 50)
     });
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: rides.length,
       average_driver_rating: rides.length > 0 
@@ -482,7 +473,6 @@ router.get("/nearby", async (req: Request, res: Response) => {
       maxResults: validateMaxResults(maxResults, 50, 50)
     });
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: nearbyRides.length,
       average_driver_rating: nearbyRides.length > 0 
@@ -531,7 +521,7 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       toLng,
       fromProvince,
       toProvince,
-      maxResults = '50', // ✅ Aumentado para 50
+      maxResults = '50',
       minCompatibility = '50',
       radiusKm = '100'
     } = req.query;
@@ -543,7 +533,6 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ CORREÇÃO: Usar normalizador assíncrono
     const normalizedFrom = await normalizeLocation(from);
     const normalizedTo = await normalizeLocation(to);
     const validatedMaxResults = validateMaxResults(maxResults, 50, 50);
@@ -557,7 +546,6 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       maxResults: validatedMaxResults
     });
 
-    // ✅ CORREÇÃO: Usar busca SMART FINAL diretamente
     let allRides: any[] = [];
 
     try {
@@ -565,7 +553,7 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
         fromCity: normalizedFrom,
         toCity: normalizedTo,
         radiusKm: radius,
-        maxResults: 100 // Buscar mais para filtrar depois
+        maxResults: 100
       });
     } catch (smartError) {
       console.warn("❌ Smart final falhou, usando universal como fallback:", smartError);
@@ -577,7 +565,6 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       });
     }
 
-    // ✅✅✅ FILTRAR POR COMPATIBILIDADE USANDO direction_score
     const filteredRides = allRides.filter((ride: any) => 
       (ride.direction_score || ride.route_compatibility || ride.matchScore || 0) >= minCompatNumber
     ).slice(0, validatedMaxResults);
@@ -591,7 +578,6 @@ router.get("/hybrid/search", async (req: Request, res: Response) => {
       low: filteredRides.filter((r: any) => (r.direction_score || r.route_compatibility || r.matchScore || 0) < 50).length
     };
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const driverStats = {
       drivers_with_ratings: filteredRides.filter(r => r.driver_rating && r.driver_rating > 0).length,
       average_driver_rating: filteredRides.length > 0 
@@ -651,7 +637,6 @@ router.get("/geographic/detect", async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ CORREÇÃO: Usar normalizador assíncrono
     const normalizedFrom = await normalizeLocation(from);
     const normalizedTo = await normalizeLocation(to);
 
@@ -725,7 +710,6 @@ router.get("/province/search", async (req: Request, res: Response) => {
       maxResults: validatedMaxResults
     });
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: allMatches.length,
       fromProvince: normalizedFromProvince,
@@ -762,11 +746,19 @@ router.get("/province/search", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/rides/driver/:driverId - Busca por motorista pública
+// GET /api/rides/driver/:driverId - Busca por motorista pública (ATUALIZADO COM authService)
 router.get("/driver/:driverId", async (req: Request, res: Response) => {
   try {
     const { driverId } = req.params;
     const { status } = req.query;
+
+    const driver = await authService.getUserById(driverId);
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        message: "Motorista não encontrado"
+      });
+    }
 
     const driverRides = await rideService.getRidesByDriver(
       driverId, 
@@ -775,7 +767,18 @@ router.get("/driver/:driverId", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: { rides: driverRides }
+      data: { 
+        driver: {
+          id: driver.id,
+          firstName: driver.firstName,
+          lastName: driver.lastName,
+          driverVerificationStatus: driver.driverVerificationStatus,
+          driverRating: driver.rating,
+          totalReviews: driver.totalReviews,
+          canDrive: driver.canDrive
+        },
+        rides: driverRides 
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -805,7 +808,6 @@ router.get("/", async (req: Request, res: Response) => {
     const endIndex = startIndex + limitNum;
     const radius = parseFloat(radiusKm as string);
 
-    // ✅ CORREÇÃO: Usar normalizador assíncrono
     const normalizedFrom = fromLocation ? await normalizeLocation(fromLocation as string) : undefined;
     const normalizedTo = toLocation ? await normalizeLocation(toLocation as string) : undefined;
 
@@ -843,7 +845,6 @@ router.get("/", async (req: Request, res: Response) => {
     
     const paginatedRides = filteredRides.slice(startIndex, endIndex);
 
-    // ✅ CORREÇÃO: Estatísticas com dados dos motoristas da função inteligente
     const stats = {
       total: filteredRides.length,
       average_driver_rating: filteredRides.length > 0 
@@ -914,15 +915,38 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ✅✅✅ CORREÇÃO CRÍTICA: ROTAS PRIVADAS COM MIDDLEWARE FIREBASE CORRIGIDO
+// ✅✅✅ CORREÇÃO CRÍTICA: ROTAS PRIVADAS COM VERIFICAÇÃO DE CAPACIDADE
+// ✅ Usando type assertion para AuthenticatedRequest
 
-// POST /api/rides - Criar nova viagem (apenas motoristas autenticados)
-router.post("/", verifyFirebaseToken, requireDriverRole, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/rides - Criar nova viagem (apenas motoristas autenticados e verificados)
+router.post("/", verifyFirebaseToken, requireDriverRole, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
+    // ✅ Type assertion para AuthenticatedRequest
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.id;
 
     if (!userId) {
       return res.status(401).json({ message: "Usuário não autenticado" });
+    }
+
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE MOTORISTA VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Usuário não encontrado" 
+      });
+    }
+
+    if (!user.canDrive || user.driverVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false,
+        message: "Usuário não possui capacidade de motorista verificada",
+        userCapabilities: {
+          canDrive: user.canDrive,
+          driverVerificationStatus: user.driverVerificationStatus
+        }
+      });
     }
 
     // ✅ VALIDAÇÃO DE PROVÍNCIAS E CIDADES
@@ -1045,13 +1069,35 @@ router.post("/", verifyFirebaseToken, requireDriverRole, async (req: Authenticat
 });
 
 // PUT /api/rides/:id - Atualizar viagem (apenas motoristas autenticados)
-router.put("/:id", verifyFirebaseToken, requireDriverRole, async (req: AuthenticatedRequest, res: Response) => {
+router.put("/:id", verifyFirebaseToken, requireDriverRole, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
+    // ✅ Type assertion para AuthenticatedRequest
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.id;
     const { id } = req.params;
 
     if (!userId) {
       return res.status(401).json({ message: "Usuário não autenticado" });
+    }
+
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE MOTORISTA VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Usuário não encontrado" 
+      });
+    }
+
+    if (!user.canDrive || user.driverVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false,
+        message: "Usuário não possui capacidade de motorista verificada",
+        userCapabilities: {
+          canDrive: user.canDrive,
+          driverVerificationStatus: user.driverVerificationStatus
+        }
+      });
     }
 
     const existingRide = await rideService.getRideById(id);
@@ -1071,7 +1117,6 @@ router.put("/:id", verifyFirebaseToken, requireDriverRole, async (req: Authentic
 
     const updateData: any = { ...req.body };
     
-    // ✅ Conversão segura de campos numéricos
     if (updateData.pricePerSeat !== undefined) {
       const price = Number(updateData.pricePerSeat);
       updateData.pricePerSeat = isNaN(price) ? existingRide.pricePerSeat : price;
@@ -1088,7 +1133,6 @@ router.put("/:id", verifyFirebaseToken, requireDriverRole, async (req: Authentic
       updateData.departureDate = new Date(updateData.departureDate);
     }
 
-    // ✅ Normalização dos dados geográficos
     if (updateData.fromCity !== undefined) {
       updateData.fromCity = updateData.fromCity ? normalizeString(updateData.fromCity) : '';
     }
@@ -1140,13 +1184,35 @@ router.put("/:id", verifyFirebaseToken, requireDriverRole, async (req: Authentic
 });
 
 // DELETE /api/rides/:id - Excluir viagem (apenas motoristas autenticados)
-router.delete("/:id", verifyFirebaseToken, requireDriverRole, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/:id", verifyFirebaseToken, requireDriverRole, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
+    // ✅ Type assertion para AuthenticatedRequest
+    const authReq = req as AuthenticatedRequest;
+    const userId = authReq.user?.id;
     const { id } = req.params;
 
     if (!userId) {
       return res.status(401).json({ message: "Usuário não autenticado" });
+    }
+
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE MOTORISTA VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Usuário não encontrado" 
+      });
+    }
+
+    if (!user.canDrive || user.driverVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false,
+        message: "Usuário não possui capacidade de motorista verificada",
+        userCapabilities: {
+          canDrive: user.canDrive,
+          driverVerificationStatus: user.driverVerificationStatus
+        }
+      });
     }
 
     const existingRide = await rideService.getRideById(id);

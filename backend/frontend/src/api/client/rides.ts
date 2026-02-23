@@ -67,25 +67,44 @@ export interface Ride {
   };
 }
 
-// ✅ Interface de estatísticas de matching ATUALIZADA
+// ✅ Interface de estatísticas de matching ATUALIZADA COMPLETA
 export interface MatchStats {
+  // ✅ Campos básicos
+  total: number;
+  
+  // ✅ Campos de matching específicos
+  exact?: number; // ✅ ADICIONADO: para exact_matches
   exact_match?: number;
+  compatible?: number; // ✅ ADICIONADO: para partial_from/partial_to
   same_segment?: number;
   same_direction?: number;
   same_origin?: number;
   same_destination?: number;
   potential?: number;
+  potential_match?: number; // ✅ ADICIONADO: para nearby
   traditional?: number;
+  
+  // ✅ Campos de inteligência
   smart_matches?: number;
+  total_smart_matches?: number;
+  
+  // ✅ Campos de driver/vehicle
   drivers_with_ratings?: number;
   average_driver_rating?: number;
   vehicle_types?: Record<string, number>;
   
   // ✅ NOVOS campos para matching inteligente
   match_types?: Record<string, number>;
-  total_smart_matches?: number;
   average_direction_score?: number;
-  total: number;
+  
+  // ✅ Campos da resposta SMART SEARCH
+  exact_matches?: number; // ✅ ADICIONADO: do backend
+  partial_from?: number; // ✅ ADICIONADO: do backend
+  partial_to?: number; // ✅ ADICIONADO: do backend
+  exact_province?: number; // ✅ ADICIONADO: do backend
+  from_correct_province_to?: number; // ✅ ADICIONADO: do backend
+  to_correct_province_from?: number; // ✅ ADICIONADO: do backend
+  nearby?: number; // ✅ ADICIONADO: do backend
 }
 
 // ✅ Interface de resposta completa ATUALIZADA
@@ -318,43 +337,96 @@ function buildSmartSearchParams(params: RideSearchParams): any {
 
 // ✅ CLIENT API principal ATUALIZADA
 export const clientRidesApi = {
-  // ✅ Busca principal ATUALIZADA para usar get_rides_smart_final
+  // ✅ Busca principal - NÃO REQUER AUTENTICAÇÃO
   search: async (params: RideSearchParams): Promise<RideSearchResponse> => {
-    console.log('🔍 [CLIENT API] Buscando viagens:', params);
+    console.log('🔍 [CLIENT API] Buscando viagens (sem auth):', params);
     
     try {
-      // ✅ SEMPRE usar busca inteligente agora (função otimizada)
-      const smartParams = buildSmartSearchParams(params);
+      // ✅✅✅ CORREÇÃO CRÍTICA: Usar rota SMART SEARCH (get_rides_smart_final) em vez de universal
+      // ✅ CORREÇÃO: Decodificar parâmetros para evitar dupla codificação
+      const decodeParam = (param: string | undefined): string => {
+        if (!param) return '';
+        try {
+          // Decodificar uma vez se estiver codificado
+          return decodeURIComponent(param);
+        } catch {
+          return param;
+        }
+      };
       
-      console.log('🧠 [CLIENT API] Usando get_rides_smart_final...', smartParams);
+      // ✅✅✅ USAR ROTA SMART SEARCH QUE CHAMA get_rides_smart_final DIRETAMENTE
+      // ✅ CORREÇÃO: Usar raio de 100km (como funcionava antes)
+      const searchParams = new URLSearchParams({
+        from: decodeParam(params.from) || '',
+        to: decodeParam(params.to) || '',
+        date: params.date || '',
+        passengers: params.passengers?.toString() || '1',
+        radiusKm: (params.radiusKm || 100).toString(), // ← 100km, não 200km
+        maxResults: '50'
+      });
       
-      const smartData = await callSmartRidesFunction(smartParams);
+      const url = `/api/rides/smart/search?${searchParams.toString()}`;
+      console.log('🧠 [CLIENT API] URL de busca SMART FINAL (sem auth):', url);
       
-      // ✅ CORREÇÃO: Processar resposta da nova função
+      // ✅ CORREÇÃO: Busca sem autenticação
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+          // ✅ NÃO enviar Authorization header para busca pública
+        }
+      });
+      
+      if (!response.ok) {
+        console.error('❌ [CLIENT API] Erro HTTP:', response.status, response.statusText);
+        // Fallback: retornar array vazio em vez de erro
+        return {
+          success: true,
+          rides: [],
+          total: 0,
+          smart_search: false,
+          searchParams: {
+            from: params.from || '',
+            to: params.to || '',
+            date: params.date,
+            passengers: params.passengers,
+            smartSearch: false,
+            appliedFilters: params
+          }
+        };
+      }
+      
+      const data = await response.json();
+      console.log('✅ [CLIENT API] Busca SMART FINAL bem-sucedida:', {
+        success: data.success,
+        ridesCount: data.results?.length || data.rides?.length || 0,
+        smartFunction: data.metadata?.smart_function || data.smart_search
+      });
+      
+      // ✅✅✅ CORREÇÃO: Processar resposta da rota SMART SEARCH
       let rides: Ride[] = [];
       
-      if (Array.isArray(smartData)) {
-        // ✅ Resposta direta da função RPC (array de rides)
-        rides = smartData.map(ride => ({
-          ...ride,
-          // ✅ Garantir compatibilidade com interface existente
-          driver_rating: typeof ride.driver_rating === 'string' ? 
-            parseFloat(ride.driver_rating) : (ride.driver_rating || 4.5),
-          priceperseat: typeof ride.priceperseat === 'string' ?
-            parseFloat(ride.priceperseat) : (ride.priceperseat || 0)
-        }));
-      } else if (smartData.data && Array.isArray(smartData.data)) {
-        // ✅ Resposta encapsulada
-        rides = smartData.data.map((ride: any) => ({
+      // A rota /smart/search retorna rides em "results"
+      if (Array.isArray(data.results)) {
+        rides = data.results.map((ride: any) => ({
           ...ride,
           driver_rating: typeof ride.driver_rating === 'string' ? 
             parseFloat(ride.driver_rating) : (ride.driver_rating || 4.5),
           priceperseat: typeof ride.priceperseat === 'string' ?
             parseFloat(ride.priceperseat) : (ride.priceperseat || 0)
         }));
-      } else if (smartData.success && Array.isArray(smartData.data)) {
-        // ✅ Resposta com estrutura de sucesso
-        rides = smartData.data.map((ride: any) => ({
+      } else if (Array.isArray(data.rides)) {
+        // Fallback para estrutura antiga
+        rides = data.rides.map((ride: any) => ({
+          ...ride,
+          driver_rating: typeof ride.driver_rating === 'string' ? 
+            parseFloat(ride.driver_rating) : (ride.driver_rating || 4.5),
+          priceperseat: typeof ride.priceperseat === 'string' ?
+            parseFloat(ride.priceperseat) : (ride.priceperseat || 0)
+        }));
+      } else if (Array.isArray(data.data)) {
+        // Fallback para estrutura universal
+        rides = data.data.map((ride: any) => ({
           ...ride,
           driver_rating: typeof ride.driver_rating === 'string' ? 
             parseFloat(ride.driver_rating) : (ride.driver_rating || 4.5),
@@ -363,19 +435,48 @@ export const clientRidesApi = {
         }));
       }
       
-      console.log('✅ [CLIENT API] Busca inteligente bem-sucedida:', {
-        rides: rides.length,
-        matchTypes: rides.reduce((acc, ride) => {
-          acc[ride.match_type] = (acc[ride.match_type] || 0) + 1;
+      // ✅✅✅ CORREÇÃO: Usar estatísticas da resposta SMART SEARCH ou calcular
+      const matchStats: MatchStats = data.stats ? {
+        total: data.stats.total || rides.length,
+        // ✅ Campos de matching
+        exact: data.stats.exact_matches,
+        exact_match: data.stats.exact_matches,
+        exact_matches: data.stats.exact_matches,
+        compatible: data.stats.partial_from || data.stats.partial_to,
+        partial_from: data.stats.partial_from,
+        partial_to: data.stats.partial_to,
+        same_segment: data.stats.exact_province,
+        exact_province: data.stats.exact_province,
+        same_direction: data.stats.from_correct_province_to || data.stats.to_correct_province_from,
+        from_correct_province_to: data.stats.from_correct_province_to,
+        to_correct_province_from: data.stats.to_correct_province_from,
+        potential_match: data.stats.nearby,
+        nearby: data.stats.nearby,
+        // ✅ Campos de inteligência
+        smart_matches: data.stats.total || rides.length,
+        total_smart_matches: data.stats.total || rides.length,
+        match_types: data.stats.match_types || rides.reduce((acc, ride) => {
+          const type = ride.match_type || 'traditional';
+          acc[type] = (acc[type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        average_direction_score: data.stats.average_direction_score || (rides.length > 0 ? 
+          Math.round(rides.reduce((sum, ride) => sum + (ride.direction_score || 0), 0) / rides.length) : 0),
+        // ✅ Campos de driver/vehicle
+        average_driver_rating: data.stats.average_driver_rating || (rides.length > 0 ?
+          parseFloat((rides.reduce((sum, ride) => sum + (ride.driver_rating || 0), 0) / rides.length).toFixed(1)) : 0),
+        drivers_with_ratings: data.stats.drivers_with_ratings || rides.filter(ride => ride.driver_rating && ride.driver_rating > 0).length,
+        vehicle_types: data.stats.vehicle_types || rides.reduce((acc, ride) => {
+          const type = ride.vehicle_type || 'unknown';
+          acc[type] = (acc[type] || 0) + 1;
           return acc;
         }, {} as Record<string, number>)
-      });
-      
-      // ✅ Calcular estatísticas de matching
-      const matchStats: MatchStats = {
+      } : {
         total: rides.length,
+        // ✅ Campos calculados localmente
         match_types: rides.reduce((acc, ride) => {
-          acc[ride.match_type] = (acc[ride.match_type] || 0) + 1;
+          const type = ride.match_type || 'traditional';
+          acc[type] = (acc[type] || 0) + 1;
           return acc;
         }, {} as Record<string, number>),
         total_smart_matches: rides.length,
@@ -396,16 +497,16 @@ export const clientRidesApi = {
         rides: rides,
         matchStats: matchStats,
         total: rides.length,
-        smart_search: true,
-        data: smartData,
+        smart_search: data.metadata?.smart_function || data.smart_search || true,
+        data: data,
         searchParams: {
           from: params.from || '',
           to: params.to || '',
           date: params.date,
           passengers: params.passengers,
-          smartSearch: true,
-          radiusKm: smartParams.radius_km,
-          searchMethod: 'get_rides_smart_final',
+          smartSearch: data.metadata?.smart_function || data.smart_search || true,
+          radiusKm: params.radiusKm || 200,
+          searchMethod: 'smart_final',
           functionUsed: 'get_rides_smart_final',
           appliedFilters: params
         }

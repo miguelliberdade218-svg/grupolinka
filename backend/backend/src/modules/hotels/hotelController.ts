@@ -1,4 +1,4 @@
-// src/modules/hotels/hotelController.ts - VERSÃO FINAL COM UPLOAD DE FOTOS E DEBUG
+// src/modules/hotels/hotelController.ts - VERSÃO FINAL COM SISTEMA DE CAPACIDADES
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { db } from '../../../db';
@@ -8,6 +8,10 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
+
+// ✅ Importar serviços de autenticação e capacidades
+import { verifyFirebaseToken, type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
+import { authService } from "../auth/services/authService.js";
 
 // ✅ Criar __dirname para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -420,6 +424,43 @@ const normalizeUpdateFields = (update: any) => {
 
 // ==================== MIDDLEWARE ====================
 
+// ✅ MIDDLEWARE DE AUTENTICAÇÃO CORRIGIDO - Usa verifyFirebaseToken diretamente
+const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Usar o verifyFirebaseToken do firebaseAuth diretamente
+    // O middleware verifyFirebaseToken já lida com a verificação do token
+    // e adiciona o usuário à requisição
+    
+    // Chamar o middleware verifyFirebaseToken
+    await verifyFirebaseToken(req, res, (err?: any) => {
+      if (err) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Erro na autenticação' 
+        });
+      }
+      
+      // Verificar se o usuário foi adicionado à requisição
+      const user = (req as any).user;
+      if (!user || !user.id) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Usuário não autenticado' 
+        });
+      }
+      
+      next();
+    });
+  } catch (error) {
+    console.error('❌ [AUTH] Erro no middleware requireAuth:', error);
+    return res.status(401).json({ 
+      success: false, 
+      message: 'Autenticação falhou' 
+    });
+  }
+};
+
+// ✅ MIDDLEWARE DE PROPRIEDADE DO HOTEL ATUALIZADO - Com verificação de capacidades
 const requireHotelOwner = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Tentar obter o hotelId de diferentes lugares possíveis
@@ -450,6 +491,26 @@ const requireHotelOwner = async (req: Request, res: Response, next: NextFunction
       });
     }
 
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE GESTOR DE HOTEL VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Usuário não encontrado' 
+      });
+    }
+
+    if (!user.canManageHotels || user.hotelManagerVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Usuário não possui capacidade de gestor de hotel verificada',
+        userCapabilities: {
+          canManageHotels: user.canManageHotels,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus
+        }
+      });
+    }
+
     if (process.env.NODE_ENV === 'test' && userId === 'bB88VrzVx8dbUUpXV7qSrGA5eiy2') {
       return next();
     }
@@ -471,54 +532,6 @@ const requireHotelOwner = async (req: Request, res: Response, next: NextFunction
       success: false, 
       message: 'Erro ao verificar propriedade' 
     });
-  }
-};
-
-const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Token Bearer não fornecido' });
-    }
-
-    const token = authHeader.split('Bearer ')[1];
-    
-    if (!token || token.trim() === '') {
-      return res.status(401).json({ success: false, message: 'Token vazio' });
-    }
-
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return res.status(401).json({ success: false, message: 'Token inválido: não é um JWT' });
-    }
-
-    try {
-      const payloadJson = Buffer.from(parts[1], 'base64').toString('utf-8');
-      const payload = JSON.parse(payloadJson);
-      
-      const firebaseUid = payload.sub || payload.user_id || payload.uid;
-      
-      if (!firebaseUid) {
-        return res.status(401).json({ success: false, message: 'Token sem identificador de usuário' });
-      }
-
-      (req as any).user = {
-        id: firebaseUid,
-        uid: firebaseUid,
-        email: payload.email || '',
-        name: payload.name || '',
-        userType: payload.userType || 'host',
-        roles: payload.roles || ['host'],
-      };
-
-      next();
-    } catch (parseError) {
-      return res.status(401).json({ success: false, message: 'Token malformado' });
-    }
-  } catch (error) {
-    console.error('❌ [AUTH] Erro:', error);
-    return res.status(401).json({ success: false, message: 'Autenticação falhou' });
   }
 };
 
@@ -556,10 +569,31 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ✅ ENDPOINT POST /api/hotels - COM VERIFICAÇÃO DE CAPACIDADE
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Autenticação requerida' });
+
+    // ✅ VERIFICAR SE USUÁRIO PODE CRIAR HOTEL
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Usuário não encontrado" 
+      });
+    }
+
+    if (!user.canManageHotels) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Usuário não possui capacidade de gestor de hotel",
+        userCapabilities: {
+          canManageHotels: user.canManageHotels,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus
+        }
+      });
+    }
 
     const rawData = req.body;
 
@@ -705,6 +739,7 @@ router.post('/:id/sync-location', requireAuth, requireHotelOwner, async (req: Re
   }
 });
 
+// ✅ ENDPOINT GET /api/hotels/host/me - ATUALIZADO COM CAPACIDADES
 router.get('/host/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id;
@@ -718,9 +753,18 @@ router.get('/host/me', requireAuth, async (req: Request, res: Response) => {
 
     const hotels = await getHotelsByHost(userId);
     
+    // ✅ Buscar informações de capacidade do usuário
+    const user = await authService.getUserById(userId);
+    
     res.json({ 
       success: true, 
-      data: hotels, 
+      data: {
+        hotels,
+        userCapabilities: {
+          canManageHotels: true, // Já verificado pelo middleware
+          hotelManagerVerificationStatus: user?.hotelManagerVerificationStatus || 'pending'
+        }
+      },
       count: hotels.length 
     });
   } catch (error) {

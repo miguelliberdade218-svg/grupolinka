@@ -1,8 +1,9 @@
-export const formatPrice = (price: number): string => {
+export const formatPrice = (price: number | string | null | undefined): string => {
+  const numPrice = Number(price) || 0;
   return new Intl.NumberFormat('pt-MZ', {
     style: 'currency',
     currency: 'MZN'
-  }).format(price);
+  }).format(numPrice);
 };
 
 export const normalizeRide = (ride: any) => {

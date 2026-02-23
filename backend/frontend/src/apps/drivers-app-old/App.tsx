@@ -1,7 +1,7 @@
 import { Switch, Route } from 'wouter';
 import { queryClient } from '@/shared/lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from '@/shared/components/ui/toaster';
+import { Toaster as SonnerToaster } from 'sonner';
 import { TooltipProvider } from '@/shared/components/ui/tooltip';
 import Header from '@/shared/components/Header';
 import Dashboard from './pages/dashboard';
@@ -42,7 +42,18 @@ function ProviderApp() {
               <Route component={NotFound} />
             </Switch>
           </main>
-          <Toaster />
+          <SonnerToaster 
+            richColors 
+            position="top-center"
+            duration={10000}
+            expand={true}
+            visibleToasts={3}
+            closeButton
+            toastOptions={{
+              className: 'text-lg',
+              descriptionClassName: 'text-base',
+            }}
+          />
         </div>
       </TooltipProvider>
     </QueryClientProvider>

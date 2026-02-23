@@ -10,14 +10,31 @@ import {
   handleRedirectResult,
   isFirebaseConfigured 
 } from '../lib/firebaseConfig';
+import { sharedAuthApi } from '../../api/shared/auth';
 
-// ✅ CORREÇÃO: AppUser contém apenas dados do usuário, sem token
+// ✅ ATUALIZADO: AppUser com capacidades do novo sistema
 export interface AppUser {
   id: string;
   name?: string;
   email?: string | null;
-  // ✅ ADICIONADO: Método getIdToken para compatibilidade
-  getIdToken: () => Promise<string>;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  accountType?: 'individual' | 'company';
+  companyName?: string | null;
+
+  // Sistema de capacidades
+  canBookServices?: boolean;
+  canDrive?: boolean;
+  canManageHotels?: boolean;
+  isAdmin?: boolean;
+
+  // Status de verificação
+  driverVerificationStatus?: string | null;
+  hotelManagerVerificationStatus?: string | null;
+
+  // Campos legados para compatibilidade
+  getIdToken?: () => Promise<string>;
 }
 
 interface AuthState {
@@ -34,6 +51,9 @@ interface UseAuthReturn extends AuthState {
   signInEmail: (email: string, password: string) => Promise<void>;
   signUpEmail: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<any>;
+  activateCapacity: (capacity: 'drive' | 'hotel_manager', documents?: any[], notes?: string) => Promise<any>;
+  getCapabilities: () => Promise<any>;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
 }
@@ -101,8 +121,28 @@ export const useAuth = (): UseAuthReturn => {
               name: firebaseUser.displayName || undefined,
               email: firebaseUser.email,
               // ✅ ADICIONADO: Método getIdToken que delega para o firebaseUser
-              getIdToken: () => firebaseUser.getIdToken()
+              getIdToken: () => firebaseUser.getIdToken(),
+              // ✅ NOVO: Capacidades padrão
+              canBookServices: true,
+              canDrive: false,
+              canManageHotels: false,
+              isAdmin: false
             };
+
+            // ✅ NOVO: Carregar capacidades do localStorage
+            const savedCapabilities = localStorage.getItem('userCapabilities');
+            if (savedCapabilities) {
+              try {
+                const capabilities = JSON.parse(savedCapabilities);
+                appUser.canBookServices = capabilities.canBookServices ?? true;
+                appUser.canDrive = capabilities.canDrive ?? false;
+                appUser.canManageHotels = capabilities.canManageHotels ?? false;
+                appUser.isAdmin = capabilities.isAdmin ?? false;
+                console.log('🎯 Capacidades carregadas do localStorage:', capabilities);
+              } catch (error) {
+                console.warn('⚠️ Erro ao carregar capacidades do localStorage:', error);
+              }
+            }
             
             // ⭐⭐ ATUALIZAR STATE COM TOKEN NO AUTHSTATE, NÃO NO APPUSER
             setAuthState({
@@ -229,7 +269,76 @@ export const useAuth = (): UseAuthReturn => {
     }
   };
 
-  // ✅ CORREÇÃO: Atualizar signOut para limpar localStorage e token
+  // ✅ NOVO: Ativar capacidade adicional
+  const activateCapacity = async (capacity: 'drive' | 'hotel_manager', documents?: any[], notes?: string) => {
+    if (!authState.appUser) throw new Error('Usuário não autenticado');
+
+    setAuthState(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      const response = await sharedAuthApi.activateCapacity({
+        capacity,
+        documents,
+        notes
+      });
+
+      if (response.success) {
+        // Atualizar appUser com novas capacidades
+        setAuthState(prev => ({
+          ...prev,
+          appUser: {
+            ...prev.appUser!,
+            ...response.user
+          },
+          loading: false
+        }));
+      }
+
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Falha ao ativar capacidade';
+      setAuthState(prev => ({
+        ...prev,
+        loading: false,
+        error: errorMessage,
+      }));
+      throw error;
+    }
+  };
+
+  // ✅ NOVO: Obter capacidades do usuário
+  const getCapabilities = async () => {
+    if (!authState.appUser) throw new Error('Usuário não autenticado');
+
+    try {
+      const response = await sharedAuthApi.getCapabilities();
+      return response;
+    } catch (error) {
+      console.error('Erro ao obter capacidades:', error);
+      throw error;
+    }
+  };
+
+  // ✅ NOVO: Esqueci minha senha (usando novo endpoint)
+  const forgotPassword = async (email: string) => {
+    setAuthState(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      const response = await sharedAuthApi.forgotPassword({ email });
+      setAuthState(prev => ({ ...prev, loading: false }));
+      return response;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Falha ao enviar email de recuperação';
+      setAuthState(prev => ({
+        ...prev,
+        loading: false,
+        error: errorMessage,
+      }));
+      throw error;
+    }
+  };
+
+  // ✅ CORREÇÃO: Função signOut que estava faltando
   const signOut = async (): Promise<void> => {
     if (!isFirebaseConfigured) {
       throw new Error('Firebase not configured');
@@ -238,32 +347,21 @@ export const useAuth = (): UseAuthReturn => {
     setAuthState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
-      // 🔥 LIMPAR LOCALSTORAGE E TOKEN DO STATE
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      
-      // ⭐⭐ ATUALIZAR STATE IMEDIATAMENTE (antes do signOut do Firebase)
+      await signOutUser();
       setAuthState({
         firebaseUser: null,
         appUser: null,
         loading: false,
         error: null,
-        token: null, // ⭐⭐ TOKEN DEFINIDO COMO NULL
-      });
-      
-      // Fazer sign out do Firebase
-      await signOutUser();
-      
-      console.log('✅ Logout realizado e localStorage limpo');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Sign out failed';
-      setAuthState({
-        firebaseUser: null,
-        appUser: null,
-        loading: false,
-        error: errorMessage,
         token: null,
       });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Sign out failed';
+      setAuthState(prev => ({
+        ...prev,
+        loading: false,
+        error: errorMessage,
+      }));
       throw error;
     }
   };
@@ -275,7 +373,10 @@ export const useAuth = (): UseAuthReturn => {
     signInEmail,
     signUpEmail,
     resetPassword: resetPasswordEmail,
-    signOut,
+    forgotPassword, // ✅ NOVO
+    activateCapacity, // ✅ NOVO
+    getCapabilities, // ✅ NOVO
+    signOut, // ✅ AGORA DEFINIDA
     isAuthenticated: !!authState.appUser,
   };
 };

@@ -18,7 +18,7 @@ interface LoginModalProps {
 }
 
 export function LoginModal({ open, onOpenChange, redirectTo }: LoginModalProps) {
-  const { signIn, signInEmail, signUpEmail, resetPassword, loading, error } = useAuth();
+  const { signIn, signInEmail, signUpEmail, forgotPassword, loading, error } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -135,10 +135,10 @@ export function LoginModal({ open, onOpenChange, redirectTo }: LoginModalProps) 
     }
 
     try {
-      await resetPassword(resetEmail);
+      const response = await forgotPassword(resetEmail);
       toast({
         title: "📧 Email Enviado!",
-        description: "Verifique sua caixa de entrada para instruções de recuperação de senha.",
+        description: response.message || "Verifique sua caixa de entrada para instruções de recuperação de senha.",
         variant: "default",
       });
       setShowPasswordReset(false);

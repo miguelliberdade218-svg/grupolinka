@@ -1,5 +1,5 @@
 import { Route, Switch } from "wouter";
-import { Toaster } from "@/shared/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AdminHeader from "@/shared/admin/components/AdminHeader";
 import AdminMobileNav from "@/shared/admin/components/AdminMobileNav";
@@ -42,7 +42,18 @@ export default function AdminApp() {
         </main>
         
         <AdminMobileNav />
-        <Toaster />
+        <SonnerToaster 
+          richColors 
+          position="top-center"
+          duration={10000}
+          expand={true}
+          visibleToasts={3}
+          closeButton
+          toastOptions={{
+            className: 'text-lg',
+            descriptionClassName: 'text-base',
+          }}
+        />
       </div>
     </QueryClientProvider>
   );

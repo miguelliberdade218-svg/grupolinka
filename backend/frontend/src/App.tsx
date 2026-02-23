@@ -17,7 +17,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppRouter />
-      <Toaster />
+      {/* ❌ REMOVIDO: Toaster está sendo renderizado nos apps específicos */}
     </QueryClientProvider>
   );
 }

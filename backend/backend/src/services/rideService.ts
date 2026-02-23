@@ -537,28 +537,11 @@ export class RideService {
         maxResults
       });
 
-      // ✅ CORREÇÃO: Filtro de data UTC+2 para Moçambique
-      let dateParams: any[] = [];
-      
-      if (date) {
-        const searchDate = new Date(date);
-        
-        // Moçambique (UTC+2): dia começa às 22:00 UTC do dia anterior
-        const startUTC = new Date(searchDate);
-        startUTC.setUTCHours(22, 0, 0, 0);
-        startUTC.setUTCDate(startUTC.getUTCDate() - 1);
-        
-        const endUTC = new Date(searchDate);
-        endUTC.setUTCHours(21, 59, 59, 999);
-        
-        dateParams = [startUTC.toISOString(), endUTC.toISOString()];
-        
-        console.log('🔍 [DATE-FILTER] Filtro UTC+2 aplicado:', {
-          dataBuscada: date,
-          inicioUTC: startUTC.toISOString(),
-          fimUTC: endUTC.toISOString()
-        });
-      }
+      // ✅✅✅ CORREÇÃO: REMOVER COMPLETAMENTE O FILTRO DE DATA
+      // A função PostgreSQL get_rides_smart_final já faz matching inteligente
+      // O frontend pode ordenar por data e direction_score
+      // Usuário vê opções mesmo que não seja na data exata
+      // Melhor experiência - mostra rides disponíveis
 
       // ✅ NORMALIZAÇÃO MELHORADA
       const normalizedFrom = await LocationNormalizerCorrigido.normalizeLocation(fromCity);
@@ -569,29 +552,19 @@ export class RideService {
         normalized: { from: normalizedFrom, to: normalizedTo }
       });
 
-      // ✅✅✅ USAR A FUNÇÃO get_rides_smart_final DIRETAMENTE
+      // ✅✅✅ USAR A FUNÇÃO get_rides_smart_final DIRETAMENTE - SEM FILTRO DE DATA
       let result: any;
       
       try {
-        if (date) {
-          result = await db.execute(
-            sql`SELECT * FROM get_rides_smart_final(
-              ${normalizedFrom}, 
-              ${normalizedTo}, 
-              ${radiusKm},
-              ${maxResults}
-            ) WHERE departuredate >= ${dateParams[0]} AND departuredate <= ${dateParams[1]}`
-          );
-        } else {
-          result = await db.execute(
-            sql`SELECT * FROM get_rides_smart_final(
-              ${normalizedFrom}, 
-              ${normalizedTo}, 
-              ${radiusKm},
-              ${maxResults}
-            )`
-          );
-        }
+        // ✅✅✅ CORREÇÃO: SEMPRE usar a função sem filtro de data
+        result = await db.execute(
+          sql`SELECT * FROM get_rides_smart_final(
+            ${normalizedFrom}, 
+            ${normalizedTo}, 
+            ${radiusKm},
+            ${maxResults}
+          )`
+        );
       } catch (error: any) {
         console.log('⚠️ [FUNCTION-FALLBACK] Função original falhou, usando busca direta:', error.message || error);
         // Fallback para busca direta se a função não existir
@@ -618,40 +591,12 @@ export class RideService {
         }))
       });
 
-      // ✅✅✅ FILTRAGEM MANUAL POR DIREÇÃO (enquanto não temos a função corrigida)
-      const filteredRows = rows.filter(row => {
-        const rideFrom = (row.from_city || '').toLowerCase();
-        const rideTo = (row.to_city || '').toLowerCase();
-        const rideFromProvince = (row.from_province || '').toLowerCase();
-        const rideToProvince = (row.to_province || '').toLowerCase();
-        
-        const searchFrom = normalizedFrom.toLowerCase();
-        const searchTo = normalizedTo.toLowerCase();
+      // ✅✅✅ CORREÇÃO: REMOVER filtro de direção (a função PostgreSQL já faz isso)
+      // Aceitar TODOS os resultados da função PostgreSQL
+      const filteredRows = rows; // ← SIMPLES ASSIM!
 
-        // ❌ REJEITAR SENTIDO OPOSTO
-        const isOppositeDirection = 
-          (rideFrom.includes(searchTo) || rideFromProvince.includes(searchTo)) &&
-          (rideTo.includes(searchFrom) || rideToProvince.includes(searchFrom));
-        
-        if (isOppositeDirection) {
-          console.log('❌ [DIRECTION-FILTER] Removendo ride sentido oposto:', {
-            ride: `${rideFrom} → ${rideTo}`,
-            search: `${searchFrom} → ${searchTo}`
-          });
-          return false;
-        }
-
-        // ✅ ACEITAR: mesma direção ou correspondência parcial
-        const hasFromMatch = rideFrom.includes(searchFrom) || rideFromProvince.includes(searchFrom);
-        const hasToMatch = rideTo.includes(searchTo) || rideToProvince.includes(searchTo);
-        
-        return hasFromMatch || hasToMatch;
-      });
-
-      console.log('🎯 [DIRECTION-FILTERED] Resultados após filtro de direção:', {
-        original: rows.length,
-        filtered: filteredRows.length,
-        removed: rows.length - filteredRows.length
+      console.log('🎯 [NO-DIRECTION-FILTER] Aceitando todos os resultados da função PostgreSQL:', {
+        total: filteredRows.length
       });
 
       const normalizedRides = filteredRows.map(normalizeDbRideToDto);
@@ -663,7 +608,7 @@ export class RideService {
           ride: `${ride.fromCity} → ${ride.toCity}`,
           price: ride.pricePerSeat,
           seats: ride.availableSeats,
-          matchType: ride.matchType || 'manual_filter',
+          matchType: ride.matchType || 'postgres_function',
           directionScore: ride.direction_score
         }))
       });

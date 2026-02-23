@@ -1232,7 +1232,7 @@ class HotelService {
 
   // ==================== MÉTODOS PARA O DASHBOARD DO HOST ====================
 
-  /**
+    /**
    * Lista todos os hotéis do usuário autenticado atual (host logado)
    * Usa a rota /host/me que infere o host_id automaticamente do token
    * ✅ ADICIONADO: Cache para evitar múltiplas chamadas simultâneas
@@ -1248,8 +1248,39 @@ class HotelService {
     try {
       const response = await apiService.get<any>('/api/hotels/host/me');
 
-      // Normaliza resposta (caso o backend retorne { success: true, data: [...] })
-      const hotels = response.data?.data || response.data || [];
+      // 🔧 CORREÇÃO CRÍTICA: Normaliza resposta corretamente
+      // A API pode retornar diferentes estruturas:
+      // 1. { success: true, data: [...] } - Formato padrão
+      // 2. { success: true, data: { data: [...] } } - Formato aninhado
+      // 3. { success: true, data: { hotels: [...] } } - Outro formato
+      // 4. Diretamente o array [...]
+      
+      let hotels: any[] = [];
+      
+      if (Array.isArray(response.data)) {
+        // Caso 4: Resposta é diretamente um array
+        hotels = response.data;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        // Caso 2: Resposta tem data.data
+        hotels = response.data.data;
+      } else if (response.data && Array.isArray(response.data.hotels)) {
+        // Caso 3: Resposta tem data.hotels
+        hotels = response.data.hotels;
+      } else if (response.data && response.data.success && Array.isArray(response.data.data)) {
+        // Caso 1: Formato padrão
+        hotels = response.data.data;
+      } else {
+        console.error('❌ [HotelService] Formato de resposta inesperado:', response);
+        throw new Error('Formato de resposta inesperado da API');
+      }
+
+      // 🔍 DEBUG: Log para verificar o que foi extraído
+      console.log('📊 [HotelService] Hotéis extraídos:', {
+        count: hotels.length,
+        firstHotel: hotels[0] ? { id: hotels[0].id, name: hotels[0].name } : null,
+        isArray: Array.isArray(hotels),
+        responseStructure: response.data ? Object.keys(response.data) : 'no data'
+      });
 
       const result = {
         success: true,
@@ -1262,7 +1293,7 @@ class HotelService {
       
       return result;
     } catch (error) {
-      console.error('Erro ao buscar meus hotéis:', error);
+      console.error('❌ [HotelService] Erro ao buscar meus hotéis:', error);
       return {
         success: false,
         data: [],

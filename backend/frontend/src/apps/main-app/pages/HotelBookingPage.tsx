@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { hotelService, Hotel, RoomType, ApiResponse, Booking, ListResponse } from '@/services/hotelService';
 import { Badge } from '@/shared/components/ui/badge';
+import useAuth from '@/shared/hooks/useAuth';
 
 const HotelBookingPage = () => {
   const { id } = useParams();
@@ -27,13 +28,15 @@ const HotelBookingPage = () => {
   const [checkOut, setCheckOut] = useState<Date>();
   const [guests, setGuests] = useState(2);
   const [roomTypeId, setRoomTypeId] = useState(params.get('roomTypeId') || '');
-  const [guestInfo, setGuestInfo] = useState({
+    const [guestInfo, setGuestInfo] = useState({
     name: '',
     email: '',
     phone: '',
     specialRequests: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+      const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { user } = useAuth();
 
   // ✅ CORREÇÃO: getHotelById agora retorna Hotel diretamente
   const { data: hotel, isLoading, error: hotelError } = useQuery<Hotel, Error>({
@@ -80,10 +83,23 @@ const HotelBookingPage = () => {
     return basePrice * nights;
   };
 
-  const handleNextStep = () => {
+    const handleNextStep = () => {
+    // Verificar se usuário está logado
+    if (!user) {
+                        toast.error('🔐 Login Necessário', {
+        description: 'Para fazer reservas de hotel, você precisa estar logado. Clique aqui para fazer login ou criar uma conta.',
+        duration: 10000,
+        action: {
+          label: 'Fazer Login',
+          onClick: () => setLocation('/login')
+        },
+      });
+      return;
+    }
+    
     if (step === 1) {
       if (!checkIn || !checkOut) {
-        toast.error('Selecione as datas de check-in e check-out');
+                toast.error('Selecione as datas de check-in e check-out');
         return;
       }
       
@@ -117,7 +133,20 @@ const HotelBookingPage = () => {
     }
   };
 
-  const handleSubmitBooking = async () => {
+    const handleSubmitBooking = async () => {
+    // Verificar se usuário está logado
+    if (!user) {
+                        toast.error('🔐 Login Necessário', {
+        description: 'Para fazer reservas de hotel, você precisa estar logado. Clique aqui para fazer login ou criar uma conta.',
+        duration: 10000,
+        action: {
+          label: 'Fazer Login',
+          onClick: () => setLocation('/login')
+        },
+      });
+      return;
+    }
+    
     if (!id || !selectedRoomType || !checkIn || !checkOut) {
       toast.error('Informações incompletas');
       return;
@@ -216,17 +245,34 @@ const HotelBookingPage = () => {
     );
   }
 
+        // Teste do toast
+  const testToast = () => {
+    toast.success('✅ Teste de Toast Funcionando!', {
+      description: 'O sistema de notificações está funcionando corretamente. Esta mensagem ficará visível por 10 segundos.',
+      duration: 10000,
+    });
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="mb-8">
-        <Button
-          variant="ghost"
-          onClick={() => setLocation(`/hotels/${id}`)}
-          className="pl-0"
-        >
-          <ChevronLeft className="h-4 w-4 mr-2" />
-          Voltar para detalhes do hotel
-        </Button>
+        <div className="flex justify-between items-center mb-4">
+          <Button
+            variant="ghost"
+            onClick={() => setLocation(`/hotels/${id}`)}
+            className="pl-0"
+          >
+            <ChevronLeft className="h-4 w-4 mr-2" />
+            Voltar para detalhes do hotel
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={testToast}
+            className="bg-blue-100 text-blue-700 hover:bg-blue-200"
+          >
+            Testar Toast
+          </Button>
+        </div>
         
         {/* Progress Steps */}
         <div className="flex items-center justify-center max-w-md mx-auto mt-6 mb-8">

@@ -1,12 +1,12 @@
 // Configurações dos domínios para produção e desenvolvimento
 export const APP_DOMAINS = {
   development: {
-    client: 'http://localhost:8000',
-    driver: 'http://localhost:8000/api/driver', 
-    hotel: 'http://localhost:8000/api/hotels',
-    event: 'http://localhost:8000/api/events',
-    admin: 'http://localhost:8000/api/admin/system',
-    api: 'http://localhost:8000/api' // ✅ CORRIGIDO - adicionado http://
+    client: 'http://localhost:5000', // ✅ CORRIGIDO: Frontend Vite na porta 5000
+    driver: 'http://localhost:5000/drivers', // ✅ CORRIGIDO: App de motoristas
+    hotel: 'http://localhost:5000/hotels-app', // ✅ CORRIGIDO: App de gestores
+    event: 'http://localhost:5000', // Eventos na main-app
+    admin: 'http://localhost:5000/admin', // Admin app
+    api: 'http://localhost:8000/api' // Backend na porta 8000
   },
   production: {
     client: 'https://link-aturismomoz.com',

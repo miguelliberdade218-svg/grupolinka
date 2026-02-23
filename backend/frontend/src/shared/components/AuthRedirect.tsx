@@ -5,57 +5,66 @@ import AccountTypeSelector from './AccountTypeSelector';
 
 interface AuthRedirectProps {
   children: ReactNode;
-  requiredRole?: 'client' | 'driver' | 'hotel' | 'event' | 'admin';
+  requiredCapacity?: 'canBookServices' | 'canDrive' | 'canManageHotels' | 'isAdmin';
 }
 
-export function AuthRedirect({ children, requiredRole }: AuthRedirectProps) {
-  const { user, loading, needsRoleSetup, setupUserRoles } = useAuth();
+export function AuthRedirect({ children, requiredCapacity }: AuthRedirectProps) {
+  const { user, loading } = useAuth();
 
   useEffect(() => {
     const domains = getCurrentDomains();
     
-    if (!loading && user && requiredRole) {
-      // Se o usuário está logado mas não tem o papel necessário
-      if (!user.roles?.includes(requiredRole)) {
+    if (!loading && user && requiredCapacity) {
+      // Verificar se o usuário tem a capacidade necessária
+      const hasCapacity = user[requiredCapacity as keyof typeof user] === true;
+      
+      if (!hasCapacity) {
         // Redireciona para a app principal do usuário
-        const primaryRole = user.roles?.[0] || 'client';
-        const domainMap = {
-          client: domains.client,
-          driver: domains.driver,
-          hotel: domains.hotel,
-          event: domains.event,
-          admin: domains.admin
-        };
+        let primaryDomain = domains.client;
         
-        const targetDomain = domainMap[primaryRole as keyof typeof domainMap];
+        if (user.canDrive) {
+          primaryDomain = domains.driver;
+        } else if (user.canManageHotels) {
+          primaryDomain = domains.hotel;
+        } else if (user.isAdmin) {
+          primaryDomain = domains.admin;
+        }
         
-        if (targetDomain && window.location.origin !== targetDomain) {
-          window.location.href = targetDomain;
+        if (primaryDomain && window.location.origin !== primaryDomain) {
+          window.location.href = primaryDomain;
           return;
         }
       }
     }
 
-    // Se não está logado e não está na app principal
-    if (!loading && !user && window.location.origin !== domains.client) {
-      window.location.href = domains.client;
-    }
-  }, [user, loading, requiredRole]);
+    // ✅ CORREÇÃO: NÃO redirecionar visitantes não logados
+    // Visitantes podem acessar conteúdo público
+    // if (!loading && !user && window.location.origin !== domains.client) {
+    //   window.location.href = domains.client;
+    // }
+  }, [user, loading, requiredCapacity]);
 
-  // Se usuário precisa configurar roles (apenas para novos usuários sem roles)
-  if (user && needsRoleSetup) {
+  // Se usuário precisa configurar capacidades (apenas para novos usuários)
+  if (user && !user.canBookServices && !user.canDrive && !user.canManageHotels && !user.isAdmin) {
     return (
-      <AccountTypeSelector
-        userEmail={user.email}
-        onComplete={setupUserRoles}
-      />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-4">Configuração Necessária</h2>
+          <p className="mb-4">Sua conta precisa ser configurada. Entre em contato com o suporte.</p>
+        </div>
+      </div>
     );
   }
 
-  // Se usuário com roles de negócio não está verificado, redirecionar para verificação
-  if (user && user.roles?.some(role => ['driver', 'hotel', 'event'].includes(role)) && !user.isVerified) {
+  // Se usuário com capacidades de negócio não está verificado
+  if (user && (user.canDrive || user.canManageHotels) && 
+      (!user.driverVerificationStatus || user.driverVerificationStatus === 'pending' || 
+       !user.hotelManagerVerificationStatus || user.hotelManagerVerificationStatus === 'pending')) {
     const domains = getCurrentDomains();
-    if (window.location.pathname !== '/verification') {
+    // ✅ CORREÇÃO: Não redirecionar se já estiver na app específica (drivers ou hotels-app)
+    if (window.location.pathname !== '/verification' && 
+        !window.location.pathname.startsWith('/drivers') && 
+        !window.location.pathname.startsWith('/hotels-app')) {
       window.location.href = `${domains.client}/verification`;
       return (
         <div className="min-h-screen flex items-center justify-center">
@@ -73,8 +82,8 @@ export function AuthRedirect({ children, requiredRole }: AuthRedirectProps) {
     );
   }
 
-  // Se requer papel específico e usuário não tem
-  if (requiredRole && (!user?.roles?.includes(requiredRole))) {
+  // Se requer capacidade específica e usuário não tem
+  if (requiredCapacity && user && !user[requiredCapacity as keyof typeof user]) {
     const domains = getCurrentDomains();
     return (
       <div className="min-h-screen flex items-center justify-center">

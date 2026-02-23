@@ -111,15 +111,39 @@ export interface User extends BaseEntity {
   lastName: string | null;
   fullName: string | null;
   phone: string | null;
-  userType: UserRole;
-  roles: UserRole[];
-  canOfferServices: boolean;
-  isVerified: boolean;
-  profileImageUrl: string | null;
-  avatar: string | null;
-  rating: number;
-  totalReviews: number;
-  verificationStatus: VerificationStatus;
+
+  // ✅ SISTEMA DE CAPACIDADES (substitui userType e roles)
+  canBookServices: boolean;
+  canDrive: boolean;
+  canManageHotels: boolean;
+  isAdmin: boolean;
+
+  // ✅ STATUS DE VERIFICAÇÃO
+  driverVerificationStatus: VerificationStatus | null;
+  hotelManagerVerificationStatus: VerificationStatus | null;
+
+  // ✅ DADOS ESPECÍFICOS
+  driverLicenseNumber: string | null;
+  driverVehicleType: string | null;
+  businessTaxId: string | null;
+  companyName: string | null;
+  companyVatNumber: string | null;
+  companyAddress: string | null;
+  companyPhone: string | null;
+
+  // ✅ TIPO DE CONTA
+  accountType: AccountType;
+
+  // Campos legados (manter compatibilidade)
+  userType?: UserRole;
+  roles?: UserRole[];
+  canOfferServices?: boolean;
+  isVerified?: boolean;
+  verificationStatus?: VerificationStatus;
+  profileImageUrl?: string | null;
+  avatar?: string | null;
+  rating?: number;
+  totalReviews?: number;
 }
 
 // ===== DRIVER STATS =====
@@ -141,3 +165,4 @@ export interface BaseEntity {
 export type UserRole = 'client' | 'driver' | 'hotel_manager' | 'admin';
 export type BookingType = 'ride' | 'accommodation' | 'event';
 export type VerificationStatus = 'pending' | 'in_review' | 'verified' | 'rejected';
+export type AccountType = 'individual' | 'company';

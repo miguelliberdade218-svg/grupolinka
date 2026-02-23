@@ -27,6 +27,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "@/shared/hooks/use-toast";
 import { auth } from "../lib/firebaseConfig";
+import { sharedAuthApi } from "@/api/shared/auth";
 
 // Função de redirecionamento
 const redirectBasedOnRole = (role: string) => {
@@ -212,23 +213,37 @@ export function EnhancedSignupModal({ open, onOpenChange }: EnhancedSignupModalP
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
       
-      // Send roles and additional data to backend
-      const response = await fetch('/api/auth/setup-roles', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`
-        },
-        body: JSON.stringify({
-          roles: formData.selectedRoles,
-          firstName,
-          lastName,
-          phone: formData.phoneNumber
-        })
+      // Registrar cliente no backend usando novo sistema
+      const response = await sharedAuthApi.registerClient({
+        email: formData.email,
+        firstName,
+        lastName,
+        phone: formData.phoneNumber,
+        accountType: 'individual' // Default para EnhancedSignupModal
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao configurar conta');
+      // Type assertion para garantir compatibilidade
+      const registerResponse = response as { success: boolean; error?: string; message?: string; user?: any };
+
+      if (!registerResponse.success) {
+        throw new Error(registerResponse.error || registerResponse.message || 'Erro ao registrar conta');
+      }
+
+      // Ativar capacidades adicionais (se não for apenas cliente)
+      const rolesToActivate = formData.selectedRoles.filter(role => role !== 'client');
+      for (const role of rolesToActivate) {
+        if (role === 'driver') {
+          await sharedAuthApi.activateCapacity({
+            capacity: 'drive',
+            notes: 'Ativado via EnhancedSignupModal'
+          });
+        } else if (role === 'hotel') {
+          await sharedAuthApi.activateCapacity({
+            capacity: 'hotel_manager',
+            notes: 'Ativado via EnhancedSignupModal'
+          });
+        }
+        // Adicionar outros tipos conforme necessário
       }
       
       toast({

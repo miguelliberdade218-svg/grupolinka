@@ -8,6 +8,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Badge } from "@/shared/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/components/ui/dropdown-menu";
 import { Star, Car, Hotel, Calendar, Search, TrendingUp, Menu, UserCircle, LogOut, Shield, Settings, Sparkles, ArrowRight, Users, MapPin, BookOpen, Map, Clock, Zap, Award, Building } from "lucide-react";
+import SignupOptions from "@/shared/components/SignupOptions";
 import { useQuery } from "@tanstack/react-query";
 import { useModalState } from "@/shared/hooks/useModalState";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -315,24 +316,7 @@ export default function Home() {
   const handleSearch = async () => {
     console.log('Busca:', { type: searchType, ...searchQuery });
 
-    // ✅ VALIDAÇÃO 1: Usuário não logado
-    if (!user) {
-      showToast(
-        "Conta necessária",
-        "Precisa de criar uma conta gratuita para fazer reservas.",
-        "default",
-        (
-          <Link href="/signup">
-            <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-              Criar Conta
-            </Button>
-          </Link>
-        )
-      );
-      return;
-    }
-
-    // ✅ VALIDAÇÃO 2: Localização obrigatória
+    // ✅ VALIDAÇÃO 1: Localização obrigatória
     if (!searchQuery.from) {
       showToast(
         "Localização necessária",
@@ -342,7 +326,7 @@ export default function Home() {
       return;
     }
 
-    // ✅ VALIDAÇÃO 3: Data obrigatória
+    // ✅ VALIDAÇÃO 2: Data obrigatória
     if (!searchQuery.date) {
       showToast(
         "Data necessária",
@@ -352,7 +336,7 @@ export default function Home() {
       return;
     }
 
-    // ✅ VALIDAÇÃO 4: Para hotéis, verificar se localização foi selecionada da lista
+    // ✅ VALIDAÇÃO 3: Para hotéis, verificar se localização foi selecionada da lista
     if (searchType === "hotels" && !searchQuery.fromOption?.id) {
       showToast(
         "Selecione uma localização",
@@ -362,7 +346,7 @@ export default function Home() {
       return;
     }
 
-    // ✅ VALIDAÇÃO 5: Para rides, destino obrigatório
+    // ✅ VALIDAÇÃO 4: Para rides, destino obrigatório
     if (searchType === "rides" && !searchQuery.to) {
       showToast(
         "Destino necessário",
@@ -372,10 +356,27 @@ export default function Home() {
       return;
     }
 
-    // ✅✅✅ CORREÇÃO CRÍTICA: Só navegar, a página de search faz a busca
+    // ✅✅✅ CORREÇÃO: Usuário NÃO logado pode buscar normalmente
+    // Apenas mostrar mensagem informativa se não estiver logado
+    if (!user) {
+      showToast(
+        "Busca permitida!",
+        "Você pode buscar ofertas normalmente. Para fazer reservas, crie uma conta gratuita.",
+        "default",
+        (
+          <Link href="/signup">
+            <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+              Criar Conta
+            </Button>
+          </Link>
+        )
+      );
+    }
+
+    // ✅✅✅ CORREÇÃO: Navegar para página de busca (usuários logados e não logados)
     try {
       if (searchType === "rides") {
-        // ✅ Só criar query params e navegar - SEM BUSCAR
+        // ✅ Criar query params e navegar
         const queryParams = new URLSearchParams({
           from: encodeURIComponent(searchQuery.from),
           to: encodeURIComponent(searchQuery.to),
@@ -389,7 +390,7 @@ export default function Home() {
         setLocation(`/rides/search?${queryParams}`);
         
       } else if (searchType === "hotels") {
-        // ✅✅✅ CORREÇÃO APLICADA: Atualizado conforme solicitado - com encodeURIComponent
+        // ✅ Criar query params para hotéis
         const queryParams = new URLSearchParams({
           location: encodeURIComponent(searchQuery.from),
           locationId: searchQuery.fromOption?.id || '',
@@ -403,7 +404,7 @@ export default function Home() {
         setLocation(`/hotels/search?${queryParams}`);
         
       } else if (searchType === "event-spaces") {
-        // ✅✅✅ CORREÇÃO APLICADA: Atualizado conforme solicitado - com encodeURIComponent
+        // ✅ Criar query params para espaços de eventos
         const queryParams = new URLSearchParams({
           location: encodeURIComponent(searchQuery.from),
           locationId: searchQuery.fromOption?.id || '',
@@ -759,6 +760,13 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* Seção de Opções de Signup - Só mostra para usuários não logados */}
+        {!user && (
+          <div className="mb-8">
+            <SignupOptions />
+          </div>
+        )}
 
         {searchType === "rides" && filteredSpecialOffers && filteredSpecialOffers.length > 0 && (
           <Card className="mb-8 border-2 border-dashed border-yellow-300 bg-gradient-to-r from-yellow-50 to-orange-50">

@@ -10,6 +10,10 @@
 // ✅ ADICIONADO: Campo pricePerDay na tabela eventSpaces (compatibilidade com frontend)
 // ✅ ADICIONADO: Tabela roomTypePhotos para fotos de tipos de quarto
 // ✅ ADICIONADO: Tabela eventSpacePhotos para fotos de espaços para eventos
+// ✅ ADICIONADO: Sistema completo de capacidades (canBookServices, canDrive, canManageHotels, isAdmin)
+// ✅ ADICIONADO: accountTypeEnum e campos company/individual
+// ✅ ADICIONADO: Tabela userCapacityDocuments para documentos de verificação
+// ✅ ADICIONADO: Novos schemas Zod para sistema de capacidades
 
 import { sql } from "drizzle-orm";
 import {
@@ -48,6 +52,9 @@ export const roomStatusEnum = pgEnum("room_status", [
 // ==================== ENUMS PARA SISTEMA DE REVIEWS ====================
 export const reportReasonEnum = pgEnum("report_reason", ['inappropriate', 'fake', 'spam', 'offensive', 'other']);
 export const reportStatusEnum = pgEnum("report_status", ['pending', 'reviewed', 'resolved', 'dismissed']);
+
+// ==================== ENUMS PARA SISTEMA DE CAPACIDADES ====================
+export const accountTypeEnum = pgEnum("account_type", ['individual', 'company']);
 
 // ==================== TABELAS BASE ====================
 export const sessions = pgTable(
@@ -88,10 +95,72 @@ export const users = pgTable("users", {
   registrationCompleted: boolean("registrationCompleted").default(false),
   verificationBadge: text("verificationBadge"),
   badgeEarnedDate: timestamp("badgeEarnedDate"),
+  
+  // ✅ SISTEMA DE CAPACIDADES (NOVO)
+  canBookServices: boolean("can_book_services").default(true),
+  canDrive: boolean("can_drive").default(false),
+  canManageHotels: boolean("can_manage_hotels").default(false),
+  isAdmin: boolean("is_admin").default(false),
+  
+  driverVerificationStatus: verificationStatusEnum("driver_verification_status"),
+  driverVerificationNotes: text("driver_verification_notes"),
+  driverVerifiedAt: timestamp("driver_verified_at"),
+  
+  hotelManagerVerificationStatus: verificationStatusEnum("hotel_manager_verification_status"),
+  hotelManagerVerificationNotes: text("hotel_manager_verification_notes"),
+  hotelManagerVerifiedAt: timestamp("hotel_manager_verified_at"),
+  
+  driverLicenseNumber: varchar("driver_license_number", { length: 50 }),
+  driverLicenseCountry: varchar("driver_license_country", { length: 50 }).default('Moçambique'),
+  driverLicenseExpiry: date("driver_license_expiry"),
+  driverVehicleType: varchar("driver_vehicle_type", { length: 50 }),
+  driverYearsExperience: integer("driver_years_experience"),
+  
+  businessTaxId: varchar("business_tax_id", { length: 50 }),
+  businessRegistrationNumber: varchar("business_registration_number", { length: 100 }),
+  businessLegalName: varchar("business_legal_name", { length: 255 }),
+  
+  accountType: accountTypeEnum("account_type").default('individual'),
+  companyName: varchar("company_name", { length: 255 }),
+  companyVatNumber: varchar("company_vat_number", { length: 50 }),
+  companyAddress: text("company_address"),
+  companyPhone: varchar("company_phone", { length: 50 }),
+  
+  capabilitiesUpdatedAt: timestamp("capabilities_updated_at"),
+  lastCapacityActivation: timestamp("last_capacity_activation"),
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   phoneIdx: index("users_phone_idx").on(table.phone),
   userTypeIdx: index("users_user_type_idx").on(table.userType),
+  // ✅ ÍNDICES PARA CAPACIDADES
+  canBookServicesIdx: index("users_can_book_services_idx").on(table.canBookServices),
+  canDriveIdx: index("users_can_drive_idx").on(table.canDrive),
+  canManageHotelsIdx: index("users_can_manage_hotels_idx").on(table.canManageHotels),
+  isAdminIdx: index("users_is_admin_idx").on(table.isAdmin),
+  
+  driverVerificationStatusIdx: index("users_driver_verification_status_idx").on(table.driverVerificationStatus),
+  hotelManagerVerificationStatusIdx: index("users_hotel_manager_verification_status_idx").on(table.hotelManagerVerificationStatus),
+  accountTypeIdx: index("users_account_type_idx").on(table.accountType),
+}));
+
+// ==================== TABELA DE DOCUMENTOS DE CAPACIDADE ====================
+export const userCapacityDocuments = pgTable("user_capacity_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  capacity: varchar("capacity", { length: 50 }).notNull(),
+  documentType: varchar("document_type", { length: 100 }).notNull(),
+  documentUrl: text("document_url").notNull(),
+  documentNumber: varchar("document_number", { length: 100 }),
+  expiryDate: date("expiry_date"),
+  isVerified: boolean("is_verified").default(false),
+  verifiedBy: text("verified_by").references(() => users.id),
+  verifiedAt: timestamp("verified_at"),
+  verificationNotes: text("verification_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  userIdx: index("user_capacity_documents_user_idx").on(table.userId),
+  capacityIdx: index("user_capacity_documents_capacity_idx").on(table.capacity),
 }));
 
 // ==================== TABELAS DE REVIEWS DE HOTEL (SISTEMA COMPLETO) ====================
@@ -369,7 +438,7 @@ export const roomTypes = pgTable("room_types", {
   priceIdx: index("room_types_price_idx").on(table.base_price),
 }));
 
-// ==================== FOTOS DE TIPOS DE QUARTO (ADICIONADO) ====================
+// ==================== FOTOS DE TIPOS DE QUARTO ====================
 export const roomTypePhotos = pgTable('room_type_photos', {
   id: uuid('id').primaryKey().defaultRandom(),
   room_type_id: uuid('room_type_id').notNull().references(() => roomTypes.id, { onDelete: 'cascade' }),
@@ -383,7 +452,7 @@ export const roomTypePhotos = pgTable('room_type_photos', {
   deleted_at: timestamp('deleted_at'),
 });
 
-// ==================== FOTOS DE ESPAÇOS PARA EVENTOS (NOVO) ====================
+// ==================== FOTOS DE ESPAÇOS PARA EVENTOS ====================
 export const eventSpacePhotos = pgTable('event_space_photos', {
   id: uuid('id').primaryKey().defaultRandom(),
   event_space_id: uuid('event_space_id').notNull().references(() => eventSpaces.id, { onDelete: 'cascade' }),
@@ -1285,17 +1354,23 @@ const locationTypeZod = z.enum(["city", "town", "village"]);
 const vehicleTypeZod = z.enum(["economy", "comfort", "luxury", "family", "premium", "van", "suv"]);
 const reportReasonZod = z.enum(["inappropriate", "fake", "spam", "offensive", "other"]);
 const reportStatusZod = z.enum(["pending", "reviewed", "resolved", "dismissed"]);
+const accountTypeZod = z.enum(["individual", "company"]);
 
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email().optional(),
   phone: z.string().optional(),
   userType: userTypeZod,
+  accountType: accountTypeZod.optional(),
+  driverVerificationStatus: verificationStatusZod.optional(),
+  hotelManagerVerificationStatus: verificationStatusZod.optional(),
   verificationStatus: verificationStatusZod.optional(),
   rating: z.number().min(0).max(5).optional(),
 }).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  capabilitiesUpdatedAt: true,
+  lastCapacityActivation: true,
 });
 
 export const upsertUserSchema = createInsertSchema(users).pick({
@@ -1306,6 +1381,21 @@ export const upsertUserSchema = createInsertSchema(users).pick({
   profileImageUrl: true,
   phone: true,
   userType: true,
+  accountType: true,
+  companyName: true,
+  companyVatNumber: true,
+  companyAddress: true,
+  driverLicenseNumber: true,
+  driverVehicleType: true,
+  driverVerificationStatus: true,
+  driverVerifiedAt: true,
+  hotelManagerVerificationStatus: true,
+  hotelManagerVerifiedAt: true,
+  businessTaxId: true,
+  canBookServices: true,
+  canDrive: true,
+  canManageHotels: true,
+  isAdmin: true,
   roles: true,
   canOfferServices: true,
 });
@@ -1760,9 +1850,55 @@ export const insertHotelPaymentSchema = createInsertSchema(hotelPayments, {
   updated_at: true,
 });
 
+// ✅ ADICIONADO: Schema para documentos de capacidade
+export const insertUserCapacityDocumentSchema = createInsertSchema(userCapacityDocuments, {
+  documentUrl: z.string().url(),
+  expiryDate: z.string().optional(),
+}).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  isVerified: true,
+  verifiedBy: true,
+  verifiedAt: true,
+  verificationNotes: true,
+});
+
+// ✅ ADICIONADO: Schema para ativação de capacidade
+export const activateCapacitySchema = z.object({
+  capacity: z.enum(["drive", "hotel_manager"]),
+  documents: z.array(z.object({
+    type: z.string(),
+    url: z.string().url(),
+    number: z.string().optional(),
+    expiryDate: z.string().optional(),
+  })).optional(),
+  notes: z.string().optional(),
+});
+
+// ✅ ADICIONADO: Schema para signup com capacidades
+export const signupWithCapacitiesSchema = z.object({
+  email: z.string().email(),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  phone: z.string().optional(),
+  wantsToBeClient: z.boolean().default(true),
+  wantsToBeDriver: z.boolean().default(false),
+  wantsToBeHotelManager: z.boolean().default(false),
+  driverLicenseNumber: z.string().optional(),
+  driverVehicleType: z.string().optional(),
+  businessTaxId: z.string().optional(),
+  companyName: z.string().optional(),
+  companyVatNumber: z.string().optional(),
+  companyAddress: z.string().optional(),
+  accountType: z.enum(["individual", "company"]).default("individual"),
+});
+
 // ==================== TIPOS TYPESCRIPT ====================
 export type User = typeof users.$inferSelect;
 export type UserInsert = typeof users.$inferInsert;
+export type UserCapacityDocument = typeof userCapacityDocuments.$inferSelect;
+export type UserCapacityDocumentInsert = typeof userCapacityDocuments.$inferInsert;
 export type Ride = typeof rides.$inferSelect;
 export type RideInsert = typeof rides.$inferInsert;
 export type Vehicle = typeof vehicles.$inferSelect;
@@ -1841,6 +1977,25 @@ export type AdvancePaymentPromotion = typeof advancePaymentPromotions.$inferSele
 export type AdvancePaymentPromotionInsert = typeof advancePaymentPromotions.$inferInsert;
 export type PaymentOption = typeof paymentOptions.$inferSelect;
 export type PaymentOptionInsert = typeof paymentOptions.$inferInsert;
+
+// ✅ ADICIONADO: Interface para usuário com capacidades
+export interface UserWithCapabilities {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  canBookServices: boolean;
+  canDrive: boolean;
+  canManageHotels: boolean;
+  isAdmin: boolean;
+  driverVerificationStatus: string | null;
+  hotelManagerVerificationStatus: string | null;
+  accountType: string | null;
+  companyName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 // ==================== TIPOS AUXILIARES COM CAMELCASE ====================
 // Tipos auxiliares para hotelPayments que usam camelCase
@@ -2057,5 +2212,6 @@ export interface CompleteHotelSystem {
   advance_payment_promotions: AdvancePaymentPromotion[];
   payment_options: PaymentOption[];
   room_type_photos: RoomTypePhoto[];
-  event_space_photos: EventSpacePhoto[]; // ✅ ADICIONADO
+  event_space_photos: EventSpacePhoto[];
+  user_capacity_documents: UserCapacityDocument[]; // ✅ ADICIONADO
 };

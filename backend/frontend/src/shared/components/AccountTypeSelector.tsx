@@ -9,17 +9,19 @@ import {
   Building2,
   ShieldCheck,
   ArrowRight,
-  CheckCircle
+  CheckCircle,
+  Info
 } from "lucide-react";
+import { sharedAuthApi } from "@/api/shared/auth";
 
 interface AccountTypeSelectorProps {
-  onComplete: (selectedRoles: string[]) => void;
+  onComplete: (selectedCapacities: string[]) => void;
   userEmail: string;
 }
 
-const accountTypes = [
+const capacityTypes = [
   {
-    id: "client",
+    id: "canBookServices",
     title: "🧳 Cliente",
     description: "Quero reservar viagens, hospedagem e eventos",
     features: [
@@ -30,10 +32,11 @@ const accountTypes = [
     ],
     icon: Users,
     color: "bg-blue-500",
-    recommended: true
+    recommended: true,
+    alwaysSelected: true
   },
   {
-    id: "driver",
+    id: "canDrive",
     title: "🚗 Motorista",
     description: "Quero oferecer viagens e transportes",
     features: [
@@ -47,7 +50,7 @@ const accountTypes = [
     requiresVerification: true
   },
   {
-    id: "hotel_manager",
+    id: "canManageHotels",
     title: "🏨 Gestor de Alojamento",
     description: "Quero gerir hospedagem e eventos",
     features: [
@@ -61,7 +64,7 @@ const accountTypes = [
     requiresVerification: true
   },
   {
-    id: "admin",
+    id: "isAdmin",
     title: "🛡️ Administrador",
     description: "Gerir toda a plataforma Link-A",
     features: [
@@ -78,33 +81,36 @@ const accountTypes = [
 ];
 
 export default function AccountTypeSelector({ onComplete, userEmail }: AccountTypeSelectorProps) {
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(["client"]);
+  const [selectedCapacities, setSelectedCapacities] = useState<string[]>(["canBookServices"]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleRoleToggle = (roleId: string) => {
-    if (roleId === "client") return; // Cliente sempre selecionado
+  const handleCapacityToggle = (capacityId: string) => {
+    if (capacityId === "canBookServices") return; // Cliente sempre selecionado
     
-    setSelectedRoles(prev => 
-      prev.includes(roleId) 
-        ? prev.filter(r => r !== roleId)
-        : [...prev, roleId]
+    setSelectedCapacities(prev => 
+      prev.includes(capacityId) 
+        ? prev.filter(c => c !== capacityId)
+        : [...prev, capacityId]
     );
   };
 
   const handleComplete = async () => {
-  setIsSubmitting(true);
-  try {
-    // ✅ Aguardar a conclusão e propagar erros
-    await onComplete(selectedRoles);
-  } catch (error) {
-    console.error("Erro ao configurar conta:", error);
-    // ✅ Relançar o erro para que o componente pai (signup.tsx) possa mostrar a mensagem de erro
-    throw error;
-  } finally {
-    setIsSubmitting(false);
-  }
-};
-  const hasBusinessRoles = selectedRoles.some(role => role !== "client");
+    setIsSubmitting(true);
+    try {
+      // ✅ Aguardar a conclusão e propagar erros
+      await onComplete(selectedCapacities);
+    } catch (error) {
+      console.error("Erro ao configurar conta:", error);
+      // ✅ Relançar o erro para que o componente pai (signup.tsx) possa mostrar a mensagem de erro
+      throw error;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  const hasBusinessCapacities = selectedCapacities.some(capacity => 
+    capacity === "canDrive" || capacity === "canManageHotels" || capacity === "isAdmin"
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
@@ -115,15 +121,37 @@ export default function AccountTypeSelector({ onComplete, userEmail }: AccountTy
           </h1>
           <p className="text-gray-600">{userEmail}</p>
           <p className="text-sm text-gray-500 mt-2">
-            Seleccione o tipo de conta que pretende criar. Pode escolher múltiplas opções.
+            Você fez login com Google. Selecione as capacidades que deseja ter.
           </p>
+          
+          {/* Aviso importante */}
+          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg inline-block max-w-2xl">
+            <div className="flex items-start space-x-3">
+              <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-left">
+                <h3 className="font-medium text-blue-900">Importante!</h3>
+                <p className="text-sm text-blue-700 mt-1">
+                  <strong>Para capacidades específicas (motorista ou gestor)</strong>, recomendamos criar uma conta separada 
+                  usando email/senha nas páginas dedicadas. Isso mantém suas contas organizadas.
+                </p>
+                <div className="flex gap-4 mt-3">
+                  <a href="/drivers-signup" className="text-sm text-blue-600 hover:underline font-medium">
+                    🚗 Criar conta de motorista
+                  </a>
+                  <a href="/hotels-signup" className="text-sm text-emerald-600 hover:underline font-medium">
+                    🏨 Criar conta de gestor
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {accountTypes.map((type) => {
+          {capacityTypes.map((type) => {
             const Icon = type.icon;
-            const isSelected = selectedRoles.includes(type.id);
-            const isClient = type.id === "client";
+            const isSelected = selectedCapacities.includes(type.id);
+            const isClient = type.id === "canBookServices";
             const isAdmin = type.adminOnly;
             
             // Ocultar admin para utilizadores normais
@@ -139,7 +167,7 @@ export default function AccountTypeSelector({ onComplete, userEmail }: AccountTy
                     ? 'ring-2 ring-blue-500 bg-blue-50' 
                     : 'hover:bg-gray-50'
                 } ${isClient ? 'opacity-100' : ''}`}
-                onClick={() => !isClient && handleRoleToggle(type.id)}
+                onClick={() => !isClient && handleCapacityToggle(type.id)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
@@ -192,14 +220,14 @@ export default function AccountTypeSelector({ onComplete, userEmail }: AccountTy
           })}
         </div>
 
-        {hasBusinessRoles && (
+        {hasBusinessCapacities && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <div className="flex items-start space-x-3">
               <ShieldCheck className="h-5 w-5 text-yellow-600 mt-0.5" />
               <div>
                 <h3 className="font-medium text-yellow-900">Verificação Necessária</h3>
                 <p className="text-sm text-yellow-700 mt-1">
-                  As contas comerciais (Motorista, Alojamento, Admin) requerem verificação de documentos. 
+                  As capacidades comerciais (Motorista, Alojamento, Admin) requerem verificação de documentos. 
                   Depois de criar a conta, será redirecionado para o processo de verificação.
                 </p>
               </div>
@@ -210,7 +238,7 @@ export default function AccountTypeSelector({ onComplete, userEmail }: AccountTy
         <div className="flex justify-center">
           <Button 
             onClick={handleComplete}
-            disabled={isSubmitting || selectedRoles.length === 0}
+            disabled={isSubmitting || selectedCapacities.length === 0}
             size="lg"
             className="px-8"
           >
@@ -230,7 +258,7 @@ export default function AccountTypeSelector({ onComplete, userEmail }: AccountTy
 
         <div className="text-center mt-6">
           <p className="text-xs text-gray-500">
-            Pode alterar os tipos de conta nas configurações do perfil posteriormente.
+            Pode alterar as capacidades nas configurações do perfil posteriormente.
           </p>
         </div>
       </div>

@@ -6,20 +6,43 @@ import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/shared/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/shared/components/ui/radio-group";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Link, useLocation } from "wouter";
-import { Home, ArrowLeft } from "lucide-react";
-import AccountTypeSelector from "@/shared/components/AccountTypeSelector";
-import { setupAuthListener, checkRedirectResult } from "@/shared/lib/firebaseConfig";
-import type { User } from "firebase/auth";
+import { Home, Building, User } from "lucide-react";
+import { setupAuthListener, checkRedirectResult, signInWithGoogle } from "@/shared/lib/firebaseConfig";
+import { sharedAuthApi } from "@/api/shared/auth";
+import { emailService } from "@/shared/services/emailService";
+import type { User as FirebaseUser } from "firebase/auth";
 
 const signupSchema = z.object({
   email: z.string().email("Email inválido"),
-  password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
-  confirmPassword: z.string(),
-  fullName: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Senhas não coincidem",
+  password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres").optional().or(z.literal("")),
+  confirmPassword: z.string().optional(),
+  firstName: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+  lastName: z.string().min(2, "Sobrenome deve ter pelo menos 2 caracteres"),
+  phone: z.string().optional(),
+  accountType: z.enum(["individual", "company"]),
+  companyName: z.string().optional(),
+  companyVatNumber: z.string().optional(),
+  companyAddress: z.string().optional(),
+  companyPhone: z.string().optional(),
+}).refine((data) => {
+  if (data.accountType === "company") {
+    return data.companyName && data.companyName.length >= 2;
+  }
+  return true;
+}, {
+  message: "Nome da empresa é obrigatório",
+  path: ["companyName"],
+}).refine((data) => {
+  // Se password foi fornecido, confirmPassword deve ser igual
+  if (data.password && data.password.trim() !== "") {
+    return data.password === data.confirmPassword;
+  }
+  return true;
+}, {
+  message: "As senhas não coincidem",
   path: ["confirmPassword"],
 });
 
@@ -28,51 +51,23 @@ type SignupData = z.infer<typeof signupSchema>;
 export default function SignupPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [showRoleSelection, setShowRoleSelection] = useState(false);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [, setLocation] = useLocation();
 
   const form = useForm<SignupData>({
     resolver: zodResolver(signupSchema),
+    defaultValues: {
+      accountType: "individual"
+    }
   });
 
-  useEffect(() => {
-    // Verificar se o utilizador foi redirecionado do Google
-    const checkRedirect = async () => {
-      try {
-        const user = await checkRedirectResult();
-        if (user) {
-          setCurrentUser(user);
-          setShowRoleSelection(true);
-        }
-      } catch (error) {
-        console.error('Erro ao processar redirect:', error);
-        toast({
-          title: "Erro no Login",
-          description: "Erro ao processar autenticação com Google",
-          variant: "destructive",
-        });
-      }
-    };
-
-    checkRedirect();
-
-    // Escutar mudanças no estado de autenticação
-    const unsubscribe = setupAuthListener((user) => {
-      if (user && !showRoleSelection) {
-        setCurrentUser(user);
-        setShowRoleSelection(true);
-      }
-    });
-
-    return unsubscribe;
-  }, [showRoleSelection, toast]);
+  const watchAccountType = form.watch("accountType");
 
   const onSubmit = async (data: SignupData) => {
     setIsLoading(true);
     try {
       const { signUpWithEmail, isFirebaseConfigured } = await import('../shared/lib/firebaseConfig');
-      
+
       if (!isFirebaseConfigured) {
         toast({
           title: "Firebase Não Configurado",
@@ -82,15 +77,52 @@ export default function SignupPage() {
         return;
       }
 
-      // Implementar registro com email/senha
-      await signUpWithEmail(data.email, data.password);
-      
-      toast({
-        title: "Conta Criada!",
-        description: "Sua conta foi criada com sucesso. Faça login para continuar.",
-        variant: "default",
+      // Usar senha fornecida ou gerar temporária
+      const password = data.password && data.password.trim() !== "" 
+        ? data.password 
+        : 'temp-password-' + Math.random().toString(36).substring(2, 15);
+
+      // Criar conta no Firebase
+      const firebaseUser = await signUpWithEmail(data.email, password); // Senha opcional ou temporária
+
+      // Registrar cliente no backend usando novo sistema
+      const response = await sharedAuthApi.registerClient({
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone,
+        accountType: data.accountType,
+        companyName: data.companyName,
+        companyVatNumber: data.companyVatNumber,
+        companyAddress: data.companyAddress,
+        companyPhone: data.companyPhone,
       });
-      
+
+      // Type assertion para garantir compatibilidade
+      const registerResponse = response as { success: boolean; error?: string; message?: string; user?: any };
+
+      if (registerResponse.success) {
+        // Enviar email de boas-vindas
+        try {
+          await emailService.sendWelcomeEmail(data.email, `${data.firstName} ${data.lastName}`);
+        } catch (emailError) {
+          console.warn('Erro ao enviar email de boas-vindas:', emailError);
+          // Não falhar o registro por causa do email
+        }
+
+        toast({
+          title: "Conta Criada!",
+          description: data.password 
+            ? `Bem-vindo ao Link-A! Sua conta de ${data.accountType === 'individual' ? 'cliente individual' : 'cliente empresarial'} foi criada.`
+            : `Conta criada! Como não definiu senha, verifique seu email para instruções de configuração.`,
+        });
+
+        // Redirecionar para a homepage (main app)
+        setLocation('/');
+      } else {
+        throw new Error(registerResponse.error || registerResponse.message || 'Falha ao criar conta');
+      }
+
     } catch (error: any) {
       toast({
         title: "Erro no Registro",
@@ -104,17 +136,6 @@ export default function SignupPage() {
 
   const handleGoogleSignup = async () => {
     try {
-      const { signInWithGoogle, isFirebaseConfigured } = await import('../shared/lib/firebaseConfig');
-      
-      if (!isFirebaseConfigured) {
-        toast({
-          title: "Firebase Não Configurado",
-          description: "Configure as chaves do Firebase para usar autenticação Google",
-          variant: "destructive",
-        });
-        return;
-      }
-
       await signInWithGoogle();
     } catch (error) {
       toast({
@@ -125,57 +146,59 @@ export default function SignupPage() {
     }
   };
 
-  const handleRoleSelectionComplete = async (selectedRoles: string[]) => {
-    if (!currentUser) return;
-
-    try {
-      // Enviar roles para o backend
-      const response = await fetch('http://localhost:8000/api/auth/setup-roles', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await currentUser.getIdToken()}`
-        },
-        body: JSON.stringify({
-          uid: currentUser.uid,
-          email: currentUser.email,
-          displayName: currentUser.displayName,
-          photoURL: currentUser.photoURL,
-          roles: selectedRoles
-        })
-      });
-
-      if (response.ok) {
-        
-        toast({
-          title: "Conta Criada!",
-          description: `Bem-vindo ao Link-A! Sua conta foi configurada como ${selectedRoles.join(', ')}.`,
+  // Para Google signup, configurar automaticamente como cliente
+  useEffect(() => {
+    const handleGoogleUser = async (user: FirebaseUser) => {
+      try {
+        // Registrar cliente no backend usando novo sistema
+        const response = await sharedAuthApi.registerClient({
+          email: user.email || '',
+          firstName: user.displayName?.split(' ')[0] || 'User',
+          lastName: user.displayName?.split(' ').slice(1).join(' ') || '',
+          accountType: 'individual'
         });
 
-        // Sempre redirecionar para a homepage (página dos clientes)
-        setLocation('/');
-      } else {
-        throw new Error('Falha ao configurar conta');
+        if (response.success) {
+          toast({
+            title: "Conta Criada!",
+            description: "Bem-vindo ao Link-A! Sua conta foi configurada como cliente.",
+          });
+          setLocation('/');
+        }
+      } catch (error) {
+        console.error('Erro ao configurar conta Google:', error);
+        toast({
+          title: "Erro na Configuração",
+          description: "Conta criada, mas erro na configuração. Entre em contato com suporte.",
+          variant: "destructive",
+        });
       }
-    } catch (error) {
-      console.error('Erro ao configurar roles:', error);
-      toast({
-        title: "Erro na Configuração",
-        description: "Erro ao configurar sua conta. Tente novamente.",
-        variant: "destructive",
-      });
-    }
-  };
+    };
 
-  // Se o utilizador foi autenticado, mostrar seleção de roles
-  if (showRoleSelection && currentUser) {
-    return (
-      <AccountTypeSelector
-        userEmail={currentUser.email || ''}
-        onComplete={handleRoleSelectionComplete}
-      />
-    );
-  }
+    // Verificar se o utilizador foi redirecionado do Google
+    const checkRedirect = async () => {
+      try {
+        const user = await checkRedirectResult();
+        if (user) {
+          await handleGoogleUser(user);
+        }
+      } catch (error) {
+        console.error('Erro ao processar redirect:', error);
+      }
+    };
+
+    checkRedirect();
+
+    // Escutar mudanças no estado de autenticação
+    const unsubscribe = setupAuthListener(async (user) => {
+      if (user && !currentUser) {
+        setCurrentUser(user);
+        await handleGoogleUser(user);
+      }
+    });
+
+    return unsubscribe;
+  }, [currentUser, toast, setLocation]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -188,14 +211,28 @@ export default function SignupPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Botões para outros tipos de conta */}
+      <div className="absolute top-4 right-4 flex gap-2">
+        <Link href="/drivers-signup">
+          <Button variant="ghost" size="sm" className="flex items-center gap-2">
+            🚗 Motorista
+          </Button>
+        </Link>
+        <Link href="/hotels-signup">
+          <Button variant="ghost" size="sm" className="flex items-center gap-2">
+            🏨 Hotel
+          </Button>
+        </Link>
+      </div>
       
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl text-center">
-            Registar no Link-A
+            Criar Conta de Cliente
           </CardTitle>
           <p className="text-center text-gray-600 dark:text-gray-400">
-            Crie sua conta e comece sua jornada
+            Para reservar viagens, hotéis e eventos
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -227,22 +264,38 @@ export default function SignupPage() {
 
           {/* Manual Signup Form */}
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <Label htmlFor="fullName">Nome Completo</Label>
-              <Input
-                id="fullName"
-                type="text"
-                placeholder="Seu nome completo"
-                {...form.register("fullName")}
-                data-testid="input-fullname-signup"
-              />
-              {form.formState.errors.fullName && (
-                <p className="text-sm text-red-500">{form.formState.errors.fullName.message}</p>
-              )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="firstName">Nome *</Label>
+                <Input
+                  id="firstName"
+                  type="text"
+                  placeholder="Seu nome"
+                  {...form.register("firstName")}
+                  data-testid="input-firstname-signup"
+                />
+                {form.formState.errors.firstName && (
+                  <p className="text-sm text-red-500">{form.formState.errors.firstName.message}</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="lastName">Sobrenome *</Label>
+                <Input
+                  id="lastName"
+                  type="text"
+                  placeholder="Seu sobrenome"
+                  {...form.register("lastName")}
+                  data-testid="input-lastname-signup"
+                />
+                {form.formState.errors.lastName && (
+                  <p className="text-sm text-red-500">{form.formState.errors.lastName.message}</p>
+                )}
+              </div>
             </div>
 
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email *</Label>
               <Input
                 id="email"
                 type="email"
@@ -256,7 +309,101 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password">Senha (opcional - ou use Google)</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Mínimo 6 caracteres (opcional)"
+                {...form.register("password")}
+              />
+              {form.formState.errors.password && (
+                <p className="text-sm text-red-500">{form.formState.errors.password.message}</p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                Se não definir senha, poderá usar apenas login com Google ou receber link por email.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="phone">Telefone (opcional)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+258 84 123 4567"
+                {...form.register("phone")}
+              />
+              {form.formState.errors.phone && (
+                <p className="text-sm text-red-500">{form.formState.errors.phone.message}</p>
+              )}
+            </div>
+
+            {/* Tipo de Conta */}
+            <div className="space-y-3">
+              <Label>Tipo de Conta *</Label>
+              <RadioGroup 
+                value={watchAccountType} 
+                onValueChange={(value) => form.setValue("accountType", value as "individual" | "company")}
+                className="flex gap-4"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="individual" id="individual" />
+                  <Label htmlFor="individual" className="flex items-center gap-2 cursor-pointer">
+                    <User className="h-4 w-4" />
+                    Individual
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="company" id="company" />
+                  <Label htmlFor="company" className="flex items-center gap-2 cursor-pointer">
+                    <Building className="h-4 w-4" />
+                    Empresa
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Campos condicionais para empresa */}
+            {watchAccountType === "company" && (
+              <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <h3 className="font-medium text-gray-700">Informações da Empresa</h3>
+                
+                <div>
+                  <Label htmlFor="companyName">Nome da Empresa *</Label>
+                  <Input
+                    id="companyName"
+                    type="text"
+                    placeholder="Nome da sua empresa"
+                    {...form.register("companyName")}
+                  />
+                  {form.formState.errors.companyName && (
+                    <p className="text-sm text-red-500">{form.formState.errors.companyName.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="companyVatNumber">NIF/NUIT (opcional)</Label>
+                  <Input
+                    id="companyVatNumber"
+                    type="text"
+                    placeholder="Número de identificação fiscal"
+                    {...form.register("companyVatNumber")}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="companyAddress">Endereço da Empresa (opcional)</Label>
+                  <Input
+                    id="companyAddress"
+                    type="text"
+                    placeholder="Endereço completo"
+                    {...form.register("companyAddress")}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="password">Senha *</Label>
               <Input
                 id="password"
                 type="password"
@@ -270,7 +417,7 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <Label htmlFor="confirmPassword">Confirmar Senha</Label>
+              <Label htmlFor="confirmPassword">Confirmar Senha *</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -289,7 +436,7 @@ export default function SignupPage() {
               disabled={isLoading}
               data-testid="button-manual-signup"
             >
-              {isLoading ? "Criando Conta..." : "Criar Conta"}
+              {isLoading ? "Criando Conta..." : "Criar Conta de Cliente"}
             </Button>
           </form>
 
@@ -299,6 +446,18 @@ export default function SignupPage() {
               <Link href="/login" className="text-primary hover:underline">
                 Fazer login
               </Link>
+            </p>
+            <p className="mt-2">
+              É motorista ou gestor de hotel?{" "}
+              <div className="flex gap-2 justify-center mt-1">
+                <Link href="/drivers-signup" className="text-blue-600 hover:underline text-sm">
+                  🚗 Criar conta de motorista
+                </Link>
+                <span className="text-gray-400">|</span>
+                <Link href="/hotels-signup" className="text-emerald-600 hover:underline text-sm">
+                  🏨 Criar conta de gestor
+                </Link>
+              </div>
             </p>
           </div>
         </CardContent>

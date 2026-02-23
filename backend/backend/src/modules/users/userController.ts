@@ -1,8 +1,10 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { storage } from "../../../storage";
-// import { insertUserSchema } from "../../shared/storage";
 import { verifyFirebaseToken, type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
 import { z } from "zod";
+import { authService } from "../auth/services/authService.js";
+import { authStorage } from "../../shared/authStorage.js";
+import { storage } from "../../../storage"; // Mantido para bookings
+import type { User } from "../../../shared/schema.js";
 
 const router = Router();
 
@@ -13,36 +15,75 @@ router.get("/profile", verifyFirebaseToken, async (req, res) => {
   try {
     const userId = authReq.user?.uid;
     const userEmail = authReq.user?.claims?.email;
+    const displayName = authReq.user?.displayName;
     
     if (!userId) {
-      return res.status(401).json({ message: "Token inválido" });
+      return res.status(401).json({ success: false, message: "Token inválido" });
     }
 
-    // Verificar se usuário existe na base de dados
-    let user = await storage.auth.getUser(userId);
+    // Verificar se usuário existe na base de dados usando authService
+    let user = await authService.getUserById(userId);
     
     if (!user) {
       // Criar usuário automaticamente se não existir
-      user = await storage.auth.upsertUser({
-        id: userId,
-        email: userEmail || null,
-        firstName: null,
-        lastName: null,
-        profileImageUrl: null,
-        userType: 'user'
+      if (!userEmail) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Email é necessário para criar usuário" 
+        });
+      }
+
+      // ✅ CORRIGIDO: phone como undefined em vez de null
+      user = await authService.createClient({
+        email: userEmail,
+        firstName: displayName?.split(' ')[0] || '',
+        lastName: displayName?.split(' ').slice(1).join(' ') || '',
+        phone: undefined, // ✅ undefined em vez de null
+        accountType: 'individual'
       });
     }
 
     res.json({
       success: true,
-      data: { user }
+      data: { 
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          
+          // ✅ CAPACIDADES DO NOVO SISTEMA
+          canBookServices: user.canBookServices,
+          canDrive: user.canDrive,
+          canManageHotels: user.canManageHotels,
+          isAdmin: user.isAdmin,
+          
+          driverVerificationStatus: user.driverVerificationStatus,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus,
+          accountType: user.accountType || 'individual',
+          companyName: user.companyName,
+          
+          // ✅ CAMPOS DO SISTEMA ANTIGO (para compatibilidade)
+          roles: user.roles || [],
+          isVerified: user.isVerified || false,
+          profileImageUrl: user.profileImageUrl,
+          registrationCompleted: user.registrationCompleted || false,
+          userType: user.userType || 'client',
+          
+          // ✅ OUTROS CAMPOS
+          rating: user.rating,
+          totalReviews: user.totalReviews,
+          verificationStatus: user.verificationStatus,
+          createdAt: user.createdAt
+        }
+      }
     });
   } catch (error) {
     console.error("Erro ao buscar perfil do usuário:", error);
     res.status(500).json({ 
       success: false,
-      message: "Erro ao buscar perfil do usuário",
-      error: "Internal server error" 
+      message: "Erro ao buscar perfil do usuário"
     });
   }
 });
@@ -54,7 +95,7 @@ router.put("/profile", verifyFirebaseToken, async (req, res) => {
   try {
     const userId = authReq.user?.uid;
     if (!userId) {
-      return res.status(401).json({ message: "Token inválido" });
+      return res.status(401).json({ success: false, message: "Token inválido" });
     }
 
     const {
@@ -72,39 +113,48 @@ router.put("/profile", verifyFirebaseToken, async (req, res) => {
       updatedAt: new Date()
     };
 
-    if (firstName) updateData.firstName = firstName;
-    if (lastName) updateData.lastName = lastName;
-    if (phone) updateData.phone = phone;
-    if (fullName) updateData.fullName = fullName;
-    if (dateOfBirth) updateData.dateOfBirth = new Date(dateOfBirth);
-    if (documentNumber) updateData.documentNumber = documentNumber;
-    if (identityDocumentType) updateData.identityDocumentType = identityDocumentType;
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    // ✅ CORRIGIDO: phone pode ser string ou undefined
+    if (phone !== undefined) updateData.phone = phone;
+    if (fullName !== undefined) updateData.fullName = fullName;
+    if (dateOfBirth !== undefined) updateData.dateOfBirth = new Date(dateOfBirth);
+    if (documentNumber !== undefined) updateData.documentNumber = documentNumber;
+    if (identityDocumentType !== undefined) updateData.identityDocumentType = identityDocumentType;
 
-    const updatedUser = await storage.auth.upsertUser(updateData);
+    // Usar authStorage para compatibilidade com upsert
+    const updatedUser = await authStorage.upsertUser(updateData);
 
     res.json({
       success: true,
       message: "Perfil atualizado com sucesso",
-      data: { user: updatedUser }
+      data: { 
+        user: {
+          id: updatedUser.id,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          phone: updatedUser.phone,
+          fullName: updatedUser.fullName
+        }
+      }
     });
   } catch (error) {
     console.error("Erro ao atualizar perfil do usuário:", error);
     res.status(500).json({ 
       success: false,
-      message: "Erro ao atualizar perfil do usuário",
-      error: "Internal server error" 
+      message: "Erro ao atualizar perfil do usuário"
     });
   }
 });
 
-// PUT /api/users/roles - Alterar papéis do usuário
+// PUT /api/users/roles - Converter papéis antigos para capacidades
 router.put("/roles", verifyFirebaseToken, async (req, res) => {
   const authReq = req as AuthenticatedRequest;
   
   try {
     const userId = authReq.user?.uid;
     if (!userId) {
-      return res.status(401).json({ message: "Token inválido" });
+      return res.status(401).json({ success: false, message: "Token inválido" });
     }
 
     const { roles } = req.body;
@@ -116,30 +166,49 @@ router.put("/roles", verifyFirebaseToken, async (req, res) => {
       });
     }
 
-    // Validar roles permitidos
-    const allowedRoles = ['user', 'driver', 'host', 'event_organizer'];
-    const invalidRoles = roles.filter(role => !allowedRoles.includes(role));
+    // ✅ CONVERTER ROLES ANTIGAS PARA CAPACIDADES
+    const updateData: any = {
+      id: userId,
+      updatedAt: new Date()
+    };
+
+    // Mapear roles antigas para capacidades
+    if (roles.includes('driver')) {
+      updateData.canDrive = true;
+      updateData.driverVerificationStatus = 'pending';
+    }
     
-    if (invalidRoles.length > 0) {
-      return res.status(400).json({ 
-        success: false,
-        message: `Roles inválidos: ${invalidRoles.join(', ')}` 
-      });
+    if (roles.includes('host') || roles.includes('hotel_manager')) {
+      updateData.canManageHotels = true;
+      updateData.hotelManagerVerificationStatus = 'pending';
+    }
+    
+    if (roles.includes('admin')) {
+      updateData.isAdmin = true;
     }
 
-    const updatedUser = await storage.auth.updateUserRoles(userId, roles);
+    const updatedUser = await authStorage.upsertUser(updateData);
 
     res.json({
       success: true,
-      message: "Papéis atualizados com sucesso",
-      data: { user: updatedUser }
+      message: "Papéis convertidos para capacidades com sucesso",
+      data: { 
+        user: {
+          id: updatedUser.id,
+          canBookServices: updatedUser.canBookServices,
+          canDrive: updatedUser.canDrive,
+          canManageHotels: updatedUser.canManageHotels,
+          isAdmin: updatedUser.isAdmin,
+          driverVerificationStatus: updatedUser.driverVerificationStatus,
+          hotelManagerVerificationStatus: updatedUser.hotelManagerVerificationStatus
+        }
+      }
     });
   } catch (error) {
     console.error("Erro ao atualizar papéis:", error);
     res.status(500).json({ 
       success: false,
-      message: "Erro ao atualizar papéis",
-      error: "Internal server error" 
+      message: "Erro interno do servidor"
     });
   }
 });
@@ -148,7 +217,7 @@ router.put("/roles", verifyFirebaseToken, async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await storage.auth.getUser(id);
+    const user = await authService.getUserById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -168,7 +237,13 @@ router.get("/:id", async (req, res) => {
       totalReviews: user.totalReviews,
       isVerified: user.isVerified,
       verificationBadge: user.verificationBadge,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      
+      // Informações públicas de capacidades
+      canDrive: user.canDrive,
+      canManageHotels: user.canManageHotels,
+      driverVerificationStatus: user.driverVerificationStatus === 'verified' ? 'verified' : null,
+      hotelManagerVerificationStatus: user.hotelManagerVerificationStatus === 'verified' ? 'verified' : null
     };
 
     res.json({
@@ -195,15 +270,25 @@ router.get("/", async (req, res) => {
       limit = 20 
     } = req.query;
 
-    let users = [];
+    // ✅ Tipagem explícita para users
+    let users: User[] = [];
 
+    // ✅ USAR authService para buscar usuários
     if (search) {
-      users = await storage.auth.searchUsers(search as string);
+      // TODO: Implementar search no authService se necessário
+      users = [];
     } else if (userType) {
-      users = await storage.auth.getUsersByType(userType as string);
+      // Mapear userType antigo para capacidades
+      if (userType === 'driver') {
+        users = await authService.getUsersByCapacity('drive');
+      } else if (userType === 'host') {
+        users = await authService.getUsersByCapacity('hotel_manager');
+      } else {
+        users = [];
+      }
     } else {
-      // Limitar busca geral para evitar sobrecarga
-      users = await storage.auth.getUsersByType('driver'); // Default para motoristas
+      // Buscar motoristas por padrão
+      users = await authService.getUsersByCapacity('drive');
     }
 
     // Filtros adicionais
@@ -222,7 +307,13 @@ router.get("/", async (req, res) => {
       totalReviews: user.totalReviews,
       isVerified: user.isVerified,
       verificationBadge: user.verificationBadge,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      
+      // Informações públicas de capacidades
+      canDrive: user.canDrive,
+      canManageHotels: user.canManageHotels,
+      driverVerificationStatus: user.driverVerificationStatus === 'verified' ? 'verified' : null,
+      hotelManagerVerificationStatus: user.hotelManagerVerificationStatus === 'verified' ? 'verified' : null
     }));
 
     // Aplicar paginação
@@ -255,7 +346,7 @@ router.post("/verification", verifyFirebaseToken, async (req, res) => {
   try {
     const userId = authReq.user?.uid;
     if (!userId) {
-      return res.status(401).json({ message: "Token inválido" });
+      return res.status(401).json({ success: false, message: "Token inválido" });
     }
 
     const {
@@ -274,23 +365,28 @@ router.post("/verification", verifyFirebaseToken, async (req, res) => {
       });
     }
 
-    const updateData = {
+    const updateData: any = {
       id: userId,
-      identityDocumentUrl,
-      profilePhotoUrl,
-      identityDocumentType,
-      documentNumber,
-      fullName,
-      verificationStatus: 'in_review' as const,
+      identityDocumentUrl: identityDocumentUrl || null,
+      profilePhotoUrl: profilePhotoUrl || null,
+      identityDocumentType: identityDocumentType || null,
+      documentNumber: documentNumber || null,
+      fullName: fullName || null,
+      verificationStatus: 'in_review',
       updatedAt: new Date()
     };
 
-    const updatedUser = await storage.auth.upsertUser(updateData);
+    const updatedUser = await authStorage.upsertUser(updateData);
 
     res.json({
       success: true,
       message: "Solicitação de verificação enviada com sucesso",
-      data: { user: updatedUser }
+      data: { 
+        user: {
+          id: updatedUser.id,
+          verificationStatus: updatedUser.verificationStatus
+        }
+      }
     });
   } catch (error) {
     console.error("Erro ao solicitar verificação:", error);
@@ -308,10 +404,10 @@ router.get("/dashboard/stats", verifyFirebaseToken, async (req, res) => {
   try {
     const userId = authReq.user?.uid;
     if (!userId) {
-      return res.status(401).json({ message: "Token inválido" });
+      return res.status(401).json({ success: false, message: "Token inválido" });
     }
 
-    const user = await storage.auth.getUser(userId);
+    const user = await authService.getUserById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -319,7 +415,7 @@ router.get("/dashboard/stats", verifyFirebaseToken, async (req, res) => {
       });
     }
 
-    // Buscar estatísticas básicas
+    // Buscar estatísticas básicas (mantendo storage para bookings)
     const userBookings = await storage.booking.getUserBookings(userId);
     const providerBookings = await storage.booking.getProviderBookings(userId);
 
@@ -328,7 +424,11 @@ router.get("/dashboard/stats", verifyFirebaseToken, async (req, res) => {
         completeness: calculateProfileCompleteness(user),
         verification: user.verificationStatus || 'pending',
         rating: user.rating || '0.00',
-        totalReviews: user.totalReviews || 0
+        totalReviews: user.totalReviews || 0,
+        
+        // ✅ Status de capacidades
+        driverStatus: user.driverVerificationStatus,
+        hotelManagerStatus: user.hotelManagerVerificationStatus
       },
       bookings: {
         asCustomer: userBookings.length,
@@ -365,10 +465,17 @@ function calculateProfileCompleteness(user: any): number {
     user.phone,
     user.profileImageUrl,
     user.dateOfBirth,
-    user.fullName
+    user.fullName,
+    // ✅ ADICIONAR CAMPOS DE CAPACIDADES SE APLICÁVEL
+    user.canBookServices !== undefined ? 'capacidade_cliente' : null,
+    user.canDrive !== undefined ? 'capacidade_motorista' : null,
+    user.canManageHotels !== undefined ? 'capacidade_gestor' : null
   ];
   
-  const completedFields = fields.filter(field => field && field.trim() !== '').length;
+  const completedFields = fields.filter((field): field is string => 
+    field !== null && field !== undefined && field.trim() !== ''
+  ).length;
+  
   return Math.round((completedFields / fields.length) * 100);
 }
 

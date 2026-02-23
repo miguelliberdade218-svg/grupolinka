@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './useAuth';
+import { sharedAuthApi } from '@/api/shared/auth';
 
 interface UserSetupState {
-  needsRoleSetup: boolean;
+  needsCapacitySetup: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -10,7 +11,7 @@ interface UserSetupState {
 export const useUserSetup = () => {
   const { user, firebaseUser, isAuthenticated } = useAuth();
   const [setupState, setSetupState] = useState<UserSetupState>({
-    needsRoleSetup: false,
+    needsCapacitySetup: false,
     loading: true,
     error: null
   });
@@ -18,7 +19,7 @@ export const useUserSetup = () => {
   useEffect(() => {
     if (!isAuthenticated || !firebaseUser) {
       setSetupState({
-        needsRoleSetup: false,
+        needsCapacitySetup: false,
         loading: false,
         error: null
       });
@@ -27,46 +28,58 @@ export const useUserSetup = () => {
 
     const checkUserSetup = async () => {
       try {
-        // ✅ CORREÇÃO: Usar firebaseUser para getIdToken() em vez de user (AppUser)
-        const token = firebaseUser ? await firebaseUser.getIdToken() : localStorage.getItem('token');
-        const uid = firebaseUser?.uid;
-        const displayName = firebaseUser?.displayName;
-        const photoURL = firebaseUser?.photoURL;
+        console.log("🔍 Verificando configuração do usuário...");
         
-        console.log("🔍 Verificando perfil do usuário...");
-        let response;
+        // Primeiro, tentar obter as capacidades do usuário
+        const capabilitiesResponse = await sharedAuthApi.getCapabilities();
         
-        // ✅ AUTH: Usar Railway (agora tem auth completa)
-        console.log("🔐 Usando Railway para autenticação...");
-        const RAILWAY_URL = 'https://link-a-backend-production.up.railway.app';
-        response = await fetch(`${RAILWAY_URL}/api/auth/profile`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (response.ok) {
-          const userData = await response.json();
-          // Se usuário não tem roles ou só tem um array vazio, precisa configurar
-          const needsSetup = !userData.roles || userData.roles.length === 0;
+        if (capabilitiesResponse.success && capabilitiesResponse.data) {
+          // ✅ CORREÇÃO: Usar as capacidades retornadas
+          const hasBasicCapacities = capabilitiesResponse.data.canBookServices === true;
+          const needsSetup = !hasBasicCapacities;
+          
+          console.log("📊 Capacidades do usuário:", capabilitiesResponse.data);
+          console.log("🔧 Precisa de setup?", needsSetup);
           
           setSetupState({
-            needsRoleSetup: needsSetup,
+            needsCapacitySetup: needsSetup,
             loading: false,
             error: null
           });
         } else {
-          // Se usuário não existe no backend, precisa configurar
-          setSetupState({
-            needsRoleSetup: true,
-            loading: false,
-            error: null
-          });
+          // Se não conseguir obter capacidades, verificar se o usuário existe no backend
+          try {
+            const profileResponse = await sharedAuthApi.getProfile();
+            
+            if (profileResponse.success && profileResponse.user) {
+              // Usuário existe, mas não tem capacidades configuradas
+              setSetupState({
+                needsCapacitySetup: true,
+                loading: false,
+                error: null
+              });
+            } else {
+              // Usuário não existe no backend, precisa configurar
+              setSetupState({
+                needsCapacitySetup: true,
+                loading: false,
+                error: null
+              });
+            }
+          } catch (profileError) {
+            // Erro ao obter perfil, assumir que precisa de setup
+            console.log("ℹ️ Não foi possível obter perfil, assumindo que precisa de setup");
+            setSetupState({
+              needsCapacitySetup: true,
+              loading: false,
+              error: null
+            });
+          }
         }
       } catch (error) {
         console.error('Error checking user setup:', error);
         setSetupState({
-          needsRoleSetup: false,
+          needsCapacitySetup: false,
           loading: false,
           error: 'Failed to check user setup'
         });
@@ -74,73 +87,61 @@ export const useUserSetup = () => {
     };
 
     checkUserSetup();
-  }, [firebaseUser, isAuthenticated]); // ✅ Mudar dependência para firebaseUser
+  }, [firebaseUser, isAuthenticated]);
 
-  const setupUserRoles = async (roles: string[]) => {
+  const setupUserCapacities = async (capacities: string[]) => {
     if (!firebaseUser) throw new Error('User not authenticated');
     
     try {
-      // ✅ CORREÇÃO: Usar firebaseUser para getIdToken() e propriedades Firebase
-      const token = firebaseUser ? await firebaseUser.getIdToken() : localStorage.getItem('token');
-      const uid = firebaseUser?.uid;
-      const email = firebaseUser?.email;
-      const displayName = firebaseUser?.displayName;
-      const photoURL = firebaseUser?.photoURL;
+      console.log("🚀 Configurando capacidades do usuário...", capacities);
       
-      console.log("🚀 Configurando roles do usuário...", roles);
-      let registerResponse, response;
-      
-      // ✅ AUTH SETUP: Usar Railway (agora tem auth completa)
-      console.log("🔐 Registrando usuário no Railway...");
-      const RAILWAY_URL = 'https://link-a-backend-production.up.railway.app';
-      
-      registerResponse = await fetch(`${RAILWAY_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          uid: uid, // ✅ Usar uid do firebaseUser
-          email: email, // ✅ Usar email do firebaseUser
-          displayName: displayName, // ✅ Usar displayName do firebaseUser
-          photoURL: photoURL // ✅ Usar photoURL do firebaseUser
-        })
+      // Registrar cliente no backend usando novo sistema
+      const response = await sharedAuthApi.registerClient({
+        email: firebaseUser.email || '',
+        firstName: firebaseUser.displayName?.split(' ')[0] || 'User',
+        lastName: firebaseUser.displayName?.split(' ').slice(1).join(' ') || '',
+        accountType: 'individual'
       });
 
-      if (!registerResponse.ok) {
-        throw new Error('Failed to register user in Railway');
+      // Type assertion para garantir compatibilidade
+      const registerResponse = response as { success: boolean; error?: string; message?: string; user?: any };
+
+      if (!registerResponse.success) {
+        throw new Error(registerResponse.error || registerResponse.message || 'Failed to register user');
       }
 
-      response = await fetch(`${RAILWAY_URL}/api/auth/roles`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ roles })
-      });
-
-      if (response.ok) {
-        setSetupState(prev => ({
-          ...prev,
-          needsRoleSetup: false
-        }));
-        
-        // Refresh the page to update the entire app state
-        window.location.reload();
-      } else {
-        throw new Error('Failed to setup roles');
+      // Ativar capacidades adicionais
+      for (const capacity of capacities) {
+        if (capacity === 'canDrive') {
+          await sharedAuthApi.activateCapacity({
+            capacity: 'drive',
+            notes: 'Ativado via setup de capacidades'
+          });
+        } else if (capacity === 'canManageHotels') {
+          await sharedAuthApi.activateCapacity({
+            capacity: 'hotel_manager',
+            notes: 'Ativado via setup de capacidades'
+          });
+        }
+        // Adicionar outras capacidades conforme necessário
       }
+      
+      setSetupState(prev => ({
+        ...prev,
+        needsCapacitySetup: false
+      }));
+      
+      // Refresh the page to update the entire app state
+      window.location.reload();
     } catch (error) {
-      console.error('Error setting up roles:', error);
+      console.error('Error setting up capacities:', error);
       throw error;
     }
   };
 
   return {
     ...setupState,
-    setupUserRoles,
-    userEmail: firebaseUser?.email || user?.email || '' // ✅ Fallback para user.email se necessário
+    setupUserCapacities,
+    userEmail: firebaseUser?.email || user?.email || ''
   };
 };

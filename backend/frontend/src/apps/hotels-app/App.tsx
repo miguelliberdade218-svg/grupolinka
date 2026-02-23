@@ -5,8 +5,10 @@
  */
 
 import React from 'react';
+// ✅ ADICIONADO: AppGuard para verificar capacidades
+import { HotelsAppGuard } from './components/AppGuard';
 import { Route, Switch, useLocation, Redirect } from 'wouter';
-import { Toaster } from '@/shared/components/ui/toaster';
+import { Toaster as SonnerToaster } from 'sonner';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ActiveHotelProvider, useActiveHotel } from '@/contexts/ActiveHotelContext';
 import { ActiveEventSpaceProvider } from '@/contexts/ActiveEventSpaceContext';
@@ -191,7 +193,18 @@ function AppContent() {
           <Route component={HotelManagerDashboard} />
         </Switch>
       </main>
-      <Toaster />
+      <SonnerToaster 
+        richColors 
+        position="top-center"
+        duration={10000}
+        expand={true}
+        visibleToasts={3}
+        closeButton
+        toastOptions={{
+          className: 'text-lg',
+          descriptionClassName: 'text-base',
+        }}
+      />
     </div>
   );
 }
@@ -199,11 +212,13 @@ function AppContent() {
 export default function HotelsApp() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ActiveHotelProvider>
-        <ActiveEventSpaceProvider>
-          <AppContent />
-        </ActiveEventSpaceProvider>
-      </ActiveHotelProvider>
+      <HotelsAppGuard>
+        <ActiveHotelProvider>
+          <ActiveEventSpaceProvider>
+            <AppContent />
+          </ActiveEventSpaceProvider>
+        </ActiveHotelProvider>
+      </HotelsAppGuard>
     </QueryClientProvider>
   );
 }

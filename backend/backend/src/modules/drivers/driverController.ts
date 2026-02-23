@@ -1,37 +1,21 @@
-import { Router, Request, Response, NextFunction } from "express";
-import { type AuthenticatedRequest, type AuthenticatedUser } from "../../shared/types";
+import { Router, Request, Response } from "express";
+import { verifyFirebaseToken, type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
 import { storage } from "../../../storage";
 import { authStorage } from "../../shared/authStorage";
-import admin from "firebase-admin"; // ✅ ADICIONADO: Import do Firebase Admin
 
 const router = Router();
 
-// ✅ CORREÇÃO: Interface para usuário autenticado compatível com AuthenticatedUser
-interface AuthUser {
-  id: string;
-  uid: string;
-  email: string;
-  userType?: string;
-}
-
-// ✅✅✅ CORREÇÃO CRÍTICA: Middleware de autenticação com validação real do token Firebase
-const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+// ✅ CORREÇÃO: Middleware para verificar se usuário é motorista
+const verifyDriver = async (req: Request, res: Response, next: Function) => {
+  const authReq = req as AuthenticatedRequest;
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ message: "Token de autenticação necessário" });
+    const userId = authReq.user?.uid;
+    if (!userId) {
+      return res.status(401).json({ message: "Usuário não autenticado" });
     }
 
-    const token = authHeader.replace('Bearer ', '');
-
-    // ✅✅✅ VALIDAR TOKEN COM FIREBASE ADMIN SDK
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    if (!decodedToken) {
-      return res.status(401).json({ message: "Token inválido" });
-    }
-
-    // ✅✅✅ BUSCAR USUÁRIO NO BANCO PELO UID DO FIREBASE
-    const userFromDb = await authStorage.getUserByFirebaseUid(decodedToken.uid);
+    // ✅ BUSCAR USUÁRIO NO BANCO PELO UID DO FIREBASE
+    const userFromDb = await authStorage.getUserByFirebaseUid(userId);
     if (!userFromDb) {
       return res.status(401).json({ message: "Usuário não encontrado" });
     }
@@ -41,33 +25,12 @@ const authenticate = async (req: Request, res: Response, next: NextFunction) => 
       return res.status(403).json({ message: "Acesso permitido apenas para motoristas" });
     }
 
-    // ✅ CORREÇÃO: Criar objeto AuthenticatedUser
-    const authenticatedUser: AuthenticatedUser = {
-      id: userFromDb.id,
-      uid: decodedToken.uid,
-      email: userFromDb.email || '',
-      userType: userFromDb.userType || 'client'
-    };
-
-    // Adicionar usuário autenticado ao request
-    (req as AuthenticatedRequest).user = authenticatedUser;
+    // ✅ Adicionar ID do usuário do banco ao request
+    authReq.user.id = userFromDb.id;
     next();
   } catch (error) {
-    console.error("Erro de autenticação:", error);
-    
-    // ✅ CORREÇÃO: Mensagens de erro mais específicas
-    let errorMessage = "Falha na autenticação";
-    if (error instanceof Error) {
-      if (error.message.includes('token expired')) {
-        errorMessage = "Token expirado";
-      } else if (error.message.includes('invalid token')) {
-        errorMessage = "Token inválido";
-      } else if (error.message.includes('user not found')) {
-        errorMessage = "Usuário não encontrado";
-      }
-    }
-    
-    return res.status(401).json({ message: errorMessage });
+    console.error("Erro na verificação de motorista:", error);
+    return res.status(500).json({ message: "Erro interno do servidor" });
   }
 };
 
@@ -107,7 +70,7 @@ async function verifyDriverAuthorization(bookingId: string, driverId: string): P
 }
 
 // Dashboard do motorista
-router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
+router.get('/dashboard', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const userId = authReq.user?.id;
@@ -168,7 +131,7 @@ router.get('/dashboard', authenticate, async (req: Request, res: Response) => {
 });
 
 // Aceitar solicitação de viagem
-router.post('/accept-ride/:requestId', authenticate, async (req: Request, res: Response) => {
+router.post('/accept-ride/:requestId', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const { requestId } = req.params;
@@ -213,7 +176,7 @@ router.post('/accept-ride/:requestId', authenticate, async (req: Request, res: R
 });
 
 // Recusar solicitação de viagem
-router.post('/reject-ride/:requestId', authenticate, async (req: Request, res: Response) => {
+router.post('/reject-ride/:requestId', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const { requestId } = req.params;
@@ -260,7 +223,7 @@ router.post('/reject-ride/:requestId', authenticate, async (req: Request, res: R
 });
 
 // Histórico de viagens do motorista
-router.get('/rides-history', authenticate, async (req: Request, res: Response) => {
+router.get('/rides-history', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const driverId = authReq.user?.id;
@@ -302,7 +265,7 @@ router.get('/rides-history', authenticate, async (req: Request, res: Response) =
 });
 
 // Ganhos do motorista
-router.get('/earnings', authenticate, async (req: Request, res: Response) => {
+router.get('/earnings', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const driverId = authReq.user?.id;
@@ -393,7 +356,7 @@ function generateWeeklyChart(bookings: any[]) {
 }
 
 // ✅ CORREÇÃO: Nova rota para estatísticas detalhadas
-router.get('/statistics', authenticate, async (req: Request, res: Response) => {
+router.get('/statistics', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
   try {
     const driverId = authReq.user?.id;

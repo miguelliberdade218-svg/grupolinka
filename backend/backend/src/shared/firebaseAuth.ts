@@ -92,8 +92,20 @@ export interface FirebaseTokenClaims {
 
 export interface AuthenticatedUser extends SharedAuthenticatedUser {}
 
+// ✅ INTERFACE PARA CAPACIDADES (AGORA EXPORTADA)
+export interface UserCapabilities {
+  canBookServices: boolean;
+  canDrive: boolean;
+  canManageHotels: boolean;
+  isAdmin: boolean;
+  driverVerificationStatus: string | null;
+  hotelManagerVerificationStatus: string | null;
+}
+
+// ✅ INTERFACE ESTENDIDA PARA INCLUIR CAPACIDADES (USANDO A INTERFACE ACIMA)
 export interface AuthenticatedRequest extends Request {
   user: AuthenticatedUser;
+  userCapabilities?: UserCapabilities;
 }
 
 export interface ApiError {
@@ -202,6 +214,9 @@ export const verifyFirebaseToken = async (
         ? new Date(userRecord.metadata.lastSignInTime)
         : null,
     };
+
+    // ✅ NOTA: userCapabilities será preenchido pelo capacityMiddleware depois
+    // authReq.userCapabilities ainda é undefined aqui
 
     console.log(`✅ Autenticação bem-sucedida: ${authReq.user.email} (ID: ${authReq.user.id})`);
     next();

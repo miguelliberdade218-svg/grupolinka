@@ -5,7 +5,8 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { users, driverDocuments } from "./shared/schema";
 import multer from "multer";
-import { AuthenticatedUser } from "./shared/types"; // ✅ IMPORTAÇÃO ADICIONADA
+import { AuthenticatedUser } from "./shared/types";
+import { fileUploadService } from './src/shared/fileUploadService';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ const upload = multer({
 // Get user profile
 router.get("/profile", verifyFirebaseToken, async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     if (!userId) {
       return res.status(401).json({ message: "User ID not found" });
     }
@@ -60,7 +61,7 @@ router.get("/profile", verifyFirebaseToken, async (req, res) => {
 // Update user profile
 router.put("/profile", verifyFirebaseToken, upload.single('profilePhoto'), async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     if (!userId) {
       return res.status(401).json({ message: "User ID not found" });
     }
@@ -75,8 +76,15 @@ router.put("/profile", verifyFirebaseToken, upload.single('profilePhoto'), async
 
     let profilePhotoUrl = null;
     if (req.file) {
-      // TODO: Upload to cloud storage (implement with object storage service)
-      profilePhotoUrl = `uploads/profile_${userId}_${Date.now()}.jpg`;
+      // ✅ Upload real usando fileUploadService e extrair apenas a URL
+      const uploadResult = await fileUploadService.uploadFile({
+        userId,
+        fileType: 'profile',
+        fileName: req.file.originalname,
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype
+      });
+      profilePhotoUrl = uploadResult.url;
     }
 
     const updateData: any = {
@@ -89,7 +97,7 @@ router.put("/profile", verifyFirebaseToken, upload.single('profilePhoto'), async
     if (phone) updateData.phone = phone;
     if (fullName) updateData.fullName = fullName;
     if (dateOfBirth) updateData.dateOfBirth = new Date(dateOfBirth);
-    if (profilePhotoUrl) updateData.profilePhotoUrl = profilePhotoUrl;
+    if (profilePhotoUrl) updateData.profileImageUrl = profilePhotoUrl;
 
     const updatedUser = await authStorage.upsertUser(updateData);
 
@@ -110,7 +118,7 @@ router.put("/profile", verifyFirebaseToken, upload.single('profilePhoto'), async
 // Switch user role (for multi-role users)
 router.post("/switch-role", verifyFirebaseToken, async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     const { newRole } = req.body;
 
     if (!userId) {
@@ -168,7 +176,7 @@ router.post("/verification", verifyFirebaseToken, upload.fields([
   { name: 'vehicleInsurance', maxCount: 1 }
 ]), async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     if (!userId) {
       return res.status(401).json({ message: "User ID not found" });
     }
@@ -193,9 +201,30 @@ router.post("/verification", verifyFirebaseToken, upload.fields([
       });
     }
 
-    // TODO: Upload files to cloud storage
-    const identityDocumentUrl = `uploads/identity_${userId}_${Date.now()}.jpg`;
-    const profilePhotoUrl = `uploads/profile_${userId}_${Date.now()}.jpg`;
+    // ✅ Upload real usando fileUploadService para cada arquivo e extrair apenas a URL
+    let identityDocumentUrl = null;
+    if (files.identityDocument && files.identityDocument[0]) {
+      const uploadResult = await fileUploadService.uploadFile({
+        userId,
+        fileType: 'document',
+        fileName: files.identityDocument[0].originalname,
+        buffer: files.identityDocument[0].buffer,
+        mimeType: files.identityDocument[0].mimetype
+      });
+      identityDocumentUrl = uploadResult.url;
+    }
+
+    let profilePhotoUrl = null;
+    if (files.profilePhoto && files.profilePhoto[0]) {
+      const uploadResult = await fileUploadService.uploadFile({
+        userId,
+        fileType: 'profile',
+        fileName: files.profilePhoto[0].originalname,
+        buffer: files.profilePhoto[0].buffer,
+        mimeType: files.profilePhoto[0].mimetype
+      });
+      profilePhotoUrl = uploadResult.url;
+    }
 
     // Update user verification status
     const userData = {
@@ -203,8 +232,8 @@ router.post("/verification", verifyFirebaseToken, upload.fields([
       identityDocumentUrl,
       identityDocumentType,
       documentNumber,
-      profilePhotoUrl,
-      verificationStatus: "in_review",
+      profileImageUrl: profilePhotoUrl,
+      verificationStatus: "in_review" as const,
       updatedAt: new Date()
     };
 
@@ -212,22 +241,56 @@ router.post("/verification", verifyFirebaseToken, upload.fields([
 
     // If user wants to be a driver, save vehicle documents
     if (files.vehicleRegistration && files.drivingLicense) {
-      const vehicleRegistrationUrl = `uploads/vehicle_reg_${userId}_${Date.now()}.jpg`;
-      const drivingLicenseUrl = `uploads/driving_license_${userId}_${Date.now()}.jpg`;
-      const vehicleInsuranceUrl = files.vehicleInsurance ? 
-        `uploads/vehicle_insurance_${userId}_${Date.now()}.jpg` : null;
+      let vehicleRegistrationUrl = null;
+      if (files.vehicleRegistration[0]) {
+        const uploadResult = await fileUploadService.uploadFile({
+          userId,
+          fileType: 'document',
+          fileName: files.vehicleRegistration[0].originalname,
+          buffer: files.vehicleRegistration[0].buffer,
+          mimeType: files.vehicleRegistration[0].mimetype
+        });
+        vehicleRegistrationUrl = uploadResult.url;
+      }
 
+      let drivingLicenseUrl = null;
+      if (files.drivingLicense[0]) {
+        const uploadResult = await fileUploadService.uploadFile({
+          userId,
+          fileType: 'document',
+          fileName: files.drivingLicense[0].originalname,
+          buffer: files.drivingLicense[0].buffer,
+          mimeType: files.drivingLicense[0].mimetype
+        });
+        drivingLicenseUrl = uploadResult.url;
+      }
+
+      let vehicleInsuranceUrl = null;
+      if (files.vehicleInsurance && files.vehicleInsurance[0]) {
+        const uploadResult = await fileUploadService.uploadFile({
+          userId,
+          fileType: 'document',
+          fileName: files.vehicleInsurance[0].originalname,
+          buffer: files.vehicleInsurance[0].buffer,
+          mimeType: files.vehicleInsurance[0].mimetype
+        });
+        vehicleInsuranceUrl = uploadResult.url;
+      }
+
+      // ✅ CORRIGIDO: Usar camelCase conforme o schema
       await db.insert(driverDocuments).values({
-        driverId: userId,
-        vehicleRegistrationUrl,
-        drivingLicenseUrl,
-        vehicleInsuranceUrl,
-        vehicleMake,
-        vehicleModel,
+        driverId: userId, // ✅ camelCase
+        vehicleRegistrationUrl: vehicleRegistrationUrl,
+        drivingLicenseUrl: drivingLicenseUrl,
+        vehicleInsuranceUrl: vehicleInsuranceUrl,
+        vehicleMake: vehicleMake,
+        vehicleModel: vehicleModel,
         vehicleYear: vehicleYear ? parseInt(vehicleYear) : null,
-        vehiclePlate,
-        vehicleColor,
-        isVerified: false
+        vehiclePlate: vehiclePlate,
+        vehicleColor: vehicleColor,
+        isVerified: false, // ✅ camelCase
+        createdAt: new Date(),
+        updatedAt: new Date()
       });
     }
 
@@ -249,7 +312,7 @@ router.post("/verification", verifyFirebaseToken, upload.fields([
 // Get verification status
 router.get("/verification-status", verifyFirebaseToken, async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     if (!userId) {
       return res.status(401).json({ message: "User ID not found" });
     }
@@ -283,7 +346,7 @@ router.get("/verification-status", verifyFirebaseToken, async (req, res) => {
       verificationBadge: user.verificationBadge,
       documents: {
         identityDocument: !!user.identityDocumentUrl,
-        profilePhoto: !!user.profilePhotoUrl
+        profilePhoto: !!user.profileImageUrl
       }
     };
 
@@ -327,7 +390,7 @@ router.get("/verification-status", verifyFirebaseToken, async (req, res) => {
 // Get user bookings and activity
 router.get("/activity", verifyFirebaseToken, async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     if (!userId) {
       return res.status(401).json({ message: "User ID not found" });
     }
@@ -374,7 +437,7 @@ router.get("/activity", verifyFirebaseToken, async (req, res) => {
 // Delete user account
 router.delete("/account", verifyFirebaseToken, async (req, res) => {
   try {
-    const userId = (req.user as AuthenticatedUser)?.uid; // ✅ CORRIGIDO
+    const userId = (req.user as AuthenticatedUser)?.uid;
     if (!userId) {
       return res.status(401).json({ message: "User ID not found" });
     }

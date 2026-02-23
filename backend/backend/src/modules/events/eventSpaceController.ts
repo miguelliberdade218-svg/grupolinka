@@ -1,10 +1,11 @@
-// src/modules/events/eventController.ts - VERSÃO FINAL CORRIGIDA
+// src/modules/events/eventController.ts - VERSÃO FINAL CORRIGIDA COM SISTEMA DE CAPACIDADES
 // ✅ TODAS AS CORREÇÕES APLICADAS:
 // ✅ 1. Campo allowed_event_types PRESERVADO na resposta
 // ✅ 2. Arrays NUNCA são undefined (sempre array vazio)
 // ✅ 3. Logs de debug para verificação
 // ✅ 4. TODOS OS ERROS DE TIPO CORRIGIDOS - DISTANCE_KM AGORA É unknown | number
 // ✅ 5. MIDDLEWARE PARA IGNORAR ROTAS DE FOTOS ADICIONADO NO TOPO
+// ✅ 6. SISTEMA DE CAPACIDADES INTEGRADO - Verificação canManageHotels
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
@@ -19,6 +20,9 @@ import { eq, and, sql, desc, inArray } from "drizzle-orm";
 
 // Middleware Firebase Auth
 import { verifyFirebaseToken } from "../../shared/firebaseAuth";
+
+// ✅ Importar authService para verificação de capacidades
+import { authService } from "../auth/services/authService.js";
 
 // Importações dos serviços
 import {
@@ -425,6 +429,8 @@ interface SearchResultResponseItem {
 }
 
 // ==================== MIDDLEWARES ====================
+
+// ✅ MIDDLEWARE CORRIGIDO COM VERIFICAÇÃO DE CAPACIDADE - requireHotelOwnerForHotelIdParam
 const requireHotelOwnerForHotelIdParam = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const hotelId = req.params.hotelId;
@@ -435,6 +441,26 @@ const requireHotelOwnerForHotelIdParam = async (req: Request, res: Response, nex
 
     const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
+
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE GESTOR DE HOTEL VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Usuário não encontrado' 
+      });
+    }
+
+    if (!user.canManageHotels || user.hotelManagerVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Usuário não possui capacidade de gestor de hotel verificada',
+        userCapabilities: {
+          canManageHotels: user.canManageHotels,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus
+        }
+      });
+    }
 
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
     if (hotel.host_id !== userId && !isAdmin) {
@@ -454,6 +480,7 @@ const requireHotelOwnerForHotelIdParam = async (req: Request, res: Response, nex
   }
 };
 
+// ✅ MIDDLEWARE CORRIGIDO COM VERIFICAÇÃO DE CAPACIDADE - requireHotelOwnerForSpace
 const requireHotelOwnerForSpace = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const spaceId = req.params.id || req.params.spaceId;
@@ -464,6 +491,26 @@ const requireHotelOwnerForSpace = async (req: Request, res: Response, next: Next
     if (!space) return res.status(404).json({ success: false, message: 'Espaço não encontrado' });
     const [hotel] = await db.select().from(hotels).where(eq(hotels.id, space.hotelId)).limit(1);
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
+    
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE GESTOR DE HOTEL VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Usuário não encontrado' 
+      });
+    }
+
+    if (!user.canManageHotels || user.hotelManagerVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Usuário não possui capacidade de gestor de hotel verificada',
+        userCapabilities: {
+          canManageHotels: user.canManageHotels,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus
+        }
+      });
+    }
     
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
     if (hotel.host_id !== userId && !isAdmin) {
@@ -477,6 +524,7 @@ const requireHotelOwnerForSpace = async (req: Request, res: Response, next: Next
   }
 };
 
+// ✅ MIDDLEWARE requireHotelOwnerForBooking - com verificação de capacidade
 const requireHotelOwnerForBooking = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const bookingId = req.params.bookingId;
@@ -489,6 +537,26 @@ const requireHotelOwnerForBooking = async (req: Request, res: Response, next: Ne
     if (!space) return res.status(404).json({ success: false, message: 'Espaço não encontrado' });
     const [hotel] = await db.select({ host_id: hotels.host_id }).from(hotels).where(eq(hotels.id, space.hotelId));
     if (!hotel) return res.status(404).json({ success: false, message: 'Hotel não encontrado' });
+    
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE GESTOR DE HOTEL VERIFICADA
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Usuário não encontrado' 
+      });
+    }
+
+    if (!user.canManageHotels || user.hotelManagerVerificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Usuário não possui capacidade de gestor de hotel verificada',
+        userCapabilities: {
+          canManageHotels: user.canManageHotels,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus
+        }
+      });
+    }
     
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
     if (hotel.host_id !== userId && !isAdmin) {
@@ -1188,6 +1256,26 @@ router.post('/spaces', verifyFirebaseToken, async (req: Request, res: Response) 
     const isAdmin = (req as any).user?.roles?.includes('admin') || false;
     if (hotel.host_id !== userId && !isAdmin) {
       return res.status(403).json({ success: false, message: 'Acesso negado' });
+    }
+    
+    // ✅ VERIFICAR SE USUÁRIO TEM CAPACIDADE DE GESTOR DE HOTEL
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Usuário não encontrado" 
+      });
+    }
+
+    if (!user.canManageHotels) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Usuário não possui capacidade de gestor de hotel",
+        userCapabilities: {
+          canManageHotels: user.canManageHotels,
+          hotelManagerVerificationStatus: user.hotelManagerVerificationStatus
+        }
+      });
     }
     
     const processedData = {
@@ -2236,9 +2324,11 @@ router.post('/bookings/:bookingId/payments/confirm',
 );
 
 // ======================= DASHBOARD DO HOTEL =======================
+// ✅ ENDPOINT GET /api/events/hotel/:hotelId/dashboard - ATUALIZADO COM CAPACIDADES
 router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, requireHotelOwnerForHotelIdParam, async (req: Request, res: Response) => {
   try {
     const hotelId = req.params.hotelId;
+    const userId = (req as any).user?.id;
     
     const summary = await getEventDashboardSummary(hotelId);
     const stats = await getEventStatsForHotel(hotelId);
@@ -2261,6 +2351,9 @@ router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, requireHotelOwnerFo
     
     const [hotel] = await db.select().from(hotels).where(eq(hotels.id, hotelId)).limit(1);
     
+    // ✅ Buscar informações de capacidade do usuário
+    const user = await authService.getUserById(userId);
+    
     res.json({
       success: true,
       data: {
@@ -2270,6 +2363,11 @@ router.get('/hotel/:hotelId/dashboard', verifyFirebaseToken, requireHotelOwnerFo
         spaces_overview: formattedSpaces,
         pending_approval_bookings: formattedPending,
         hotel: adaptToSnakeCase(hotel),
+        // ✅ ADICIONAR CAPACIDADES DO USUÁRIO
+        userCapabilities: {
+          canManageHotels: true, // Já verificado pelo middleware
+          hotelManagerVerificationStatus: user?.hotelManagerVerificationStatus || 'verified'
+        }
       },
     });
   } catch (error) {
