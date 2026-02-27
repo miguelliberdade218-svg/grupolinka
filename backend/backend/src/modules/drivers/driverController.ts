@@ -1,35 +1,46 @@
 import { Router, Request, Response } from "express";
-import { verifyFirebaseToken, type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
+import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
+import type { AuthenticatedRequest } from "../../../shared/types.js";
 import { storage } from "../../../storage";
 import { authStorage } from "../../shared/authStorage";
 
 const router = Router();
 
-// ✅ CORREÇÃO: Middleware para verificar se usuário é motorista
+// ✅ CORREÇÃO: Middleware para verificar se usuário é motorista com LOGGING MELHORADO
 const verifyDriver = async (req: Request, res: Response, next: Function) => {
   const authReq = req as AuthenticatedRequest;
   try {
-    const userId = authReq.user?.uid;
-    if (!userId) {
+    const firebaseUid = authReq.user?.uid;
+    
+    if (!firebaseUid) {
+      console.warn('⚠️ [DRIVER AUTH] Tentativa de acesso sem UID do Firebase');
       return res.status(401).json({ message: "Usuário não autenticado" });
     }
 
     // ✅ BUSCAR USUÁRIO NO BANCO PELO UID DO FIREBASE
-    const userFromDb = await authStorage.getUserByFirebaseUid(userId);
+    const userFromDb = await authStorage.getUserByFirebaseUid(firebaseUid);
+    
     if (!userFromDb) {
+      console.warn(`⚠️ [DRIVER AUTH] Usuário não encontrado para UID: ${firebaseUid}`);
       return res.status(401).json({ message: "Usuário não encontrado" });
     }
 
     // ✅ CORREÇÃO: Verificar se é motorista
     if (userFromDb.userType !== 'driver') {
+      console.warn(`⚠️ [DRIVER AUTH] Acesso negado - userType: ${userFromDb.userType} (esperado: driver) para ${firebaseUid}`);
       return res.status(403).json({ message: "Acesso permitido apenas para motoristas" });
     }
 
-    // ✅ Adicionar ID do usuário do banco ao request
-    authReq.user.id = userFromDb.id;
+    // ✅ Logging de acesso bem-sucedido
+    console.log(`✅ [DRIVER AUTH] Acesso autorizado: ${userFromDb.email} (${userFromDb.id})`);
+
+    // ✅ CORREÇÃO: Adicionar ID do usuário do banco ao request (com null check)
+    if (authReq.user) {
+      authReq.user.id = userFromDb.id;
+    }
     next();
   } catch (error) {
-    console.error("Erro na verificação de motorista:", error);
+    console.error("❌ [DRIVER AUTH] Erro na verificação de motorista:", error);
     return res.status(500).json({ message: "Erro interno do servidor" });
   }
 };
@@ -69,20 +80,28 @@ async function verifyDriverAuthorization(bookingId: string, driverId: string): P
   }
 }
 
-// Dashboard do motorista
+// Dashboard do motorista com LOGGING MELHORADO
 router.get('/dashboard', verifyFirebaseToken, verifyDriver, async (req: Request, res: Response) => {
   const authReq = req as AuthenticatedRequest;
+  const dashboardStart = Date.now();
+  
   try {
     const userId = authReq.user?.id;
+    const driverEmail = authReq.user?.email;
+    
     if (!userId) {
+      console.warn('⚠️ [DASHBOARD] User ID não encontrado no request');
       return res.status(401).json({ message: "User ID not found" });
     }
+
+    console.log(`📊 [DASHBOARD] Carregando dashboard para motorista: ${driverEmail} (${userId})`);
 
     // ✅ CORREÇÃO: Buscar dados com filtros no banco para melhor performance
     const todayStart = getDateFilters('today');
     
     // Obter estatísticas reais do motorista
     const driverStats = await storage.auth.getDriverStatistics(userId);
+    console.log(`📈 [DASHBOARD] Estatísticas obtidas para ${userId}`);
     
     // ✅ CORREÇÃO: Buscar rides e bookings do dia diretamente do banco
     const todayRides = await storage.ride.getRidesByDriver(userId);
@@ -120,12 +139,16 @@ router.get('/dashboard', verifyFirebaseToken, verifyDriver, async (req: Request,
       completedToday: completedTodayBookings.slice(0, 5) // Last 5 completed today
     };
 
+    const executionTime = Date.now() - dashboardStart;
+    console.log(`✅ [DASHBOARD] Dashboard carregado com sucesso em ${executionTime}ms para ${driverEmail}`);
+    
     res.json({
       success: true,
       stats
     });
   } catch (error) {
-    console.error("Driver dashboard error:", error);
+    const executionTime = Date.now() - dashboardStart;
+    console.error(`❌ [DASHBOARD] Erro ao carregar dashboard após ${executionTime}ms:`, error);
     res.status(500).json({ message: "Erro ao carregar dashboard" });
   }
 });

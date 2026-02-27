@@ -106,7 +106,7 @@ export const useAuth = (): UseAuthReturn => {
             const token = await firebaseUser.getIdToken();
             
             // 🔥 SALVAR NO LOCALSTORAGE PARA PERSISTÊNCIA
-            localStorage.setItem('token', token);
+            localStorage.setItem('firebaseToken', token);
             localStorage.setItem('user', JSON.stringify({
               id: firebaseUser.uid,
               email: firebaseUser.email,
@@ -384,7 +384,7 @@ export const useAuth = (): UseAuthReturn => {
 // ✅ FUNÇÃO AUXILIAR: Para usar em fetch requests
 export const getAuthToken = (): string | null => {
   // Tenta pegar do localStorage primeiro (para componentes não-hook)
-  return localStorage.getItem('token');
+  return localStorage.getItem('firebaseToken');
 };
 
 // ✅ FUNÇÃO AUXILIAR: Para usar com useAuth hook

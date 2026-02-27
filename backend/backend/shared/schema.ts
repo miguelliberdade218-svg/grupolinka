@@ -1,19 +1,7 @@
-// shared/schema.ts - VERSÃO COMPLETA FINAL CORRIGIDA (25/01/2026) - SEM POSTGIS
-// REMOVIDO: hotels_base, legacyRoomTypes, accommodations, hotelRooms, hotelFinancialReports (tabelas antigas)
-// CORRIGIDO: Todas referências FK para hotels.id
-// REMOVIDO: geometry - usando lat/lng numéricos e text para geom
-// Nada de rides, vehicles, drivers foi modificado
-// CORRIGIDO: eventSpaces - removidos campos obsoletos de hora e adicionados novos campos
-// CORRIGIDO: Removido método .refine() que não existe no Drizzle
-// CORRIGIDO: Adicionado campo cateringRequired em eventBookings
-// ✅ ADICIONADO: Campo location_id na tabela hotels para referência a mozambique_locations
-// ✅ ADICIONADO: Campo pricePerDay na tabela eventSpaces (compatibilidade com frontend)
-// ✅ ADICIONADO: Tabela roomTypePhotos para fotos de tipos de quarto
-// ✅ ADICIONADO: Tabela eventSpacePhotos para fotos de espaços para eventos
-// ✅ ADICIONADO: Sistema completo de capacidades (canBookServices, canDrive, canManageHotels, isAdmin)
-// ✅ ADICIONADO: accountTypeEnum e campos company/individual
-// ✅ ADICIONADO: Tabela userCapacityDocuments para documentos de verificação
-// ✅ ADICIONADO: Novos schemas Zod para sistema de capacidades
+// shared/schema.ts - VERSÃO COMPLETA FINAL (24/02/2026)
+// ✅ INCLUI TODAS AS TABELAS DE CAPACIDADES E GESTÃO DE PAGAMENTOS
+// ✅ INCLUI TABELAS DE RECLAMAÇÕES E VALIDAÇÕES
+// ✅ MANTÉM TODO O CÓDIGO EXISTENTE INTACTO
 
 import { sql } from "drizzle-orm";
 import {
@@ -32,7 +20,7 @@ export const statusEnum = pgEnum("status", [
 export const serviceTypeEnum = pgEnum("service_type", ['ride', 'accommodation', 'event', 'hotel']);
 export const userTypeEnum = pgEnum("user_type", ['client', 'driver', 'host', 'admin']);
 export const partnershipLevelEnum = pgEnum("partnership_level", ['bronze', 'silver', 'gold', 'platinum']);
-export const verificationStatusEnum = pgEnum("verification_status", ['pending', 'in_review', 'verified', 'rejected']);
+export const verificationStatusEnum = pgEnum("verification_status", ['pending', 'in_review', 'verified', 'rejected', 'suspended']);
 export const paymentMethodEnum = pgEnum("payment_method", ['card', 'mpesa', 'bank', 'mobile_money', 'bank_transfer', 'pending']);
 export const rideTypeEnum = pgEnum("ride_type", ['regular', 'premium', 'shared', 'express']);
 export const vehicleTypeEnum = pgEnum("vehicle_type", ['economy', 'comfort', 'luxury', 'family', 'premium', 'van', 'suv']);
@@ -53,10 +41,24 @@ export const roomStatusEnum = pgEnum("room_status", [
 export const reportReasonEnum = pgEnum("report_reason", ['inappropriate', 'fake', 'spam', 'offensive', 'other']);
 export const reportStatusEnum = pgEnum("report_status", ['pending', 'reviewed', 'resolved', 'dismissed']);
 
-// ==================== ENUMS PARA SISTEMA DE CAPACIDADES ====================
+// ==================== ENUMS PARA SISTEMA DE CAPACIDADES E PAGAMENTOS ====================
 export const accountTypeEnum = pgEnum("account_type", ['individual', 'company']);
+export const capabilityTypeEnum = pgEnum("capability_type", ['driver', 'hotel_manager', 'admin', 'book_services']);
+export const providerTypeEnum = pgEnum("provider_type", ['driver', 'hotel', 'event_space']);
+export const payoutStatusEnum = pgEnum("payout_status", ['pending', 'processing', 'paid', 'failed']);
 
-// ==================== TABELAS BASE ====================
+// ==================== ENUMS PARA RECLAMAÇÕES ====================
+export const complaintTypeEnum = pgEnum("complaint_type", [
+  'client_to_provider', 'provider_to_client', 'platform_issue'
+]);
+export const complaintStatusEnum = pgEnum("complaint_status", [
+  'new', 'investigating', 'resolved', 'dismissed'
+]);
+export const complaintPriorityEnum = pgEnum("complaint_priority", [
+  'low', 'medium', 'high', 'urgent'
+]);
+
+// ==================== TABELAS BASE (EXISTENTES) ====================
 export const sessions = pgTable(
   "sessions",
   {
@@ -79,6 +81,8 @@ export const users = pgTable("users", {
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
   phone: text("phone").unique(),
+  // ✅ NOVO (25/02/2026) - Firebase UID sincronizado automaticamente
+  firebase_uid: varchar("firebase_uid", { length: 255 }).unique(),
   userType: userTypeEnum("userType").default('client'),
   roles: text("roles").array().default(sql`ARRAY[]::text[]`),
   canOfferServices: boolean("canOfferServices").default(false),
@@ -96,7 +100,7 @@ export const users = pgTable("users", {
   verificationBadge: text("verificationBadge"),
   badgeEarnedDate: timestamp("badgeEarnedDate"),
   
-  // ✅ SISTEMA DE CAPACIDADES (NOVO)
+  // SISTEMA DE CAPACIDADES
   canBookServices: boolean("can_book_services").default(true),
   canDrive: boolean("can_drive").default(false),
   canManageHotels: boolean("can_manage_hotels").default(false),
@@ -128,19 +132,135 @@ export const users = pgTable("users", {
   
   capabilitiesUpdatedAt: timestamp("capabilities_updated_at"),
   lastCapacityActivation: timestamp("last_capacity_activation"),
+  
+  // NOVAS COLUNAS PARA CLIENTES (24/02/2026)
+  clientVerificationStatus: verificationStatusEnum("client_verification_status").default('verified'),
+  clientVerificationNotes: text("client_verification_notes"),
+  clientVerifiedAt: timestamp("client_verified_at"),
+  clientSuspendedAt: timestamp("client_suspended_at"),
+  clientSuspensionReason: text("client_suspension_reason"),
+  clientSuspensionEndDate: date("client_suspension_end_date"),
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   phoneIdx: index("users_phone_idx").on(table.phone),
+  firebaseUidIdx: index("users_firebase_uid_idx").on(table.firebase_uid),
   userTypeIdx: index("users_user_type_idx").on(table.userType),
-  // ✅ ÍNDICES PARA CAPACIDADES
   canBookServicesIdx: index("users_can_book_services_idx").on(table.canBookServices),
   canDriveIdx: index("users_can_drive_idx").on(table.canDrive),
   canManageHotelsIdx: index("users_can_manage_hotels_idx").on(table.canManageHotels),
   isAdminIdx: index("users_is_admin_idx").on(table.isAdmin),
-  
   driverVerificationStatusIdx: index("users_driver_verification_status_idx").on(table.driverVerificationStatus),
   hotelManagerVerificationStatusIdx: index("users_hotel_manager_verification_status_idx").on(table.hotelManagerVerificationStatus),
   accountTypeIdx: index("users_account_type_idx").on(table.accountType),
+  clientVerificationStatusIdx: index("users_client_verification_status_idx").on(table.clientVerificationStatus),
+}));
+
+// ==================== NOVAS TABELAS DE PERFIS ESPECIALIZADOS (25/02/2026) ====================
+
+// Tabela de perfis de motoristas
+export const driverProfiles = pgTable("driver_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  license_number: varchar("license_number", { length: 50 }).notNull(),
+  license_country: varchar("license_country", { length: 50 }).default('Moçambique'),
+  license_expiry: date("license_expiry").notNull(),
+  vehicle_type: varchar("vehicle_type", { length: 100 }),
+  years_experience: integer("years_experience").default(0),
+  verification_status: text("verification_status").default('pending'),
+  documents: jsonb("documents"),
+  notes: text("notes"),
+  rejected_reason: text("rejected_reason"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  user_idx: index("driver_profiles_user_id_idx").on(table.user_id),
+  verification_idx: index("driver_profiles_verification_status_idx").on(table.verification_status),
+  license_idx: index("driver_profiles_license_number_idx").on(table.license_number),
+}));
+
+// Tabela de perfis de gestores de hotéis
+export const hotelManagerProfiles = pgTable("hotel_manager_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  business_tax_id: varchar("business_tax_id", { length: 50 }).notNull().unique(),
+  business_registration_number: varchar("business_registration_number", { length: 100 }),
+  business_legal_name: varchar("business_legal_name", { length: 255 }).notNull(),
+  business_address: text("business_address"),
+  business_phone: varchar("business_phone", { length: 50 }),
+  business_email: varchar("business_email", { length: 255 }),
+  verification_status: text("verification_status").default('pending'),
+  documents: jsonb("documents"),
+  notes: text("notes"),
+  rejected_reason: text("rejected_reason"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  user_idx: index("hotel_manager_profiles_user_id_idx").on(table.user_id),
+  verification_idx: index("hotel_manager_profiles_verification_status_idx").on(table.verification_status),
+  tax_idx: index("hotel_manager_profiles_business_tax_id_idx").on(table.business_tax_id),
+}));
+
+// Tabela de perfis de gestores de espaços para eventos
+export const eventSpaceManagerProfiles = pgTable("event_space_manager_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  business_tax_id: varchar("business_tax_id", { length: 50 }).notNull().unique(),
+  business_registration_number: varchar("business_registration_number", { length: 100 }),
+  business_legal_name: varchar("business_legal_name", { length: 255 }).notNull(),
+  verification_status: text("verification_status").default('pending'),
+  documents: jsonb("documents"),
+  notes: text("notes"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  user_idx: index("event_space_manager_profiles_user_id_idx").on(table.user_id),
+  verification_idx: index("event_space_manager_profiles_verification_status_idx").on(table.verification_status),
+}));
+
+// Tabela de rastreamento de documentos de verificação
+export const verificationDocuments = pgTable("verification_documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  profile_type: text("profile_type").notNull(),
+  document_type: text("document_type").notNull(),
+  document_url: text("document_url").notNull(),
+  document_number: varchar("document_number", { length: 100 }),
+  expiry_date: date("expiry_date"),
+  verification_status: text("verification_status").default('pending'),
+  reviewer_id: text("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+  review_notes: text("review_notes"),
+  reviewed_at: timestamp("reviewed_at"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  user_idx: index("verification_documents_user_id_idx").on(table.user_id),
+  profile_type_idx: index("verification_documents_profile_type_idx").on(table.profile_type),
+  verification_idx: index("verification_documents_verification_status_idx").on(table.verification_status),
+}));
+
+// Tabela de auditoria de mudanças nas capacidades
+export const capabilityChangesLog = pgTable("capability_changes_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  capability: text("capability").notNull(),
+  old_value: boolean("old_value"),
+  new_value: boolean("new_value"),
+  reason: text("reason"),
+  changed_by: text("changed_by").references(() => users.id, { onDelete: "set null" }),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  user_idx: index("capability_changes_log_user_id_idx").on(table.user_id),
+  created_at_idx: index("capability_changes_log_created_at_idx").on(table.created_at),
+}));
+
+// ==================== TABELA DE MAPEAMENTO FIREBASE (25/02/2026) ====================
+// Sincroniza Firebase UID com users.firebase_uid
+export const firebase_user_mapping = pgTable("firebase_user_mapping", {
+  firebase_uid: varchar("firebase_uid", { length: 255 }).primaryKey(),
+  user_id: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  user_idx: index("firebase_user_mapping_user_id_idx").on(table.user_id),
 }));
 
 // ==================== TABELA DE DOCUMENTOS DE CAPACIDADE ====================
@@ -156,133 +276,269 @@ export const userCapacityDocuments = pgTable("user_capacity_documents", {
   verifiedBy: text("verified_by").references(() => users.id),
   verifiedAt: timestamp("verified_at"),
   verificationNotes: text("verification_notes"),
+  reviewNotes: text("review_notes"),
+  reviewedBy: text("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => ({
   userIdx: index("user_capacity_documents_user_idx").on(table.userId),
   capacityIdx: index("user_capacity_documents_capacity_idx").on(table.capacity),
+  statusIdx: index("user_capacity_documents_status_idx").on(table.isVerified, table.capacity),
 }));
 
-// ==================== TABELAS DE REVIEWS DE HOTEL (SISTEMA COMPLETO) ====================
-export const hotelReviews = pgTable("hotelReviews", {
+// ==================== TABELAS PARA SISTEMA DE CAPACIDADES ====================
+
+// Tabela de histórico de capabilities
+export const capabilityAuditLog = pgTable("capability_audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),
-  bookingId: uuid("bookingId").references(() => hotelBookings.id, { onDelete: "cascade" }).notNull(),
-  hotelId: uuid("hotelId").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
-  userId: text("userId").notNull(),
-  cleanlinessRating: integer("cleanlinessRating").notNull(),
-  comfortRating: integer("comfortRating").notNull(),
-  locationRating: integer("locationRating").notNull(),
-  facilitiesRating: integer("facilitiesRating").notNull(),
-  staffRating: integer("staffRating").notNull(),
-  valueRating: integer("valueRating").notNull(),
-  title: varchar("title", { length: 200 }).notNull(),
-  comment: text("comment").notNull(),
-  pros: text("pros"),
-  cons: text("cons"),
-  overallRating: numeric("overallRating", { precision: 3, scale: 2 }).default(sql`(
-    ("cleanlinessRating" + "comfortRating" + "locationRating" + "facilitiesRating" + "staffRating" + "valueRating")::numeric / 6.0
-  )`),
-  isVerified: boolean("isVerified").default(true),
-  isPublished: boolean("isPublished").default(true),
-  helpfulVotes: integer("helpfulVotes").default(0),
-  reportCount: integer("reportCount").default(0),
-  hostResponse: text("hostResponse"),
-  hostResponseAt: timestamp("hostResponseAt"),
-  hostRespondedBy: text("hostRespondedBy"),
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow(),
+  user_id: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  capability_type: capabilityTypeEnum("capability_type").notNull(),
+  old_value: boolean("old_value"),
+  new_value: boolean("new_value"),
+  old_status: verificationStatusEnum("old_status"),
+  new_status: verificationStatusEnum("new_status"),
+  changed_by: text("changed_by").references(() => users.id),
+  reason: text("reason"),
+  metadata: jsonb("metadata").default({}),
+  created_at: timestamp("created_at").defaultNow(),
 }, (table) => ({
-  hotelIdx: index("hotel_reviews_hotel_id_idx").on(table.hotelId),
-  bookingIdx: index("hotel_reviews_booking_id_idx").on(table.bookingId),
-  ratingIdx: index("hotel_reviews_overall_rating_idx").on(table.overallRating),
-  createdAtIdx: index("hotel_reviews_created_at_idx").on(table.createdAt),
-  bookingIdUnique: uniqueIndex("hotel_reviews_booking_id_key").on(table.bookingId),
+  user_idx: index("capability_audit_log_user_idx").on(table.user_id),
+  changed_by_idx: index("capability_audit_log_changed_by_idx").on(table.changed_by),
+  created_at_idx: index("capability_audit_log_created_at_idx").on(table.created_at),
 }));
 
-export const reviewHelpfulVotes = pgTable("reviewHelpfulVotes", {
+// ==================== TABELAS PARA SISTEMA DE PAGAMENTOS ====================
+
+// Configuração de comissões (12% editável)
+export const platformFeeConfig = pgTable("platform_fee_config", {
   id: uuid("id").primaryKey().defaultRandom(),
-  reviewId: uuid("review_id").references(() => hotelReviews.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull(),
-  isHelpful: boolean("is_helpful").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
+  service_type: varchar("service_type", { length: 20 }).notNull(), // 'ride', 'hotel', 'event'
+  fee_percentage: numeric("fee_percentage", { precision: 5, scale: 2 }).notNull().default("12.00"),
+  min_fee_amount: numeric("min_fee_amount", { precision: 10, scale: 2 }).default("0"),
+  max_fee_amount: numeric("max_fee_amount", { precision: 10, scale: 2 }),
+  is_active: boolean("is_active").default(true),
+  effective_from: date("effective_from").notNull().default(sql`CURRENT_DATE`),
+  effective_to: date("effective_to"),
+  created_by: text("created_by").references(() => users.id),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  reviewIdx: index("review_helpful_votes_review_id_idx").on(table.reviewId),
-  userReviewUnique: uniqueIndex("review_helpful_votes_review_user_unique").on(table.reviewId, table.userId),
+  service_type_idx: index("platform_fee_config_service_type_idx").on(table.service_type),
+  active_idx: index("platform_fee_config_active_idx").on(table.is_active),
 }));
 
-export const reviewReports = pgTable("reviewReports", {
+// Entidades únicas por usuário
+export const userEntities = pgTable("user_entities", {
   id: uuid("id").primaryKey().defaultRandom(),
-  reviewId: uuid("review_id").references(() => hotelReviews.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull(),
-  reason: reportReasonEnum("reason"),
-  status: reportStatusEnum("status").default('pending'),
-  details: text("details"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  user_id: text("user_id").notNull().unique().references(() => users.id),
+  entity_code: varchar("entity_code", { length: 20 }).notNull().unique(),
+  entity_prefix: varchar("entity_prefix", { length: 5 }).notNull(),
+  default_bank_id: uuid("default_bank_id"),
+  is_active: boolean("is_active").default(true),
+  verified_at: timestamp("verified_at"),
+  verified_by: text("verified_by").references(() => users.id),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  reviewIdx: index("review_reports_review_id_idx").on(table.reviewId),
-  statusIdx: index("review_reports_status_idx").on(table.status),
+  user_idx: index("user_entities_user_idx").on(table.user_id),
+  entity_code_idx: index("user_entities_entity_code_idx").on(table.entity_code),
 }));
 
-// ==================== TABELAS DE REVIEWS DE EVENT SPACES ====================
-export const eventSpaceReviews = pgTable("eventSpaceReviews", {
+// Contas bancárias dos usuários
+export const userBankAccounts = pgTable("user_bank_accounts", {
   id: uuid("id").primaryKey().defaultRandom(),
-  bookingId: uuid("bookingId").references(() => eventBookings.id, { onDelete: "cascade" }).notNull(),
-  eventSpaceId: uuid("eventSpaceId").references(() => eventSpaces.id, { onDelete: "cascade" }).notNull(),
-  userId: text("userId").notNull(),
-  venueRating: integer("venueRating").notNull(),
-  facilitiesRating: integer("facilitiesRating").notNull(),
-  locationRating: integer("locationRating").notNull(),
-  servicesRating: integer("servicesRating").notNull(),
-  staffRating: integer("staffRating").notNull(),
-  valueRating: integer("valueRating").notNull(),
-  title: varchar("title", { length: 200 }).notNull(),
-  comment: text("comment").notNull(),
-  pros: text("pros"),
-  cons: text("cons"),
-  overallRating: numeric("overallRating", { precision: 3, scale: 2 }).default(sql`(
-    ("venueRating" + "facilitiesRating" + "locationRating" + "servicesRating" + "staffRating" + "valueRating")::numeric / 6.0
-  )`),
-  isVerified: boolean("isVerified").default(true),
-  isPublished: boolean("isPublished").default(true),
-  helpfulVotes: integer("helpfulVotes").default(0),
-  reportCount: integer("reportCount").default(0),
-  organizerResponse: text("organizerResponse"),
-  organizerResponseAt: timestamp("organizerResponseAt"),
-  organizerRespondedBy: text("organizerRespondedBy"),
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow(),
+  user_id: text("user_id").notNull().references(() => users.id),
+  entity_id: uuid("entity_id").references(() => userEntities.id, { onDelete: "cascade" }),
+  account_type: varchar("account_type", { length: 20 }).notNull(), // 'bank', 'mpesa', 'emola'
+  bank_name: varchar("bank_name", { length: 100 }),
+  account_number: varchar("account_number", { length: 50 }),
+  account_holder: varchar("account_holder", { length: 200 }),
+  iban: varchar("iban", { length: 50 }),
+  swift: varchar("swift", { length: 20 }),
+  mpesa_number: varchar("mpesa_number", { length: 20 }),
+  is_default: boolean("is_default").default(false),
+  is_active: boolean("is_active").default(true),
+  verified_at: timestamp("verified_at"),
+  verified_by: text("verified_by").references(() => users.id),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  eventSpaceIdx: index("event_space_reviews_event_space_id_idx").on(table.eventSpaceId),
-  bookingIdx: index("event_space_reviews_booking_id_idx").on(table.bookingId),
-  ratingIdx: index("event_space_reviews_overall_rating_idx").on(table.overallRating),
-  createdAtIdx: index("event_space_reviews_created_at_idx").on(table.createdAt),
-  bookingIdUnique: uniqueIndex("event_space_reviews_booking_id_key").on(table.bookingId),
+  user_idx: index("user_bank_accounts_user_idx").on(table.user_id),
+  entity_idx: index("user_bank_accounts_entity_idx").on(table.entity_id),
+  default_idx: index("user_bank_accounts_default_idx").on(table.user_id, table.is_default),
 }));
 
-export const eventSpaceReviewHelpfulVotes = pgTable("eventSpaceReviewHelpfulVotes", {
+// Referências de pagamento
+export const paymentReferences = pgTable("payment_references", {
   id: uuid("id").primaryKey().defaultRandom(),
-  reviewId: uuid("review_id").references(() => eventSpaceReviews.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull(),
-  isHelpful: boolean("is_helpful").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
+  reference_number: varchar("reference_number", { length: 50 }).notNull().unique(),
+  booking_id: uuid("booking_id").notNull(),
+  booking_type: varchar("booking_type", { length: 20 }).notNull(),
+  provider_user_id: text("provider_user_id").notNull().references(() => users.id),
+  provider_entity_id: uuid("provider_entity_id").references(() => userEntities.id),
+  provider_entity_code: varchar("provider_entity_code", { length: 20 }),
+  client_user_id: text("client_user_id").references(() => users.id),
+  gross_amount: numeric("gross_amount", { precision: 10, scale: 2 }).notNull(),
+  fee_percentage: numeric("fee_percentage", { precision: 5, scale: 2 }).notNull().default("12.00"),
+  fee_amount: numeric("fee_amount", { precision: 10, scale: 2 }).default(sql`gross_amount * (fee_percentage / 100)`),
+  net_amount: numeric("net_amount", { precision: 10, scale: 2 }).default(sql`gross_amount - (gross_amount * (fee_percentage / 100))`),
+  service_date: date("service_date").notNull(),
+  due_date: date("due_date").default(sql`service_date + INTERVAL '30 days'`),
+  status: varchar("status", { length: 20 }).default('pending'),
+  paid_at: timestamp("paid_at"),
+  payment_method: varchar("payment_method", { length: 50 }),
+  payment_proof_url: text("payment_proof_url"),
+  confirmed_by: text("confirmed_by").references(() => users.id),
+  notes: text("notes"),
+  metadata: jsonb("metadata").default({}),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  reviewIdx: index("event_space_helpful_votes_review_id_idx").on(table.reviewId),
-  userReviewUnique: uniqueIndex("event_space_helpful_votes_review_user_unique").on(table.reviewId, table.userId),
+  reference_idx: index("payment_references_reference_idx").on(table.reference_number),
+  booking_idx: index("payment_references_booking_idx").on(table.booking_id, table.booking_type),
+  provider_idx: index("payment_references_provider_idx").on(table.provider_user_id),
+  status_idx: index("payment_references_status_idx").on(table.status),
+  due_date_idx: index("payment_references_due_date_idx").on(table.due_date).where(sql`status = 'pending'`),
 }));
 
-export const eventSpaceReviewReports = pgTable("eventSpaceReviewReports", {
+// Payouts para provedores
+export const providerPayouts = pgTable("provider_payouts", {
   id: uuid("id").primaryKey().defaultRandom(),
-  reviewId: uuid("review_id").references(() => eventSpaceReviews.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull(),
-  reason: reportReasonEnum("reason"),
-  status: reportStatusEnum("status").default('pending'),
-  details: text("details"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  payout_reference: varchar("payout_reference", { length: 50 }).notNull().unique(),
+  provider_id: text("provider_id").notNull().references(() => users.id),
+  provider_type: providerTypeEnum("provider_type").notNull(),
+  period_start: date("period_start").notNull(),
+  period_end: date("period_end").notNull(),
+  total_gross: numeric("total_gross", { precision: 10, scale: 2 }).notNull(),
+  total_fees: numeric("total_fees", { precision: 10, scale: 2 }).notNull(),
+  total_net: numeric("total_net", { precision: 10, scale: 2 }).notNull(),
+  status: payoutStatusEnum("status").default('pending'),
+  payment_method: varchar("payment_method", { length: 50 }),
+  payment_reference: varchar("payment_reference", { length: 100 }),
+  paid_at: timestamp("paid_at"),
+  confirmed_by: text("confirmed_by").references(() => users.id),
+  notes: text("notes"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
 }, (table) => ({
-  reviewIdx: index("event_space_review_reports_review_id_idx").on(table.reviewId),
-  statusIdx: index("event_space_review_reports_status_idx").on(table.status),
+  provider_idx: index("provider_payouts_provider_idx").on(table.provider_id, table.provider_type),
+  period_idx: index("provider_payouts_period_idx").on(table.period_start, table.period_end),
+  status_idx: index("provider_payouts_status_idx").on(table.status),
+}));
+
+// Relação entre payouts e referências
+export const payoutReferences = pgTable("payout_references", {
+  payout_id: uuid("payout_id").references(() => providerPayouts.id, { onDelete: "cascade" }).notNull(),
+  payment_reference_id: uuid("payment_reference_id").references(() => paymentReferences.id).notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  allocated_at: timestamp("allocated_at").defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.payout_id, table.payment_reference_id] }),
+  payout_idx: index("payout_references_payout_idx").on(table.payout_id),
+  reference_idx: index("payout_references_reference_idx").on(table.payment_reference_id),
+}));
+
+// Sequências para referências
+export const paymentSequences = pgTable("payment_sequences", {
+  provider_id: text("provider_id").notNull(),
+  provider_type: varchar("provider_type", { length: 20 }).notNull(),
+  financial_year: integer("financial_year").notNull(),
+  last_sequence: integer("last_sequence").default(0),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.provider_id, table.provider_type, table.financial_year] }),
+}));
+
+// Validações de comprovativos de pagamento
+export const paymentProofValidations = pgTable("payment_proof_validations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  payment_id: uuid("payment_id").notNull(),
+  validator_id: text("validator_id").references(() => users.id),
+  validation_status: varchar("validation_status", { length: 20 }).notNull().default('pending'),
+  validation_notes: text("validation_notes"),
+  rejection_reason: text("rejection_reason"),
+  validated_at: timestamp("validated_at"),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  payment_idx: index("payment_proof_validations_payment_idx").on(table.payment_id),
+  status_idx: index("payment_proof_validations_status_idx").on(table.validation_status),
+}));
+
+// ==================== TABELAS DE RECLAMAÇÕES/DENÚNCIAS ====================
+
+export const complaints = pgTable("complaints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reporter_id: text("reporter_id").references(() => users.id).notNull(),
+  reported_id: text("reported_id").references(() => users.id),
+  complaint_type: complaintTypeEnum("complaint_type").notNull(),
+  category: varchar("category", { length: 100 }).notNull(),
+  booking_id: uuid("booking_id"),
+  booking_type: varchar("booking_type", { length: 20 }),
+  description: text("description").notNull(),
+  status: complaintStatusEnum("status").default('new'),
+  priority: complaintPriorityEnum("priority").default('medium'),
+  assigned_admin_id: text("assigned_admin_id").references(() => users.id),
+  resolution: text("resolution"),
+  resolved_at: timestamp("resolved_at"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  reporter_idx: index("complaints_reporter_idx").on(table.reporter_id),
+  reported_idx: index("complaints_reported_idx").on(table.reported_id),
+  status_idx: index("complaints_status_idx").on(table.status),
+  priority_idx: index("complaints_priority_idx").on(table.priority),
+  assigned_idx: index("complaints_assigned_idx").on(table.assigned_admin_id),
+}));
+
+export const complaintAttachments = pgTable("complaint_attachments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  complaint_id: uuid("complaint_id").references(() => complaints.id, { onDelete: "cascade" }).notNull(),
+  file_url: text("file_url").notNull(),
+  file_type: varchar("file_type", { length: 50 }),
+  uploaded_by: text("uploaded_by").references(() => users.id),
+  created_at: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  complaint_idx: index("complaint_attachments_complaint_idx").on(table.complaint_id),
+}));
+
+// ==================== TABELAS DE FATURAS DE PROVEDORES ====================
+
+export const providerInvoices = pgTable("provider_invoices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  invoice_number: varchar("invoice_number", { length: 50 }).unique().notNull(),
+  provider_id: text("provider_id").notNull().references(() => users.id),
+  provider_type: providerTypeEnum("provider_type").notNull(),
+  period_start: date("period_start").notNull(),
+  period_end: date("period_end").notNull(),
+  total_gross_amount: numeric("total_gross_amount", { precision: 10, scale: 2 }).notNull(),
+  platform_fee: numeric("platform_fee", { precision: 10, scale: 2 }).notNull(),
+  net_amount: numeric("net_amount", { precision: 10, scale: 2 }).notNull(),
+  status: varchar("status", { length: 20 }).default('pending'),
+  issued_date: date("issued_date"),
+  due_date: date("due_date"),
+  paid_date: date("paid_date"),
+  payment_method: varchar("payment_method", { length: 50 }),
+  payment_reference: varchar("payment_reference", { length: 100 }),
+  notes: text("notes"),
+  created_at: timestamp("created_at").defaultNow(),
+  updated_at: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  provider_idx: index("provider_invoices_provider_idx").on(table.provider_id, table.provider_type),
+  period_idx: index("provider_invoices_period_idx").on(table.period_start, table.period_end),
+  status_idx: index("provider_invoices_status_idx").on(table.status),
+}));
+
+export const invoicePayments = pgTable("invoice_payments", {
+  invoice_id: uuid("invoice_id").references(() => providerInvoices.id, { onDelete: "cascade" }).notNull(),
+  payment_id: uuid("payment_id"),
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  allocated_at: timestamp("allocated_at").defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.invoice_id, table.payment_id] }),
+  invoice_idx: index("invoice_payments_invoice_idx").on(table.invoice_id),
 }));
 
 // ==================== TABELAS DE LOCALIZAÇÃO ====================
@@ -293,7 +549,7 @@ export const mozambiqueLocations = pgTable("mozambique_locations", {
   district: varchar("district", { length: 100 }),
   lat: numeric("lat", { precision: 10, scale: 7 }).notNull(),
   lng: numeric("lng", { precision: 10, scale: 7 }).notNull(),
-  geom: text("geom"), // Usando text em vez de geometry do PostGIS
+  geom: text("geom"),
   type: varchar("type", { length: 20 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow(),
@@ -304,7 +560,7 @@ export const mozambiqueLocations = pgTable("mozambique_locations", {
   typeIdx: index("locations_type_idx").on(table.type),
 }));
 
-// ==================== SISTEMA DE TRANSPORTE (NÃO ALTERADO) ====================
+// ==================== SISTEMA DE TRANSPORTE ====================
 export const vehicles = pgTable("vehicles", {
   id: uuid("id").primaryKey().defaultRandom(),
   driver_id: text("driver_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -383,8 +639,8 @@ export const hotels = pgTable("hotels", {
   country: varchar("country", { length: 100 }).default('Moçambique'),
   lat: numeric("lat", { precision: 10, scale: 7 }),
   lng: numeric("lng", { precision: 10, scale: 7 }),
-  location_geom: text("location_geom"), // Usando text em vez de geometry do PostGIS
-  location_id: uuid("location_id").references(() => mozambiqueLocations.id, { onDelete: "set null" }), // ✅ NOVO: Referência à localização real
+  location_geom: text("location_geom"),
+  location_id: uuid("location_id").references(() => mozambiqueLocations.id, { onDelete: "set null" }),
   images: text("images").array().default(sql`ARRAY[]::text[]`),
   amenities: text("amenities").array().default(sql`ARRAY[]::text[]`),
   contact_email: text("contact_email").notNull(),
@@ -407,7 +663,7 @@ export const hotels = pgTable("hotels", {
   activeIdx: index("hotels_active_idx").on(table.is_active).where(sql`is_active = true`),
   hostIdx: index("hotels_host_idx").on(table.host_id),
   ratingIdx: index("hotels_rating_idx").on(table.rating),
-  locationIdIdx: index("hotels_location_id_idx").on(table.location_id).where(sql`location_id IS NOT NULL`), // ✅ NOVO: Índice para location_id
+  locationIdIdx: index("hotels_location_id_idx").on(table.location_id).where(sql`location_id IS NOT NULL`),
 }));
 
 // ==================== TIPOS DE QUARTO ====================
@@ -450,24 +706,9 @@ export const roomTypePhotos = pgTable('room_type_photos', {
   created_at: timestamp('created_at').defaultNow(),
   updated_at: timestamp('updated_at').defaultNow(),
   deleted_at: timestamp('deleted_at'),
-});
-
-// ==================== FOTOS DE ESPAÇOS PARA EVENTOS ====================
-export const eventSpacePhotos = pgTable('event_space_photos', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  event_space_id: uuid('event_space_id').notNull().references(() => eventSpaces.id, { onDelete: 'cascade' }),
-  url: varchar('url', { length: 500 }).notNull(),
-  alt_text: varchar('alt_text', { length: 255 }),
-  order: integer('order').default(0),
-  is_featured: boolean('is_featured').default(false),
-  is_primary: boolean('is_primary').default(false),
-  created_at: timestamp('created_at').defaultNow(),
-  updated_at: timestamp('updated_at').defaultNow(),
-  deleted_at: timestamp('deleted_at'),
 }, (table) => ({
-  eventSpaceIdx: index('event_space_photos_event_space_id_idx').on(table.event_space_id),
-  featuredIdx: index('event_space_photos_featured_idx').on(table.event_space_id, table.is_featured),
-  primaryIdx: index('event_space_photos_primary_idx').on(table.event_space_id, table.is_primary).where(sql`is_primary = true AND deleted_at IS NULL`),
+  roomTypeIdx: index('room_type_photos_room_type_id_idx').on(table.room_type_id),
+  featuredIdx: index('room_type_photos_featured_idx').on(table.room_type_id, table.is_featured),
 }));
 
 // ==================== DISPONIBILIDADE DE QUARTOS ====================
@@ -476,7 +717,7 @@ export const roomAvailability = pgTable("roomAvailability", {
   hotelId: uuid("hotelId").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
   roomTypeId: uuid("roomTypeId").references(() => roomTypes.id, { onDelete: "cascade" }).notNull(),
   date: timestamp("date", { mode: 'date' }).notNull(),
-  price: numeric("price", { precision: 10, scale: 2 }), // ✅ REMOVA O .notNull()
+  price: numeric("price", { precision: 10, scale: 2 }),
   availableUnits: integer("availableUnits").notNull().default(0),
   stopSell: boolean("stopSell").default(false),
   minStay: integer("minStay").default(1),
@@ -661,6 +902,85 @@ export const longStayDiscountSettings = pgTable("longStayDiscountSettings", {
   hotelIdx: uniqueIndex("long_stay_discount_settings_hotel_idx").on(table.hotelId),
 }));
 
+// ==================== TABELAS DE REVIEWS DE HOTEL ====================
+export const hotelReviews = pgTable("hotelReviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookingId: uuid("bookingId").references(() => hotelBookings.id, { onDelete: "cascade" }).notNull(),
+  hotelId: uuid("hotelId").references(() => hotels.id, { onDelete: "cascade" }).notNull(),
+  userId: text("userId").notNull(),
+  cleanlinessRating: integer("cleanlinessRating").notNull(),
+  comfortRating: integer("comfortRating").notNull(),
+  locationRating: integer("locationRating").notNull(),
+  facilitiesRating: integer("facilitiesRating").notNull(),
+  staffRating: integer("staffRating").notNull(),
+  valueRating: integer("valueRating").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  comment: text("comment").notNull(),
+  pros: text("pros"),
+  cons: text("cons"),
+  overallRating: numeric("overallRating", { precision: 3, scale: 2 }).default(sql`(
+    ("cleanlinessRating" + "comfortRating" + "locationRating" + "facilitiesRating" + "staffRating" + "valueRating")::numeric / 6.0
+  )`),
+  isVerified: boolean("isVerified").default(true),
+  isPublished: boolean("isPublished").default(true),
+  helpfulVotes: integer("helpfulVotes").default(0),
+  reportCount: integer("reportCount").default(0),
+  hostResponse: text("hostResponse"),
+  hostResponseAt: timestamp("hostResponseAt"),
+  hostRespondedBy: text("hostRespondedBy"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
+}, (table) => ({
+  hotelIdx: index("hotel_reviews_hotel_id_idx").on(table.hotelId),
+  bookingIdx: index("hotel_reviews_booking_id_idx").on(table.bookingId),
+  ratingIdx: index("hotel_reviews_overall_rating_idx").on(table.overallRating),
+  createdAtIdx: index("hotel_reviews_created_at_idx").on(table.createdAt),
+  bookingIdUnique: uniqueIndex("hotel_reviews_booking_id_key").on(table.bookingId),
+}));
+
+export const reviewHelpfulVotes = pgTable("reviewHelpfulVotes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewId: uuid("review_id").references(() => hotelReviews.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  isHelpful: boolean("is_helpful").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  reviewIdx: index("review_helpful_votes_review_id_idx").on(table.reviewId),
+  userReviewUnique: uniqueIndex("review_helpful_votes_review_user_unique").on(table.reviewId, table.userId),
+}));
+
+export const reviewReports = pgTable("reviewReports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewId: uuid("review_id").references(() => hotelReviews.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  reason: reportReasonEnum("reason"),
+  status: reportStatusEnum("status").default('pending'),
+  details: text("details"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  reviewIdx: index("review_reports_review_id_idx").on(table.reviewId),
+  statusIdx: index("review_reports_status_idx").on(table.status),
+}));
+
+// ==================== FOTOS DE ESPAÇOS PARA EVENTOS ====================
+export const eventSpacePhotos = pgTable('event_space_photos', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  event_space_id: uuid('event_space_id').notNull().references(() => eventSpaces.id, { onDelete: 'cascade' }),
+  url: varchar('url', { length: 500 }).notNull(),
+  alt_text: varchar('alt_text', { length: 255 }),
+  order: integer('order').default(0),
+  is_featured: boolean('is_featured').default(false),
+  is_primary: boolean('is_primary').default(false),
+  created_at: timestamp('created_at').defaultNow(),
+  updated_at: timestamp('updated_at').defaultNow(),
+  deleted_at: timestamp('deleted_at'),
+}, (table) => ({
+  eventSpaceIdx: index('event_space_photos_event_space_id_idx').on(table.event_space_id),
+  featuredIdx: index('event_space_photos_featured_idx').on(table.event_space_id, table.is_featured),
+  primaryIdx: index('event_space_photos_primary_idx').on(table.event_space_id, table.is_primary).where(sql`is_primary = true AND deleted_at IS NULL`),
+}));
+
 // ==================== ESPAÇOS PARA EVENTOS ====================
 export const eventSpaces = pgTable("eventSpaces", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -669,11 +989,8 @@ export const eventSpaces = pgTable("eventSpaces", {
   description: text("description"),
   capacityMin: integer("capacityMin").notNull().default(10),
   capacityMax: integer("capacityMax").notNull().default(100),
-  
-  // ✅ ADICIONADO: Campo pricePerDay (já existe no banco)
   pricePerDay: numeric("pricePerDay", { precision: 10, scale: 2 }),
   basePricePerDay: numeric("basePricePerDay", { precision: 10, scale: 2 }).notNull().default("0"),
-  
   weekendSurchargePercent: integer("weekendSurchargePercent").default(0),
   eventTypes: text("eventTypes").array().default(sql`ARRAY[]::text[]`),
   amenities: text("amenities").array().default(sql`ARRAY[]::text[]`),
@@ -726,7 +1043,6 @@ export const eventSpaces = pgTable("eventSpaces", {
   priceIdx: index("eventSpaces_price_idx").on(table.pricePerDay, table.basePricePerDay),
 }));
 
-// VIEW para compatibilidade com snake_case
 export const eventSpacesCompatible = pgTable("event_spaces_compatible", {
   id: uuid("id"),
   hotel_id: uuid("hotel_id"),
@@ -770,6 +1086,68 @@ export const eventAvailability = pgTable("eventAvailability", {
   availableIdx: index("eventAvailability_isAvailable_idx").on(table.isAvailable),
 }));
 
+// ==================== TABELAS DE REVIEWS DE EVENT SPACES ====================
+export const eventSpaceReviews = pgTable("eventSpaceReviews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  bookingId: uuid("bookingId").references(() => eventBookings.id, { onDelete: "cascade" }).notNull(),
+  eventSpaceId: uuid("eventSpaceId").references(() => eventSpaces.id, { onDelete: "cascade" }).notNull(),
+  userId: text("userId").notNull(),
+  venueRating: integer("venueRating").notNull(),
+  facilitiesRating: integer("facilitiesRating").notNull(),
+  locationRating: integer("locationRating").notNull(),
+  servicesRating: integer("servicesRating").notNull(),
+  staffRating: integer("staffRating").notNull(),
+  valueRating: integer("valueRating").notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  comment: text("comment").notNull(),
+  pros: text("pros"),
+  cons: text("cons"),
+  overallRating: numeric("overallRating", { precision: 3, scale: 2 }).default(sql`(
+    ("venueRating" + "facilitiesRating" + "locationRating" + "servicesRating" + "staffRating" + "valueRating")::numeric / 6.0
+  )`),
+  isVerified: boolean("isVerified").default(true),
+  isPublished: boolean("isPublished").default(true),
+  helpfulVotes: integer("helpfulVotes").default(0),
+  reportCount: integer("reportCount").default(0),
+  organizerResponse: text("organizerResponse"),
+  organizerResponseAt: timestamp("organizerResponseAt"),
+  organizerRespondedBy: text("organizerRespondedBy"),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow(),
+}, (table) => ({
+  eventSpaceIdx: index("event_space_reviews_event_space_id_idx").on(table.eventSpaceId),
+  bookingIdx: index("event_space_reviews_booking_id_idx").on(table.bookingId),
+  ratingIdx: index("event_space_reviews_overall_rating_idx").on(table.overallRating),
+  createdAtIdx: index("event_space_reviews_created_at_idx").on(table.createdAt),
+  bookingIdUnique: uniqueIndex("event_space_reviews_booking_id_key").on(table.bookingId),
+}));
+
+export const eventSpaceReviewHelpfulVotes = pgTable("eventSpaceReviewHelpfulVotes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewId: uuid("review_id").references(() => eventSpaceReviews.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  isHelpful: boolean("is_helpful").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  reviewIdx: index("event_space_helpful_votes_review_id_idx").on(table.reviewId),
+  userReviewUnique: uniqueIndex("event_space_helpful_votes_review_user_unique").on(table.reviewId, table.userId),
+}));
+
+export const eventSpaceReviewReports = pgTable("eventSpaceReviewReports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewId: uuid("review_id").references(() => eventSpaceReviews.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  reason: reportReasonEnum("reason"),
+  status: reportStatusEnum("status").default('pending'),
+  details: text("details"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  reviewIdx: index("event_space_review_reports_review_id_idx").on(table.reviewId),
+  statusIdx: index("event_space_review_reports_status_idx").on(table.status),
+}));
+
+// ==================== RESERVAS DE EVENTOS ====================
 export const eventBookings = pgTable("eventBookings", {
   id: uuid("id").primaryKey().defaultRandom(),
   eventSpaceId: uuid("eventSpaceId").references(() => eventSpaces.id, { onDelete: "cascade" }).notNull(),
@@ -786,7 +1164,6 @@ export const eventBookings = pgTable("eventBookings", {
   expectedAttendees: integer("expectedAttendees").notNull().default(10),
   specialRequests: text("specialRequests"),
   additionalServices: jsonb("additionalServices").default(sql`'{}'::jsonb`),
-  // ✅ ADICIONADO: Campo cateringRequired
   cateringRequired: boolean("cateringRequired").notNull().default(false),
   basePrice: numeric("basePrice", { precision: 10, scale: 2 }).notNull(),
   equipmentFees: numeric("equipmentFees", { precision: 10, scale: 2 }).default(sql`0.00`),
@@ -796,7 +1173,6 @@ export const eventBookings = pgTable("eventBookings", {
   depositPaid: numeric("depositPaid", { precision: 10, scale: 2 }).default(sql`0.00`),
   balanceDue: numeric("balanceDue", { precision: 10, scale: 2 }).default(sql`0.00`),
   totalPrice: numeric("totalPrice", { precision: 10, scale: 2 }).notNull(),
-  // ✅ CORRIGIDO: Alterado status default para 'pending_approval' (não 'confirmed')
   status: text("status").notNull().default('pending_approval'),
   paymentStatus: text("paymentStatus").notNull().default('pending'),
   paymentReference: text("paymentReference"),
@@ -818,25 +1194,17 @@ export const eventPayments = pgTable("event_payments", {
   eventBookingId: uuid("event_booking_id").references(() => eventBookings.id, { onDelete: "cascade" }),
   hotelId: uuid("hotel_id").references(() => hotels.id, { onDelete: "cascade" }),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
-  
-  // Informações do pagamento
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   paymentMethod: text("payment_method").notNull(),
-  paymentType: text("payment_type").default("event_payment"), // deposit, full, partial, refund
+  paymentType: text("payment_type").default("event_payment"),
   referenceNumber: text("reference_number"),
   proofImageUrl: text("proof_image_url"),
-  
-  // Status
-  status: text("status").default("pending"), // pending, confirmed, failed, refunded
+  status: text("status").default("pending"),
   confirmedBy: uuid("confirmed_by").references(() => users.id, { onDelete: "set null" }),
-  
-  // Datas
   paidAt: timestamp("paid_at", { withTimezone: false }),
   confirmedAt: timestamp("confirmed_at", { withTimezone: false }),
   createdAt: timestamp("created_at", { withTimezone: false }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: false }).defaultNow(),
-  
-  // Metadados
   notes: text("notes"),
   metadata: jsonb("metadata").default({}),
 }, (table) => ({
@@ -847,9 +1215,7 @@ export const eventPayments = pgTable("event_payments", {
 
 export const eventBookingLogs = pgTable("eventBookingLogs", {
   id: uuid("id").primaryKey().defaultRandom(),
-  bookingId: uuid("bookingId")
-    .references(() => eventBookings.id, { onDelete: "cascade" })
-    .notNull(),
+  bookingId: uuid("bookingId").references(() => eventBookings.id, { onDelete: "cascade" }).notNull(),
   action: text("action").notNull(),
   performedBy: uuid("performedBy"),           
   details: jsonb("details").default(sql`'{}'::jsonb`),
@@ -877,7 +1243,7 @@ export const bookings = pgTable("bookings", {
   id: uuid("id").primaryKey().defaultRandom(),
   rideId: uuid("rideId").references(() => rides.id, { onDelete: "cascade" }),
   passengerId: text("passengerId").references(() => users.id, { onDelete: "cascade" }),
-  hotelId: uuid("hotelId").references(() => hotels.id, { onDelete: "cascade" }),
+  accommodationId: uuid("accommodationId").references(() => hotels.id, { onDelete: "cascade" }), // ✅ CORRIGIDO: accommodationId em vez de hotelId
   roomTypeId: uuid("roomTypeId").references(() => roomTypes.id, { onDelete: "cascade" }),
   type: serviceTypeEnum("type").default('ride'),
   status: statusEnum("status").default('pending'),
@@ -896,7 +1262,7 @@ export const bookings = pgTable("bookings", {
   statusIdx: index("bookings_status_idx").on(table.status),
   typeIdx: index("bookings_type_idx").on(table.type),
   passengerIdx: index("bookings_passenger_idx").on(table.passengerId),
-  hotelIdx: index("bookings_hotel_idx").on(table.hotelId),
+  accommodationIdx: index("bookings_accommodation_idx").on(table.accommodationId), // ✅ CORRIGIDO
 }));
 
 export const invoices = pgTable("invoices", {
@@ -1014,14 +1380,6 @@ export const userRoles = pgTable("user_roles", {
   userIdx: index("user_roles_user_idx").on(table.user_id),
 }));
 
-// ==================== TABELAS REMOVIDAS/ELIMINADAS ====================
-// NOTA: As seguintes tabelas foram removidas do schema por serem antigas/não usadas:
-// - hotels_base (substituída por hotels)
-// - accommodations (sistema antigo)
-// - hotelRooms (sistema antigo)
-// - legacyRoomTypes (sistema antigo)
-// - hotelFinancialReports (não implementado ainda)
-
 export const ratings = pgTable("ratings", {
   id: uuid("id").primaryKey().defaultRandom(),
   fromUserId: text("fromUserId").references(() => users.id, { onDelete: "cascade" }).notNull(),
@@ -1092,12 +1450,8 @@ export const partnershipProposals = pgTable("partnershipProposals", {
 
 export const partnershipApplications = pgTable("partnershipApplications", {
   id: uuid("id").primaryKey().defaultRandom(),
-  proposalId: uuid("proposalId")
-    .references(() => partnershipProposals.id, { onDelete: "cascade" })
-    .notNull(),
-  driverId: text("driverId")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
+  proposalId: uuid("proposalId").references(() => partnershipProposals.id, { onDelete: "cascade" }).notNull(),
+  driverId: text("driverId").references(() => users.id, { onDelete: "cascade" }).notNull(),
   status: statusEnum("status").default('pending'),
   applicationDate: timestamp("applicationDate").defaultNow(),
   acceptedAt: timestamp("acceptedAt"),
@@ -1347,7 +1701,7 @@ const bookingStatusZod = z.enum(["pending", "confirmed", "checked_in", "checked_
 const paymentStatusZod = z.enum(["pending", "processing", "paid", "failed", "refunded", "cancelled", "expired", "partial"]);
 const serviceTypeZod = z.enum(["ride", "accommodation", "event", "hotel"]);
 const partnershipLevelZod = z.enum(["bronze", "silver", "gold", "platinum"]);
-const verificationStatusZod = z.enum(["pending", "in_review", "verified", "rejected"]);
+const verificationStatusZod = z.enum(["pending", "in_review", "verified", "rejected", "suspended"]);
 const paymentMethodZod = z.enum(["card", "mpesa", "bank", "mobile_money", "bank_transfer", "pending"]);
 const rideTypeZod = z.enum(["regular", "premium", "shared", "express"]);
 const locationTypeZod = z.enum(["city", "town", "village"]);
@@ -1355,6 +1709,12 @@ const vehicleTypeZod = z.enum(["economy", "comfort", "luxury", "family", "premiu
 const reportReasonZod = z.enum(["inappropriate", "fake", "spam", "offensive", "other"]);
 const reportStatusZod = z.enum(["pending", "reviewed", "resolved", "dismissed"]);
 const accountTypeZod = z.enum(["individual", "company"]);
+const capabilityTypeZod = z.enum(["driver", "hotel_manager", "admin", "book_services"]);
+const providerTypeZod = z.enum(["driver", "hotel", "event_space"]);
+const payoutStatusZod = z.enum(["pending", "processing", "paid", "failed"]);
+const complaintTypeZod = z.enum(["client_to_provider", "provider_to_client", "platform_issue"]);
+const complaintStatusZod = z.enum(["new", "investigating", "resolved", "dismissed"]);
+const complaintPriorityZod = z.enum(["low", "medium", "high", "urgent"]);
 
 export const insertUserSchema = createInsertSchema(users, {
   email: z.string().email().optional(),
@@ -1363,6 +1723,7 @@ export const insertUserSchema = createInsertSchema(users, {
   accountType: accountTypeZod.optional(),
   driverVerificationStatus: verificationStatusZod.optional(),
   hotelManagerVerificationStatus: verificationStatusZod.optional(),
+  clientVerificationStatus: verificationStatusZod.optional(),
   verificationStatus: verificationStatusZod.optional(),
   rating: z.number().min(0).max(5).optional(),
 }).omit({
@@ -1391,6 +1752,9 @@ export const upsertUserSchema = createInsertSchema(users).pick({
   driverVerifiedAt: true,
   hotelManagerVerificationStatus: true,
   hotelManagerVerifiedAt: true,
+  clientVerificationStatus: true,
+  clientSuspendedAt: true,
+  clientSuspensionReason: true,
   businessTaxId: true,
   canBookServices: true,
   canDrive: true,
@@ -1587,7 +1951,6 @@ export const insertHotelBookingSchema = createInsertSchema(hotelBookings, {
   updatedAt: true,
 });
 
-// CORRIGIDO: agora usa createInsertSchema(hotels) em vez de createInsertSchema(hotels_base)
 export const insertHotelSchema = createInsertSchema(hotels, {
   name: z.string().min(1).max(255),
   slug: z.string().min(1).max(255),
@@ -1595,7 +1958,7 @@ export const insertHotelSchema = createInsertSchema(hotels, {
   contact_phone: z.string().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
-  location_id: z.string().uuid().optional(), // ✅ ADICIONADO: Campo location_id
+  location_id: z.string().uuid().optional(),
   is_active: z.boolean().default(true),
 }).omit({
   id: true,
@@ -1606,7 +1969,6 @@ export const insertHotelSchema = createInsertSchema(hotels, {
   host_id: true,
 });
 
-// ==================== SCHEMAS PARA REVIEWS ====================
 export const insertHotelReviewSchema = createInsertSchema(hotelReviews, {
   bookingId: z.string().uuid(),
   hotelId: z.string().uuid(),
@@ -1728,7 +2090,6 @@ export const insertRoomTypeSchema = createInsertSchema(roomTypes, {
   extra_night_price: true,
 });
 
-// ✅ ADICIONADO: Schema para inserção de fotos de tipos de quarto
 export const insertRoomTypePhotoSchema = createInsertSchema(roomTypePhotos, {
   room_type_id: z.string().uuid(),
   url: z.string().url(),
@@ -1743,7 +2104,6 @@ export const insertRoomTypePhotoSchema = createInsertSchema(roomTypePhotos, {
   deleted_at: true,
 });
 
-// ✅ ADICIONADO: Schema para inserção de fotos de espaços para eventos
 export const insertEventSpacePhotoSchema = createInsertSchema(eventSpacePhotos, {
   event_space_id: z.string().uuid(),
   url: z.string().url(),
@@ -1772,13 +2132,12 @@ export const insertRoomAvailabilitySchema = createInsertSchema(roomAvailability,
   updatedAt: true,
 });
 
-// SCHEMAS PARA EVENTOS CORRIGIDOS (CAMELCASE)
 export const insertEventSpaceSchema = createInsertSchema(eventSpaces, {
   name: z.string().min(1),
   description: z.string().optional(),
   capacityMin: z.number().int().positive(),
   capacityMax: z.number().int().positive(),
-  pricePerDay: z.number().positive().optional(), // ✅ ADICIONADO
+  pricePerDay: z.number().positive().optional(),
   basePricePerDay: z.number().positive().default(0),
   weekendSurchargePercent: z.number().int().min(0).optional(),
   isActive: z.boolean().default(true),
@@ -1792,7 +2151,6 @@ export const insertEventSpaceSchema = createInsertSchema(eventSpaces, {
   updatedAt: true,
 });
 
-// ✅ ATUALIZADO: Adicionado cateringRequired ao schema de inserção de eventBooking
 export const insertEventBookingSchema = createInsertSchema(eventBookings, {
   organizerName: z.string().min(1),
   organizerEmail: z.string().email(),
@@ -1806,7 +2164,7 @@ export const insertEventBookingSchema = createInsertSchema(eventBookings, {
   cateringRequired: z.boolean().default(false),
   basePrice: z.number().positive(),
   totalPrice: z.number().positive(),
-  status: z.string().default('pending_approval'), // ✅ Alterado para pending_approval
+  status: z.string().default('pending_approval'),
   paymentStatus: z.string().default('pending'),
 }).omit({
   id: true,
@@ -1830,7 +2188,6 @@ export const insertMozambiqueLocationSchema = createInsertSchema(mozambiqueLocat
   updatedAt: true,
 });
 
-// ==================== SCHEMAS PARA PAGAMENTOS HOTELEIROS ====================
 export const insertHotelPaymentSchema = createInsertSchema(hotelPayments, {
   booking_id: z.string().uuid(),
   amount: z.number().positive(),
@@ -1850,7 +2207,8 @@ export const insertHotelPaymentSchema = createInsertSchema(hotelPayments, {
   updated_at: true,
 });
 
-// ✅ ADICIONADO: Schema para documentos de capacidade
+// ==================== NOVOS ZOD SCHEMAS ====================
+
 export const insertUserCapacityDocumentSchema = createInsertSchema(userCapacityDocuments, {
   documentUrl: z.string().url(),
   expiryDate: z.string().optional(),
@@ -1864,7 +2222,6 @@ export const insertUserCapacityDocumentSchema = createInsertSchema(userCapacityD
   verificationNotes: true,
 });
 
-// ✅ ADICIONADO: Schema para ativação de capacidade
 export const activateCapacitySchema = z.object({
   capacity: z.enum(["drive", "hotel_manager"]),
   documents: z.array(z.object({
@@ -1876,7 +2233,6 @@ export const activateCapacitySchema = z.object({
   notes: z.string().optional(),
 });
 
-// ✅ ADICIONADO: Schema para signup com capacidades
 export const signupWithCapacitiesSchema = z.object({
   email: z.string().email(),
   firstName: z.string().min(1),
@@ -1894,11 +2250,153 @@ export const signupWithCapacitiesSchema = z.object({
   accountType: z.enum(["individual", "company"]).default("individual"),
 });
 
+export const approveCapabilitySchema = z.object({
+  userId: z.string(),
+  capabilityType: capabilityTypeZod,
+  reason: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const rejectCapabilitySchema = z.object({
+  userId: z.string(),
+  capabilityType: capabilityTypeZod,
+  reason: z.string().min(1, "Motivo é obrigatório"),
+  notes: z.string().optional(),
+});
+
+export const suspendCapabilitySchema = z.object({
+  userId: z.string(),
+  capabilityType: capabilityTypeZod,
+  reason: z.string().min(1, "Motivo é obrigatório"),
+  notes: z.string().optional(),
+});
+
+export const insertPlatformFeeConfigSchema = createInsertSchema(platformFeeConfig, {
+  service_type: z.enum(['ride', 'hotel', 'event']),
+  fee_percentage: z.number().min(0).max(100).default(12),
+  effective_from: z.string().optional(),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+});
+
+export const insertUserEntitySchema = createInsertSchema(userEntities, {
+  entity_code: z.string().min(3).max(20),
+  entity_prefix: z.string().min(2).max(5),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  verified_at: true,
+  verified_by: true,
+});
+
+export const insertUserBankAccountSchema = createInsertSchema(userBankAccounts, {
+  account_type: z.enum(['bank', 'mpesa', 'emola']),
+  mpesa_number: z.string().optional(),
+  iban: z.string().optional(),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  verified_at: true,
+  verified_by: true,
+});
+
+export const insertPaymentReferenceSchema = createInsertSchema(paymentReferences, {
+  reference_number: z.string(),
+  booking_id: z.string().uuid(),
+  booking_type: z.enum(['ride', 'hotel', 'event']),
+  gross_amount: z.number().positive(),
+}).omit({
+  id: true,
+  fee_amount: true,
+  net_amount: true,
+  due_date: true,
+  created_at: true,
+  updated_at: true,
+});
+
+export const insertProviderPayoutSchema = createInsertSchema(providerPayouts, {
+  payout_reference: z.string(),
+  period_start: z.string(),
+  period_end: z.string(),
+  total_gross: z.number().positive(),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  paid_at: true,
+  confirmed_by: true,
+});
+
+export const insertComplaintSchema = createInsertSchema(complaints, {
+  complaint_type: complaintTypeZod,
+  category: z.string().min(1),
+  description: z.string().min(10),
+  priority: complaintPriorityZod.optional(),
+}).omit({
+  id: true,
+  status: true,
+  assigned_admin_id: true,
+  resolution: true,
+  resolved_at: true,
+  created_at: true,
+  updated_at: true,
+});
+
+export const insertComplaintAttachmentSchema = createInsertSchema(complaintAttachments, {
+  file_url: z.string().url(),
+  file_type: z.string().optional(),
+}).omit({
+  id: true,
+  created_at: true,
+});
+
+export const insertProviderInvoiceSchema = createInsertSchema(providerInvoices, {
+  invoice_number: z.string(),
+  total_gross_amount: z.number().positive(),
+  platform_fee: z.number().positive(),
+  net_amount: z.number().positive(),
+}).omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  paid_date: true,
+});
+
 // ==================== TIPOS TYPESCRIPT ====================
 export type User = typeof users.$inferSelect;
 export type UserInsert = typeof users.$inferInsert;
 export type UserCapacityDocument = typeof userCapacityDocuments.$inferSelect;
 export type UserCapacityDocumentInsert = typeof userCapacityDocuments.$inferInsert;
+export type CapabilityAuditLog = typeof capabilityAuditLog.$inferSelect;
+export type CapabilityAuditLogInsert = typeof capabilityAuditLog.$inferInsert;
+export type PlatformFeeConfig = typeof platformFeeConfig.$inferSelect;
+export type PlatformFeeConfigInsert = typeof platformFeeConfig.$inferInsert;
+export type UserEntity = typeof userEntities.$inferSelect;
+export type UserEntityInsert = typeof userEntities.$inferInsert;
+export type UserBankAccount = typeof userBankAccounts.$inferSelect;
+export type UserBankAccountInsert = typeof userBankAccounts.$inferInsert;
+export type PaymentReference = typeof paymentReferences.$inferSelect;
+export type PaymentReferenceInsert = typeof paymentReferences.$inferInsert;
+export type ProviderPayout = typeof providerPayouts.$inferSelect;
+export type ProviderPayoutInsert = typeof providerPayouts.$inferInsert;
+export type PayoutReference = typeof payoutReferences.$inferSelect;
+export type PayoutReferenceInsert = typeof payoutReferences.$inferInsert;
+export type PaymentSequence = typeof paymentSequences.$inferSelect;
+export type PaymentSequenceInsert = typeof paymentSequences.$inferInsert;
+export type PaymentProofValidation = typeof paymentProofValidations.$inferSelect;
+export type PaymentProofValidationInsert = typeof paymentProofValidations.$inferInsert;
+export type Complaint = typeof complaints.$inferSelect;
+export type ComplaintInsert = typeof complaints.$inferInsert;
+export type ComplaintAttachment = typeof complaintAttachments.$inferSelect;
+export type ComplaintAttachmentInsert = typeof complaintAttachments.$inferInsert;
+export type ProviderInvoice = typeof providerInvoices.$inferSelect;
+export type ProviderInvoiceInsert = typeof providerInvoices.$inferInsert;
+export type InvoicePayment = typeof invoicePayments.$inferSelect;
+export type InvoicePaymentInsert = typeof invoicePayments.$inferInsert;
 export type Ride = typeof rides.$inferSelect;
 export type RideInsert = typeof rides.$inferInsert;
 export type Vehicle = typeof vehicles.$inferSelect;
@@ -1907,18 +2405,10 @@ export type Hotel = typeof hotels.$inferSelect;
 export type HotelInsert = typeof hotels.$inferInsert;
 export type RoomType = typeof roomTypes.$inferSelect;
 export type RoomTypeInsert = typeof roomTypes.$inferInsert;
-export type RoomAvailability = typeof roomAvailability.$inferSelect;
-export type RoomAvailabilityInsert = typeof roomAvailability.$inferInsert;
-
-// ✅ ADICIONADO: Tipos para roomTypePhotos
 export type RoomTypePhoto = typeof roomTypePhotos.$inferSelect;
 export type NewRoomTypePhoto = typeof roomTypePhotos.$inferInsert;
-
-// ✅ ADICIONADO: Tipos para eventSpacePhotos
-export type EventSpacePhoto = typeof eventSpacePhotos.$inferSelect;
-export type NewEventSpacePhoto = typeof eventSpacePhotos.$inferInsert;
-
-// Tipos para as tabelas de reservas hoteleiras
+export type RoomAvailability = typeof roomAvailability.$inferSelect;
+export type RoomAvailabilityInsert = typeof roomAvailability.$inferInsert;
 export type HotelBooking = typeof hotelBookings.$inferSelect;
 export type HotelBookingInsert = typeof hotelBookings.$inferInsert;
 export type HotelPayment = typeof hotelPayments.$inferSelect;
@@ -1931,38 +2421,33 @@ export type HotelSeason = typeof hotelSeasons.$inferSelect;
 export type HotelSeasonInsert = typeof hotelSeasons.$inferInsert;
 export type HotelPromotion = typeof hotelPromotions.$inferSelect;
 export type HotelPromotionInsert = typeof hotelPromotions.$inferInsert;
-
-// Tipos para sistemas de reviews
 export type HotelReview = typeof hotelReviews.$inferSelect;
 export type HotelReviewInsert = typeof hotelReviews.$inferInsert;
 export type ReviewHelpfulVote = typeof reviewHelpfulVotes.$inferSelect;
 export type ReviewHelpfulVoteInsert = typeof reviewHelpfulVotes.$inferInsert;
 export type ReviewReport = typeof reviewReports.$inferSelect;
 export type ReviewReportInsert = typeof reviewReports.$inferInsert;
-
+export type EventSpacePhoto = typeof eventSpacePhotos.$inferSelect;
+export type NewEventSpacePhoto = typeof eventSpacePhotos.$inferInsert;
+export type EventSpace = typeof eventSpaces.$inferSelect;
+export type EventSpaceInsert = typeof eventSpaces.$inferInsert;
+export type EventSpacesCompatible = typeof eventSpacesCompatible.$inferSelect;
 export type EventSpaceReview = typeof eventSpaceReviews.$inferSelect;
 export type EventSpaceReviewInsert = typeof eventSpaceReviews.$inferInsert;
 export type EventSpaceReviewHelpfulVote = typeof eventSpaceReviewHelpfulVotes.$inferSelect;
 export type EventSpaceReviewHelpfulVoteInsert = typeof eventSpaceReviewHelpfulVotes.$inferInsert;
 export type EventSpaceReviewReport = typeof eventSpaceReviewReports.$inferSelect;
 export type EventSpaceReviewReportInsert = typeof eventSpaceReviewReports.$inferInsert;
-
-// Tipos para eventos (CAMELCASE CORRIGIDOS)
-export type EventSpace = typeof eventSpaces.$inferSelect;
-export type EventSpaceInsert = typeof eventSpaces.$inferInsert;
-export type EventSpacesCompatible = typeof eventSpacesCompatible.$inferSelect;
-export type EventBooking = typeof eventBookings.$inferSelect;
-export type EventBookingInsert = typeof eventBookings.$inferInsert;
 export type EventSpaceAvailability = typeof eventAvailability.$inferSelect;
 export type EventSpaceAvailabilityInsert = typeof eventAvailability.$inferInsert;
+export type EventBooking = typeof eventBookings.$inferSelect;
+export type EventBookingInsert = typeof eventBookings.$inferInsert;
 export type EventBookingLog = typeof eventBookingLogs.$inferSelect;
 export type EventBookingLogInsert = typeof eventBookingLogs.$inferInsert;
 export type EventSpaceLog = typeof eventSpaceLogs.$inferSelect;
 export type EventSpaceLogInsert = typeof eventSpaceLogs.$inferInsert;
-
 export type EventPayment = typeof eventPayments.$inferSelect;
 export type EventPaymentInsert = typeof eventPayments.$inferInsert;
-
 export type Booking = typeof bookings.$inferSelect;
 export type BookingInsert = typeof bookings.$inferInsert;
 export type Invoice = typeof invoices.$inferSelect;
@@ -1978,7 +2463,6 @@ export type AdvancePaymentPromotionInsert = typeof advancePaymentPromotions.$inf
 export type PaymentOption = typeof paymentOptions.$inferSelect;
 export type PaymentOptionInsert = typeof paymentOptions.$inferInsert;
 
-// ✅ ADICIONADO: Interface para usuário com capacidades
 export interface UserWithCapabilities {
   id: string;
   email: string | null;
@@ -1991,14 +2475,13 @@ export interface UserWithCapabilities {
   isAdmin: boolean;
   driverVerificationStatus: string | null;
   hotelManagerVerificationStatus: string | null;
+  clientVerificationStatus: string | null;
   accountType: string | null;
   companyName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-// ==================== TIPOS AUXILIARES COM CAMELCASE ====================
-// Tipos auxiliares para hotelPayments que usam camelCase
 export type HotelPaymentCamelCase = {
   id: string;
   bookingId: string;
@@ -2017,7 +2500,6 @@ export type HotelPaymentCamelCase = {
   isManual: boolean | null;
 };
 
-// Função para converter de snake_case para camelCase
 export function convertHotelPaymentToCamelCase(payment: HotelPayment): HotelPaymentCamelCase {
   return {
     id: payment.id,
@@ -2038,7 +2520,6 @@ export function convertHotelPaymentToCamelCase(payment: HotelPayment): HotelPaym
   };
 }
 
-// Função para converter de camelCase para snake_case (para inserção)
 export function convertHotelPaymentToSnakeCase(payment: Partial<HotelPaymentCamelCase>): Partial<HotelPaymentInsert> {
   return {
     booking_id: payment.bookingId,
@@ -2056,7 +2537,6 @@ export function convertHotelPaymentToSnakeCase(payment: Partial<HotelPaymentCame
   };
 }
 
-// Interface para inserção com camelCase
 export interface CreateHotelPaymentRequest {
   bookingId: string;
   amount: number;
@@ -2072,12 +2552,10 @@ export interface CreateHotelPaymentRequest {
   isManual?: boolean;
 }
 
-// Interface para Hotel com location_id e informações de localização
 export interface HotelWithLocation extends Hotel {
   mozambiqueLocation?: MozambiqueLocation | null;
 }
 
-// Interface para criar/atualizar hotel com location_id
 export interface CreateHotelRequest {
   name: string;
   slug: string;
@@ -2088,10 +2566,9 @@ export interface CreateHotelRequest {
   country?: string;
   lat?: number;
   lng?: number;
-  location_id?: string; // ✅ ADICIONADO: Referência à localização real
+  location_id?: string;
   contact_email: string;
   contact_phone?: string;
-  // ... outros campos
 }
 
 export interface UpdateHotelRequest {
@@ -2103,10 +2580,9 @@ export interface UpdateHotelRequest {
   country?: string;
   lat?: number;
   lng?: number;
-  location_id?: string; // ✅ ADICIONADO: Referência à localização real
+  location_id?: string;
   contact_email?: string;
   contact_phone?: string;
-  // ... outros campos
 }
 
 export interface HotelSearchParams {
@@ -2213,5 +2689,18 @@ export interface CompleteHotelSystem {
   payment_options: PaymentOption[];
   room_type_photos: RoomTypePhoto[];
   event_space_photos: EventSpacePhoto[];
-  user_capacity_documents: UserCapacityDocument[]; // ✅ ADICIONADO
+  user_capacity_documents: UserCapacityDocument[];
+  capability_audit_log: CapabilityAuditLog[];
+  platform_fee_config: PlatformFeeConfig[];
+  user_entities: UserEntity[];
+  user_bank_accounts: UserBankAccount[];
+  payment_references: PaymentReference[];
+  provider_payouts: ProviderPayout[];
+  payout_references: PayoutReference[];
+  payment_sequences: PaymentSequence[];
+  payment_proof_validations: PaymentProofValidation[];
+  complaints: Complaint[];
+  complaint_attachments: ComplaintAttachment[];
+  provider_invoices: ProviderInvoice[];
+  invoice_payments: InvoicePayment[];
 };

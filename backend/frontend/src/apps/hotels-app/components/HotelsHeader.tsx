@@ -37,6 +37,7 @@ import {
   MapPin,
   Phone,
   Mail,
+  DollarSign,
 } from 'lucide-react';
 import { LogoCompact } from '@/shared/components/Logo';
 import { HotelSelector } from '@/apps/hotels-app/components/HotelSelector';
@@ -87,6 +88,7 @@ export default function HotelsHeader() {
     { href: "/hotels-app/rooms", label: "Quartos", icon: <DoorOpen className="h-4 w-4" />, active: location.startsWith("/hotels-app/rooms") },
     { href: "/hotels-app/create", label: "Novo Hotel", icon: <Plus className="h-4 w-4" />, active: location.startsWith("/hotels-app/create") },
     { href: "/hotels-app/finance", label: "Finanças", icon: <CreditCard className="h-4 w-4" />, active: location.startsWith("/hotels-app/finance") },
+    { href: "/hotels-app/payments", label: "Minhas Comissões", icon: <DollarSign className="h-4 w-4" />, active: location.startsWith("/hotels-app/payments") },
     { href: "/hotels-app/messages", label: "Mensagens", icon: <MessageSquare className="h-4 w-4" />, active: location.startsWith("/hotels-app/messages") },
     { href: "/hotels-app/guests", label: "Hóspedes", icon: <Users className="h-4 w-4" />, active: location.startsWith("/hotels-app/guests") },
   ];

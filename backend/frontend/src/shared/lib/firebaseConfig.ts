@@ -146,7 +146,7 @@ export const signInWithGoogle = async (): Promise<void> => {
       
       // ✅ CORREÇÃO: Salvar token imediatamente após login bem-sucedido
       const token = await result.user.getIdToken(true);
-      localStorage.setItem('token', token);
+      localStorage.setItem('firebaseToken', token);
       localStorage.setItem('user', JSON.stringify({
         uid: result.user.uid,
         email: result.user.email,
@@ -201,7 +201,7 @@ export const checkRedirectResult = async (): Promise<User | null> => {
       
       // ✅ CORREÇÃO: Salvar token após redirect bem-sucedido
       const token = await result.user.getIdToken(true);
-      localStorage.setItem('token', token);
+      localStorage.setItem('firebaseToken', token);
       localStorage.setItem('user', JSON.stringify({
         uid: result.user.uid,
         email: result.user.email,
@@ -229,6 +229,7 @@ export const signOutUser = async (): Promise<void> => {
   
   try {
     // ✅ CORREÇÃO: Limpar localStorage ANTES de fazer sign out
+    localStorage.removeItem('firebaseToken');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     console.log('🧹 Dados removidos do localStorage');
@@ -249,7 +250,7 @@ export const signInWithEmail = async (email: string, password: string): Promise<
     
     // ✅ CORREÇÃO: Salvar token após login com email bem-sucedido
     const token = await result.user.getIdToken(true);
-    localStorage.setItem('token', token);
+    localStorage.setItem('firebaseToken', token);
     localStorage.setItem('user', JSON.stringify({
       uid: result.user.uid,
       email: result.user.email,
@@ -285,7 +286,7 @@ export const signUpWithEmail = async (email: string, password: string): Promise<
     
     // ✅ CORREÇÃO: Salvar token após registo bem-sucedido
     const token = await result.user.getIdToken(true);
-    localStorage.setItem('token', token);
+    localStorage.setItem('firebaseToken', token);
     localStorage.setItem('user', JSON.stringify({
       uid: result.user.uid,
       email: result.user.email,
@@ -346,7 +347,7 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
         const token = await user.getIdToken(/* forceRefresh */ true);
         
         // Salvar para uso nas requisições API
-        localStorage.setItem('token', token);
+        localStorage.setItem('firebaseToken', token);
         localStorage.setItem('user', JSON.stringify({
           uid: user.uid,
           email: user.email,
@@ -391,7 +392,7 @@ export const setupAuthListener = (callback: (user: User | null) => void): (() =>
 
 // Função auxiliar para obter o token do localStorage
 export const getStoredToken = (): string | null => {
-  return localStorage.getItem('token');
+  return localStorage.getItem('firebaseToken');
 };
 
 // Função auxiliar para obter dados do usuário do localStorage

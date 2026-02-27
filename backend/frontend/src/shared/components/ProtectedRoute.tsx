@@ -4,11 +4,13 @@ import { Card, CardContent } from "@/shared/components/ui/card";
 import { Shield, User, FileCheck } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useLocation } from "wouter";
+import useVerification from "../hooks/useVerification";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAuth?: boolean;
   requireVerification?: boolean;
+  verificationType?: 'email' | 'identity' | 'driver' | 'hotel_manager' | 'client' | 'admin';
   redirectTo?: string;
 }
 
@@ -16,10 +18,12 @@ export default function ProtectedRoute({
   children, 
   requireAuth = true, 
   requireVerification = false,
+  verificationType = 'email',
   redirectTo = "/"
 }: ProtectedRouteProps) {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { isAuthenticated, loading, user } = useAuth();
+  const { shouldRedirectToVerification, getVerificationRedirectUrl } = useVerification();
   const [location] = useLocation();
 
   // Loading state
@@ -95,55 +99,62 @@ export default function ProtectedRoute({
   }
 
   // Verification required but user not verified
-  if (requireVerification && user && !user.emailVerified) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FileCheck className="w-8 h-8 text-yellow-600" />
-              </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Verificação Necessária
-              </h2>
-              <p className="text-gray-600 mb-6">
-                Precisa de verificar a sua identidade e documentos para usar esta funcionalidade.
-              </p>
-              
-              <div className="space-y-3">
-                <button
-                  onClick={() => window.location.href = "/profile/verification"}
-                  className="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2"
-                  data-testid="button-verification-required-verify"
-                >
-                  <FileCheck className="w-4 h-4" />
-                  <span>Verificar Perfil</span>
-                </button>
-                
-                <button
-                  onClick={() => window.location.href = redirectTo}
-                  className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg"
-                  data-testid="button-verification-required-back"
-                >
-                  Voltar à Página Inicial
-                </button>
-              </div>
-              
-              <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
-                <div className="flex items-center space-x-2 text-yellow-800">
-                  <FileCheck className="w-4 h-4" />
-                  <p className="text-sm font-medium">Status: Verificação pendente</p>
+  if (requireVerification && user) {
+    // Usar o novo sistema de verificação
+    const needsVerification = shouldRedirectToVerification(location);
+    
+    if (needsVerification) {
+      const verificationUrl = getVerificationRedirectUrl(location);
+      
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileCheck className="w-8 h-8 text-yellow-600" />
                 </div>
-                <p className="text-xs text-yellow-700 mt-1">
-                  A verificação garante a segurança de todos os utilizadores da plataforma.
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
+                  Verificação Necessária
+                </h2>
+                <p className="text-gray-600 mb-6">
+                  Precisa de verificar a sua identidade e documentos para usar esta funcionalidade.
                 </p>
+                
+                <div className="space-y-3">
+                  <button
+                    onClick={() => window.location.href = verificationUrl}
+                    className="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg flex items-center justify-center space-x-2"
+                    data-testid="button-verification-required-verify"
+                  >
+                    <FileCheck className="w-4 h-4" />
+                    <span>Verificar Perfil</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => window.location.href = redirectTo}
+                    className="w-full border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg"
+                    data-testid="button-verification-required-back"
+                  >
+                    Voltar à Página Inicial
+                  </button>
+                </div>
+                
+                <div className="mt-6 p-4 bg-yellow-50 rounded-lg">
+                  <div className="flex items-center space-x-2 text-yellow-800">
+                    <FileCheck className="w-4 h-4" />
+                    <p className="text-sm font-medium">Status: Verificação pendente</p>
+                  </div>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    A verificação garante a segurança de todos os utilizadores da plataforma.
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
   }
 
   // All checks passed, render children

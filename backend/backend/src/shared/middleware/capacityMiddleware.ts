@@ -1,8 +1,7 @@
 // src/shared/middleware/capacityMiddleware.ts
 import { Request, Response, NextFunction } from 'express';
-import { AuthenticatedRequest } from '../firebaseAuth';
+import type { AuthenticatedRequest, UserCapabilities } from '../types.js';
 import { authStorage } from '../authStorage';
-import { UserCapabilities } from '../firebaseAuth';
 
 /**
  * Middleware para verificar se usuário tem uma capacidade específica

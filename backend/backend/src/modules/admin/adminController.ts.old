@@ -1,0 +1,20 @@
+// ⚠️ ARQUIVO LEGADO - NÃO USE MAIS
+// Este arquivo foi substituído pela nova estrutura:
+// 
+// ❌ ANTIGO:
+//    import adminController from './adminController.ts'
+//
+// ✅ NOVO:
+//    import adminRouter from './index.ts'
+//    ou simplesmente:
+//    import adminRouter from '../admin'
+//
+// 📝 MUDANÇAS:
+//    - Lógica removida para adminService.ts
+//    - Routes movidas para index.ts
+//    - Estrutura muito mais limpa e escalável
+//
+// 🗑️ Este arquivo pode ser removido após verificação
+
+// MANTÉM-SE APENAS PARA COMPATIBILIDADE DURANTE A TRANSIÇÃO
+// Delete após confirmar que tudo funciona com o novo sistema

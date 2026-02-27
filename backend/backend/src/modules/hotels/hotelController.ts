@@ -10,7 +10,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
 // ✅ Importar serviços de autenticação e capacidades
-import { verifyFirebaseToken, type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
+import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
+import type { AuthenticatedRequest } from "../../../shared/types.js";
 import { authService } from "../auth/services/authService.js";
 
 // ✅ Criar __dirname para ES Modules

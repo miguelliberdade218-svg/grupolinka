@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { verifyFirebaseToken, type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
+import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
+import type { AuthenticatedRequest } from "../../../shared/types.js";
 import { z } from "zod";
 import { authService } from "../auth/services/authService.js";
 import { authStorage } from "../../shared/authStorage.js";
@@ -278,17 +279,12 @@ router.get("/", async (req, res) => {
       // TODO: Implementar search no authService se necessário
       users = [];
     } else if (userType) {
-      // Mapear userType antigo para capacidades
-      if (userType === 'driver') {
-        users = await authService.getUsersByCapacity('drive');
-      } else if (userType === 'host') {
-        users = await authService.getUsersByCapacity('hotel_manager');
-      } else {
-        users = [];
-      }
+      // ✅ Por enquanto, retornar lista vazia para motoristas/hoteleiros
+      // Implementar método em authService quando necessário
+      users = [];
     } else {
-      // Buscar motoristas por padrão
-      users = await authService.getUsersByCapacity('drive');
+      // Retornar lista vazia se nenhum filtro
+      users = [];
     }
 
     // Filtros adicionais

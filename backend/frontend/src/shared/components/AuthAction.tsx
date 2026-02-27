@@ -3,6 +3,7 @@ import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent } from '@/shared/components/ui/card';
 import { Lock, Shield } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import useVerification from '../hooks/useVerification';
 import LoginModal from './LoginModal';
 
 interface AuthActionProps {
@@ -12,6 +13,7 @@ interface AuthActionProps {
   description?: string;
   requireAuth?: boolean;
   requireVerification?: boolean;
+  verificationType?: 'email' | 'identity' | 'driver' | 'hotel_manager' | 'client' | 'admin';
   className?: string;
 }
 
@@ -22,9 +24,11 @@ export function AuthAction({
   description = "Faça login para continuar com esta ação.",
   requireAuth = true,
   requireVerification = false,
+  verificationType = 'email',
   className = ""
 }: AuthActionProps) {
   const { isAuthenticated, user } = useAuth();
+  const { shouldRedirectToVerification, getVerificationRedirectUrl } = useVerification();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
 
@@ -34,10 +38,16 @@ export function AuthAction({
       return;
     }
     
-    if (requireVerification && user && !user.emailVerified) {
-      // Redirect to verification page
-      window.location.href = "/profile/verification";
-      return;
+    if (requireVerification && user) {
+      // Usar o novo sistema de verificação
+      const currentPath = window.location.pathname;
+      const needsVerification = shouldRedirectToVerification(currentPath);
+      
+      if (needsVerification) {
+        const verificationUrl = getVerificationRedirectUrl(currentPath);
+        window.location.href = verificationUrl;
+        return;
+      }
     }
     
     // All checks passed, execute the action

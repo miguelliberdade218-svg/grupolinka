@@ -48,13 +48,18 @@ import rideController from '../src/modules/rides/rideController';
 import driverController from '../src/modules/drivers/driverController';
 import vehicleRoutes from './provider/vehicles';
 
+// ===== ROTAS DE PAGAMENTOS / COMISSÕES =====
+import providerPaymentsRoutes from './provider-payments';
+import rideCompletionRoutes from './ride-completion';
+import hotelCheckoutRoutes from './hotel-checkout';
+
 // ===== ROTAS DE PARCERIAS =====
 import { partnershipRoutes } from '../src/modules/partnerships/partnershipRoutes';
 import { driverPartnershipRoutes } from '../src/modules/drivers/partnershipRoutes';
 
 // ===== OUTRAS ROTAS MODULARES =====
 import clientController from '../src/modules/clients/clientController';
-import adminController from '../src/modules/admin/adminController';
+import adminRouter from '../src/modules/admin';
 import userController from '../src/modules/users/userController';
 
 // ===== ROTAS INDIVIDUAIS DA RAIZ =====
@@ -493,7 +498,12 @@ export async function registerRoutes(app: express.Express): Promise<void> {
 
   app.use('/api/provider/rides', providerRidesRoutes);
   app.use('/api/provider/dashboard', providerDashboardRoutes);
+  app.use('/api/provider/payments', providerPaymentsRoutes);
+  console.log('✅ Rotas de pagamentos do provider registradas');
+  
   app.use('/api/rides', rideController);
+  app.use('/api/rides', rideCompletionRoutes);
+  app.use('/api/hotel-bookings', hotelCheckoutRoutes);
   app.use('/api/driver', driverController);
   app.use('/api/vehicles', vehicleRoutes);
   console.log('Rotas de Rides/Drivers/Veículos registradas');
@@ -503,7 +513,23 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   console.log('Rotas de parcerias registradas');
 
   app.use('/api/clients', clientController);
-  app.use('/api/admin/system', adminController);
+  
+  // ===== NOVO ADMIN MODULE (24/02/2026) - SISTEMA COMPLETO DE ADMINISTRAÇÃO =====
+  // ✅ AdminService: Lógica de negócio centralizada (30+ métodos)
+  // ✅ AdminRouter (index.ts do módulo admin): 35+ endpoints com middleware adminOnly
+  // ✅ Middleware adminOnly: Verifica Firebase token + flag isAdmin no banco
+  // 📚 Endpoints disponíveis:
+  //   Dashboard: GET /api/admin/dashboard/stats
+  //   Users: GET /api/admin/users, GET /api/admin/users/:userId
+  //   Capabilities: POST /api/admin/capabilities/:userId/[approve|reject|suspend]-[driver|hotel-manager]
+  //   Clients: POST /api/admin/clients/:userId/[suspend|reactivate]
+  //   Hotels: GET /api/admin/hotels, GET /api/admin/hotels/:hotelId, POST suspend/activate
+  //   Fees: GET /api/admin/fees/current, POST /api/admin/fees/update
+  //   Complaints: GET /api/admin/complaints, GET /api/admin/complaints/:id, PUT status
+  //   Payments: GET /api/admin/payments/[stats|references], POST confirm
+  //   Audit: GET /api/admin/audit/logs
+  app.use('/api/admin', adminRouter);
+  
   app.use('/api/users', userController);
 
   app.use('/api/admin-legacy', adminRoutes);

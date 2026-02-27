@@ -27,6 +27,9 @@ import EventDashboardWithSpace from './components/event-spaces/EventDashboardWit
 // ✅ ADICIONADO: Import da página de gestão de reservas
 import HotelBookingsPage from './pages/bookings/HotelBookingsPage';
 
+// ✅ ADICIONADO: Import da página de pagamentos/comissões
+import ProviderPaymentsDashboard from '../provider-app/pages/payments';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -53,6 +56,9 @@ function AppContent() {
           
           {/* ✅ ADICIONADO: Gestão de reservas de hotéis */}
           <Route path="/hotels-app/bookings" component={HotelBookingsPage} />
+          
+          {/* ✅ ADICIONADO: Pagamentos e Comissões */}
+          <Route path="/hotels-app/payments" component={ProviderPaymentsDashboard} />
           
           {/* Detalhes de reserva específica */}
           <Route path="/hotels-app/bookings/:bookingId">

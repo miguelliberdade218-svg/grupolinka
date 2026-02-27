@@ -6,7 +6,7 @@ import fetch from "node-fetch";
 
 // ✅ IMPORTAR authService em vez de authStorage
 import { authService } from "../auth/services/authService.js";
-import { type AuthenticatedRequest } from "../../../src/shared/firebaseAuth";
+import type { AuthenticatedRequest } from "../../../shared/types.js";
 
 // ✅ Importar serviços
 import { rideService } from "../../services/rideService";

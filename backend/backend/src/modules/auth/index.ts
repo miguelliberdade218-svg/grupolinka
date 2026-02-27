@@ -1,12 +1,15 @@
 // Exportar serviços
 export { authService } from './services/authService.js';
+
+// Exportar tipos de entrada para autenticação (movidos para shared/types.ts)
 export type {
-  CreateUserData,
-  CreateDriverData,
-  CreateHotelManagerData,
-  ActivateCapacityData,
-  ForgotPasswordData
-} from './services/authService.js';
+  CreateClientInput,
+  ActivateDriverCapacityInput,
+  ActivateHotelManagerCapacityInput,
+  UploadVerificationDocumentInput,
+  ApproveCapabilityInput,
+  RejectCapabilityInput
+} from '../../../shared/types.js';
 
 // Exportar schemas
 export {

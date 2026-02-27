@@ -134,9 +134,8 @@ export class ApiClient {
 
   // ✅ CORREÇÃO: Função auxiliar para obter headers de autenticação
   private static getAuthHeaders(contentType: string = 'application/json'): HeadersInit {
-    const authToken = localStorage.getItem('authToken') as string | null;
-    const token = localStorage.getItem('token') as string | null;
-    const finalToken = authToken || token;
+    const firebaseToken = localStorage.getItem('firebaseToken') as string | null;
+    const finalToken = firebaseToken;
     
     const headers: HeadersInit = {
       'Content-Type': contentType
@@ -151,9 +150,8 @@ export class ApiClient {
 
   // ✅ CORREÇÃO: Função auxiliar para obter headers sem Content-Type (para GET requests)
   private static getAuthHeadersWithoutContentType(): HeadersInit {
-    const authToken = localStorage.getItem('authToken') as string | null;
-    const token = localStorage.getItem('token') as string | null;
-    const finalToken = authToken || token;
+    const firebaseToken = localStorage.getItem('firebaseToken') as string | null;
+    const finalToken = firebaseToken;
     
     const headers: HeadersInit = {};
     
@@ -443,17 +441,14 @@ export class ApiClient {
   
   // ✅ CORREÇÃO: Verificar se usuário está autenticado
   static isAuthenticated(): boolean {
-    const authToken = localStorage.getItem('authToken') as string | null;
-    const token = localStorage.getItem('token') as string | null;
-    const finalToken = authToken || token;
-    return !!finalToken;
+    const firebaseToken = localStorage.getItem('firebaseToken') as string | null;
+    return !!firebaseToken;
   }
 
   // ✅ CORREÇÃO: Obter token (útil para debug)
   static getToken(): string | null {
-    const authToken = localStorage.getItem('authToken') as string | null;
-    const token = localStorage.getItem('token') as string | null;
-    return authToken || token;
+    const firebaseToken = localStorage.getItem('firebaseToken') as string | null;
+    return firebaseToken;
   }
 
   // ===== MANUAL CONTROL =====

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
-import { bookings, rides } from '../shared/schema';
+import { bookings, rides, users } from '../shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { verifyFirebaseToken } from '../middleware/role-auth';
 import { AuthenticatedUser } from '../shared/types';
@@ -11,7 +11,8 @@ const router = Router();
 // ===== SCHEMAS DE VALIDAÇÃO =====
 const createBookingSchema = z.object({
   rideId: z.string().optional(),
-  accommodationId: z.string().optional(),
+  accommodationId: z.string().optional(), // ✅ CORRIGIDO: accommodationId em vez de hotelId
+  roomTypeId: z.string().optional(), // ✅ ADICIONADO: campo para roomTypeId
   type: z.enum(['ride', 'accommodation']),
   guestInfo: z.object({
     name: z.string().min(1, "Nome é obrigatório"),
@@ -69,18 +70,43 @@ router.post("/", verifyFirebaseToken, async (req: any, res) => {
     const pricePerSeat = parseFloat(ride.pricePerSeat);
     const totalAmount = pricePerSeat * passengers;
 
+    // ✅ EXTRAIR INFORMAÇÕES DO CLIENTE DAS NOTES
+    let guestName = 'Cliente';
+    let guestEmail = '';
+    let guestPhone = '';
+    
+    if (notes) {
+      // Tentar extrair telefone e email das notes
+      const phoneMatch = notes.match(/Telefone:\s*([+\d\s()-]+)/i);
+      const emailMatch = notes.match(/Email:\s*([^\s,.]+@[^\s,.]+\.[^\s,.]+)/i);
+      
+      if (phoneMatch) guestPhone = phoneMatch[1].trim();
+      if (emailMatch) guestEmail = emailMatch[1].trim();
+      
+      // Se não encontrar padrão específico, usar o usuário autenticado
+      if (!guestEmail) {
+        // Buscar email do usuário autenticado
+        const [user] = await db
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.id, userId));
+        if (user?.email) guestEmail = user.email;
+      }
+    }
+
     // ✅ CRIAR BOOKING APENAS PARA RIDE
     const [newBooking] = await db
       .insert(bookings)
       .values({
         passengerId: userId,
         rideId: rideId,
-        accommodationId: null, // ✅ EXPLICITAMENTE NULL
+        accommodationId: null, // ✅ CORRIGIDO: usar accommodationId em vez de hotelId
+        roomTypeId: null, // ✅ CORRIGIDO: usar roomTypeId
         status: 'confirmed',
         totalPrice: totalAmount.toString(),
-        guestName: req.body.guestInfo?.name || 'Cliente',
-        guestEmail: req.body.guestInfo?.email || '',
-        guestPhone: req.body.guestInfo?.phone || '',
+        guestName: guestName,
+        guestEmail: guestEmail,
+        guestPhone: guestPhone,
         passengers: passengers,
         seatsBooked: passengers,
         type: 'ride', // ✅ FIXO COMO RIDE
@@ -126,7 +152,8 @@ router.post('/create', verifyFirebaseToken, async (req: any, res) => {
       type: bookingData.type, 
       userId,
       rideId: bookingData.rideId,
-      accommodationId: bookingData.accommodationId
+      accommodationId: bookingData.accommodationId, // ✅ CORRIGIDO
+      roomTypeId: bookingData.roomTypeId // ✅ ADICIONADO
     });
 
     const passengers = bookingData.details.passengers || 1;
@@ -162,7 +189,8 @@ router.post('/create', verifyFirebaseToken, async (req: any, res) => {
       .values({
         passengerId: userId,
         rideId: bookingData.rideId || null,
-        accommodationId: bookingData.accommodationId || null,
+        accommodationId: bookingData.accommodationId || null, // ✅ CORRIGIDO
+        roomTypeId: bookingData.roomTypeId || null, // ✅ CORRIGIDO
         status: 'confirmed',
         totalPrice: bookingData.details.totalAmount.toString(),
         guestName: bookingData.guestInfo.name,
@@ -218,7 +246,7 @@ router.get('/user', verifyFirebaseToken, async (req: any, res) => {
     const bookingsWithServiceType = userBookings.map(booking => ({
       ...booking,
       serviceType: booking.rideId ? 'ride' : 
-                  booking.accommodationId ? 'accommodation' : 'unknown'
+                  booking.accommodationId ? 'accommodation' : 'unknown' // ✅ CORRIGIDO
     }));
 
     res.json({
@@ -303,3 +331,8 @@ router.get('/health', (req, res) => {
 });
 
 export default router;
+
+
+
+
+

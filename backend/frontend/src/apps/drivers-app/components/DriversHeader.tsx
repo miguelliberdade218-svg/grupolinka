@@ -75,7 +75,7 @@ export default function DriversHeader() {
     { href: "/drivers/publish", label: "Publicar Rota", icon: <Plus className="h-4 w-4" />, active: location.startsWith("/drivers/publish") },
     { href: "/drivers/offers", label: "Minhas Ofertas", icon: <Car className="h-4 w-4" />, active: location.startsWith("/drivers/offers") },
     { href: "/drivers/vehicles", label: "Meus Veículos", icon: <Wrench className="h-4 w-4" />, active: location.startsWith("/drivers/vehicles") },
-    { href: "/drivers/earnings", label: "Ganhos", icon: <DollarSign className="h-4 w-4" />, active: location.startsWith("/drivers/earnings") },
+    { href: "/drivers/payments", label: "Minhas Comissões", icon: <DollarSign className="h-4 w-4" />, active: location.startsWith("/drivers/payments") },
     { href: "/drivers/partnerships", label: "Parcerias", icon: <UsersIcon className="h-4 w-4" />, active: location.startsWith("/drivers/partnerships") },
     { href: "/drivers/chat", label: "Mensagens", icon: <MessageCircle className="h-4 w-4" />, active: location.startsWith("/drivers/chat") },
   ];

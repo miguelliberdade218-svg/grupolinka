@@ -110,11 +110,99 @@ export interface AuthenticatedUser {
   firstName?: string;
   lastName?: string;
   profileImageUrl?: string;
+  // Capacidades
+  canBookServices?: boolean;
+  canDrive?: boolean;
+  canManageHotels?: boolean;
+  isAdmin?: boolean;
+  driverVerificationStatus?: string;
+  hotelManagerVerificationStatus?: string;
   [key: string]: any;
 }
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthenticatedUser;
+}
+
+// ===== AUTH INPUT TYPES (para endpoints de autenticação) =====
+
+export interface CreateClientInput {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+  accountType?: 'individual' | 'company';
+  companyName?: string | null;
+  companyVatNumber?: string | null;
+  companyAddress?: string | null;
+  companyPhone?: string | null;
+}
+
+export interface ActivateDriverCapacityInput {
+  userId: string;
+  licenseNumber: string;
+  licenseCountry?: string;
+  licenseExpiry: string; // ISO date
+  vehicleType: string;
+  yearsExperience?: number;
+}
+
+export interface ActivateHotelManagerCapacityInput {
+  userId: string;
+  businessTaxId: string;
+  businessRegistrationNumber?: string;
+  businessLegalName: string;
+  businessAddress?: string;
+  businessPhone?: string;
+  businessEmail?: string;
+}
+
+export interface UploadVerificationDocumentInput {
+  userId: string;
+  documentType: DocumentType;
+  documentUrl: string;
+  documentNumber?: string;
+  expiryDate?: Date;
+}
+
+export interface ApproveCapabilityInput {
+  capabilityId: string;
+  userId: string;
+  capabilityType: 'driver' | 'hotel_manager' | 'event_organizer';
+  notes?: string;
+}
+
+export interface RejectCapabilityInput {
+  capabilityId: string;
+  userId: string;
+  capabilityType: 'driver' | 'hotel_manager' | 'event_organizer';
+  reason: string;
+}
+
+// ===== API RESPONSE TYPES =====
+
+export interface UserCapabilities {
+  canBookServices: boolean;
+  canDrive: boolean;
+  canManageHotels: boolean;
+  isAdmin: boolean;
+  driverVerificationStatus: string | null;
+  hotelManagerVerificationStatus: string | null;
+}
+
+export interface ApiResponse<T = any> {
+  success: true;
+  data: T;
+  message?: string;
+  timestamp: string;
+}
+
+export interface ApiError {
+  success: false;
+  message: string;
+  code: string;
+  details?: any;
+  timestamp: string;
 }
 
 // ===== VEHICLE TYPES ===== ✅ ADICIONADO

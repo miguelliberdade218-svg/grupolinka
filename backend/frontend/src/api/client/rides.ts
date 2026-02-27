@@ -134,25 +134,47 @@ export interface RideSearchResponse {
 }
 
 // ✅ CORREÇÃO: Função auxiliar para obter token corretamente
-function getAuthToken(): string {
-  // ✅ CORREÇÃO CRÍTICA: Tentar múltiplas chaves possíveis
+async function getAuthToken(): Promise<string> {
+  // ✅ CORREÇÃO CRÍTICA: Tentar múltiplas chaves possíveis baseadas nos logs
   const possibleKeys = [
-    'firebase_token', // ✅ Chave correta baseada nos logs
+    'firebaseToken', // ✅ Chave do useAuth.ts (sem underscore)
     'firebase_token', // Chave alternativa
     'auth_token',
-    'token'
+    'token',
+    'authToken' // Outra possível chave
   ];
 
   for (const key of possibleKeys) {
     const token = localStorage.getItem(key);
-    if (token) {
-      console.log(`✅ [AUTH] Token encontrado com chave: ${key}`);
+    if (token && token.trim() !== '') {
+      console.log(`✅ [AUTH] Token encontrado com chave: ${key}`, token.substring(0, 20) + '...');
       return token;
     }
   }
 
+  // ✅ NOVO: Tentar obter token do Firebase auth se disponível
+  try {
+    // Importar dinamicamente para evitar dependência circular
+    const { auth } = await import('@/shared/lib/firebaseConfig');
+    if (auth?.currentUser) {
+      const token = await auth.currentUser.getIdToken();
+      if (token && token.trim() !== '') {
+        console.log('✅ [AUTH] Token obtido do Firebase auth');
+        // Salvar no localStorage para uso futuro
+        localStorage.setItem('firebaseToken', token);
+        return token;
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Não foi possível obter token do Firebase auth:', error);
+  }
+
   console.error('❌ [AUTH] Nenhum token encontrado. Chaves verificadas:', possibleKeys);
-  console.log('🔍 [AUTH] Conteúdo do localStorage:', { ...localStorage });
+  console.log('🔍 [AUTH] Conteúdo do localStorage:', Object.keys(localStorage).map(key => ({
+    key,
+    hasValue: !!localStorage.getItem(key),
+    valueLength: localStorage.getItem(key)?.length || 0
+  })));
   throw new Error('Token de autenticação não encontrado');
 }
 
@@ -161,10 +183,14 @@ async function apiPost<T>(url: string, body?: any): Promise<T> {
   try {
     console.log('🚀 [API-POST] Fazendo requisição para:', url);
     
-    // ✅ CORREÇÃO: Usar função auxiliar para obter token
-    const token = getAuthToken();
+    // ✅ CORREÇÃO: Usar função auxiliar para obter token (agora assíncrona)
+    const token = await getAuthToken();
 
-    const response = await fetch(`http://localhost:8000${url}`, {
+    // ✅ CORREÇÃO: Usar mesma URL base que o queryClient.ts
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://link-a-backend-production.up.railway.app';
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
+    const response = await fetch(fullUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -216,10 +242,14 @@ async function apiGet<T>(url: string): Promise<T> {
   try {
     console.log('🚀 [API-GET] Fazendo requisição para:', url);
     
-    // ✅ CORREÇÃO: Usar função auxiliar para obter token
-    const token = getAuthToken();
+    // ✅ CORREÇÃO: Usar função auxiliar para obter token (agora assíncrona)
+    const token = await getAuthToken();
 
-    const response = await fetch(`http://localhost:8000${url}`, {
+    // ✅ CORREÇÃO: Usar mesma URL base que o queryClient.ts
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://link-a-backend-production.up.railway.app';
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+
+    const response = await fetch(fullUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -368,8 +398,12 @@ export const clientRidesApi = {
       const url = `/api/rides/smart/search?${searchParams.toString()}`;
       console.log('🧠 [CLIENT API] URL de busca SMART FINAL (sem auth):', url);
       
+      // ✅ CORREÇÃO: Usar mesma URL base que o queryClient.ts
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://link-a-backend-production.up.railway.app';
+      const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
+      
       // ✅ CORREÇÃO: Busca sem autenticação
-      const response = await fetch(url, {
+      const response = await fetch(fullUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'

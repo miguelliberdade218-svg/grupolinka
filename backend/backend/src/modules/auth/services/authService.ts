@@ -1,424 +1,461 @@
-import { db } from '../../../../db.js';
-import { users, userCapacityDocuments } from '../../../../shared/schema.js';
-import { eq, and } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
-import type { 
-  User, 
-  UserCapacityDocument,
-  UserInsert 
-} from '../../../../shared/schema.js';
-import { emailService } from '../../../shared/emailService.js';
+// ========================================================================
+// authService_MODERNIZADO.ts - Serviço de Autenticação (25 Fevereiro 2026)
+// ✅ Criação de contas unificada
+// ✅ Gerenciamento de capacidades
+// ✅ Sincronização Firebase-DB
+// ========================================================================
 
-// Tipos para o serviço
-export interface CreateUserData {
-  email: string;
-  firstName: string;
-  lastName: string;
-  phone?: string;
-  accountType?: 'individual' | 'company';
-  companyName?: string;
-  companyVatNumber?: string;
-  companyAddress?: string;
-  companyPhone?: string;
+import { randomUUID } from "crypto";
+import { db } from "../../../../db.js";
+import { 
+  users, 
+  driverProfiles, 
+  hotelManagerProfiles,
+  verificationDocuments,
+  capabilityChangesLog 
+} from "../../../../shared/schema.js";
+import { 
+  CreateClientInput,
+  ActivateDriverCapacityInput,
+  ActivateHotelManagerCapacityInput,
+  UploadVerificationDocumentInput,
+  ApproveCapabilityInput,
+  RejectCapabilityInput
+} from "../../../../shared/types.js";
+import { eq, and, sql } from "drizzle-orm";
+
+// ==================== CACHE COM TTL ====================
+interface CachedCapabilities {
+  data: any;
+  timestamp: number;
 }
 
-export interface CreateDriverData extends CreateUserData {
-  driverLicenseNumber: string;
-  driverLicenseCountry?: string;
-  driverLicenseExpiry: string;
-  driverVehicleType: string;
-  driverYearsExperience?: number;
-}
+const CAPABILITY_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const capabilityCache = new Map<string, CachedCapabilities>();
 
-export interface CreateHotelManagerData extends CreateUserData {
-  businessTaxId: string;
-  businessRegistrationNumber?: string;
-  businessLegalName: string;
-}
-
-export interface ActivateCapacityData {
-  userId: string;
-  capacity: 'drive' | 'hotel_manager';
-  documents?: Array<{
-    type: string;
-    url: string;
-    number?: string;
-    expiryDate?: string;
-  }>;
-  notes?: string;
-}
-
-export interface ForgotPasswordData {
-  email: string;
-}
-
-// ✅ SOLUÇÃO DEFINITIVA: Incluir TODOS os campos do tipo User
-function convertDbUserToUser(dbUser: unknown): User {
-  const user = dbUser as any;
-  
-  return {
-    // Campos obrigatórios
-    id: user.id,
-    email: user.email || null,
-    firstName: user.firstName || null,
-    lastName: user.lastName || null,
-    fullName: user.fullName || null,
-    profileImageUrl: user.profileImageUrl || null,
-    phone: user.phone || null,
-    
-    // Campos do sistema antigo
-    userType: user.userType || 'client',
-    roles: user.roles || [],
-    canOfferServices: Boolean(user.canOfferServices),
-    rating: user.rating ? user.rating.toString() : '0.00',
-    totalReviews: user.totalReviews || 0,
-    isVerified: Boolean(user.isVerified),
-    verificationStatus: user.verificationStatus || 'pending',
-    verificationDate: user.verificationDate || null,
-    verificationNotes: user.verificationNotes || null,
-    identityDocumentUrl: user.identityDocumentUrl || null,
-    identityDocumentType: user.identityDocumentType || null,
-    documentNumber: user.documentNumber || null,
-    dateOfBirth: user.dateOfBirth || null,
-    registrationCompleted: Boolean(user.registrationCompleted),
-    verificationBadge: user.verificationBadge || null,
-    badgeEarnedDate: user.badgeEarnedDate || null,
-    
-    // ✅ SISTEMA DE CAPACIDADES
-    canBookServices: Boolean(user.canBookServices),
-    canDrive: Boolean(user.canDrive),
-    canManageHotels: Boolean(user.canManageHotels),
-    isAdmin: Boolean(user.isAdmin),
-    
-    // ✅ Status de verificação de motorista
-    driverVerificationStatus: user.driverVerificationStatus || null,
-    driverVerificationNotes: user.driverVerificationNotes || null,
-    driverVerifiedAt: user.driverVerifiedAt || null,
-    
-    // ✅ Status de verificação de gestor de hotel
-    hotelManagerVerificationStatus: user.hotelManagerVerificationStatus || null,
-    hotelManagerVerificationNotes: user.hotelManagerVerificationNotes || null,
-    hotelManagerVerifiedAt: user.hotelManagerVerifiedAt || null,
-    
-    // ✅ Documentos do motorista
-    driverLicenseNumber: user.driverLicenseNumber || null,
-    driverLicenseCountry: user.driverLicenseCountry || 'Moçambique',
-    driverLicenseExpiry: user.driverLicenseExpiry || null,
-    driverVehicleType: user.driverVehicleType || null,
-    driverYearsExperience: user.driverYearsExperience || null,
-    
-    // ✅ Documentos da empresa
-    businessTaxId: user.businessTaxId || null,
-    businessRegistrationNumber: user.businessRegistrationNumber || null,
-    businessLegalName: user.businessLegalName || null,
-    
-    // ✅ Tipo de conta (individual/company)
-    accountType: user.accountType || 'individual',
-    companyName: user.companyName || null,
-    companyVatNumber: user.companyVatNumber || null,
-    companyAddress: user.companyAddress || null,
-    companyPhone: user.companyPhone || null,
-    
-    // ✅ Metadados de capacidades
-    capabilitiesUpdatedAt: user.capabilitiesUpdatedAt || null,
-    lastCapacityActivation: user.lastCapacityActivation || null,
-    
-    // ✅ Timestamps
-    createdAt: user.createdAt || null,
-    updatedAt: user.updatedAt || null,
-  };
-}
-
-// ✅ Helper para converter arrays - com tipagem explícita
-function convertDbUsersToUsers(dbUsers: unknown[]): User[] {
-  return dbUsers.map(user => convertDbUserToUser(user));
-}
+// ==================== SERVIÇO DE CLIENTE ====================
 
 export class AuthService {
-  // ========== CRIAÇÃO DE USUÁRIOS ==========
-  
-  async createClient(data: CreateUserData): Promise<User> {
-    const result = await db.insert(users).values({
-      id: sql`gen_random_uuid()`,
-      email: data.email,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      phone: data.phone || null,
-      accountType: data.accountType || 'individual',
-      companyName: data.accountType === 'company' ? data.companyName : null,
-      companyVatNumber: data.accountType === 'company' ? data.companyVatNumber : null,
-      companyAddress: data.accountType === 'company' ? data.companyAddress : null,
-      companyPhone: data.accountType === 'company' ? data.companyPhone : null,
-      canBookServices: true,
-      canDrive: false,
-      canManageHotels: false,
-      isAdmin: false,
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    }).returning();
-    
-    return convertDbUserToUser(result[0]);
-  }
-  
-  async createDriver(data: CreateDriverData): Promise<User> {
-    const result = await db.insert(users).values({
-      id: sql`gen_random_uuid()`,
-      email: data.email,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      phone: data.phone || null,
-      accountType: data.accountType || 'individual',
-      canBookServices: true,
-      canDrive: true,
-      canManageHotels: false,
-      isAdmin: false,
-      driverVerificationStatus: 'pending',
-      driverLicenseNumber: data.driverLicenseNumber,
-      driverLicenseCountry: data.driverLicenseCountry || 'Moçambique',
-      driverLicenseExpiry: sql`${data.driverLicenseExpiry}::date`,
-      driverVehicleType: data.driverVehicleType,
-      driverYearsExperience: data.driverYearsExperience || null,
-      capabilitiesUpdatedAt: sql`now()`,
-      lastCapacityActivation: sql`now()`,
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    }).returning();
-    
-    return convertDbUserToUser(result[0]);
-  }
-  
-  async createHotelManager(data: CreateHotelManagerData): Promise<User> {
-    const result = await db.insert(users).values({
-      id: sql`gen_random_uuid()`,
-      email: data.email,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      phone: data.phone || null,
-      accountType: data.accountType || 'individual',
-      canBookServices: true,
-      canDrive: false,
-      canManageHotels: true,
-      isAdmin: false,
-      hotelManagerVerificationStatus: 'pending',
-      businessTaxId: data.businessTaxId,
-      businessRegistrationNumber: data.businessRegistrationNumber || null,
-      businessLegalName: data.businessLegalName,
-      capabilitiesUpdatedAt: sql`now()`,
-      lastCapacityActivation: sql`now()`,
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    }).returning();
-    
-    return convertDbUserToUser(result[0]);
-  }
-  
-  // ========== ATIVAÇÃO DE CAPACIDADES ==========
-  
-  async activateCapacity(data: ActivateCapacityData): Promise<{ user: User; documents: UserCapacityDocument[] }> {
-    const { userId, capacity, documents = [], notes } = data;
-    
-    // Verificar se usuário existe
-    const userResult = await db.select().from(users).where(eq(users.id, userId));
-    if (!userResult[0]) {
-      throw new Error('Usuário não encontrado');
-    }
-    
-    // Verificar se já tem a capacidade
-    if ((capacity === 'drive' && userResult[0].canDrive) || 
-        (capacity === 'hotel_manager' && userResult[0].canManageHotels)) {
-      throw new Error('Usuário já possui esta capacidade');
-    }
-    
-    // Atualizar capacidade do usuário
-    const updateData: any = {
-      capabilitiesUpdatedAt: sql`now()`,
-      lastCapacityActivation: sql`now()`,
-    };
-    
-    if (capacity === 'drive') {
-      updateData.canDrive = true;
-      updateData.driverVerificationStatus = 'pending';
-      if (notes) updateData.driverVerificationNotes = notes;
-    } else if (capacity === 'hotel_manager') {
-      updateData.canManageHotels = true;
-      updateData.hotelManagerVerificationStatus = 'pending';
-      if (notes) updateData.hotelManagerVerificationNotes = notes;
-    }
-    
-    const updatedResult = await db.update(users)
-      .set(updateData)
-      .where(eq(users.id, userId))
-      .returning();
-    
-    // Salvar documentos se fornecidos
-    let savedDocuments: UserCapacityDocument[] = [];
-    if (documents.length > 0) {
-      const documentValues = documents.map(doc => ({
-        userId,
-        capacity,
-        documentType: doc.type,
-        documentUrl: doc.url,
-        documentNumber: doc.number || null,
-        expiryDate: doc.expiryDate ? sql`${doc.expiryDate}::date` : null,
-        isVerified: false,
-        createdAt: sql`now()`,
-        updatedAt: sql`now()`,
-      }));
-      
-      const docResult = await db.insert(userCapacityDocuments)
-        .values(documentValues)
+  /**
+   * Criar conta de cliente (base para todas as contas)
+   */
+  static async createClient(input: CreateClientInput) {
+    try {
+      console.log(`📝 Criando cliente: ${input.email}`);
+
+      // Validar se já existe
+      const existing = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, input.email));
+
+      if (existing.length > 0) {
+        throw new Error(`Usuário ${input.email} já existe`);
+      }
+
+      // Criar usuário
+      const newUser = await db
+        .insert(users)
+        .values({
+          id: randomUUID(),
+          email: input.email,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          fullName: `${input.firstName} ${input.lastName}`,
+          phone: input.phone,
+          accountType: input.accountType || 'individual',
+          companyName: input.companyName,
+          companyVatNumber: input.companyVatNumber,
+          companyAddress: input.companyAddress,
+          companyPhone: input.companyPhone,
+          canBookServices: true,
+          canDrive: false,
+          canManageHotels: false,
+          isAdmin: false,
+          clientVerificationStatus: 'verified',
+          createdAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
         .returning();
+
+      console.log(`✅ Cliente criado: ${newUser[0].id}`);
+      return newUser[0];
+    } catch (error) {
+      console.error('❌ Erro ao criar cliente:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Obter usuário por ID
+   */
+  static async getUserById(userId: string) {
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId));
+
+      return result.length > 0 ? result[0] : null;
+    } catch (error) {
+      console.error('❌ Erro ao buscar usuário:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Obter usuário por email
+   */
+  static async getUserByEmail(email: string) {
+    try {
+      const result = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email));
+
+      return result.length > 0 ? result[0] : null;
+    } catch (error) {
+      console.error('❌ Erro ao buscar usuário por email:', error);
+      throw error;
+    }
+  }
+
+  // ==================== GERENCIAMENTO DE CAPACIDADES ====================
+
+  /**
+   * Ativar capacidade de motorista
+   */
+  static async activateDriverCapability(input: ActivateDriverCapacityInput) {
+    try {
+      console.log(`🚗 Ativando capacidade de motorista para: ${input.userId}`);
+
+
+      // Criar perfil de motorista
+      const driverProfile = await db
+        .insert(driverProfiles)
+        .values({
+          user_id: input.userId,
+          license_number: input.licenseNumber,
+          license_country: input.licenseCountry || 'Mo\u00e7ambique',
+          license_expiry: input.licenseExpiry,
+          vehicle_type: input.vehicleType,
+          years_experience: input.yearsExperience || 0,
+          verification_status: 'pending',
+          created_at: sql`now()`,
+          updated_at: sql`now()`,
+        })
+        .returning();
+
+      // Ativar capacidade (mas status é pending review)
+      await db.update(users)
+        .set({
+          canDrive: true,
+          driverVerificationStatus: 'pending',
+          updatedAt: sql`now()`,
+        })
+        .where(eq(users.id, input.userId));
+
+      // Registrar auditoria
+      await this.logCapabilityChange(
+        input.userId,
+        'can_drive',
+        false,
+        true,
+        'Usuário ativou capacidade de motorista'
+      );
+
+      console.log(`✅ Capacidade de motorista ativada: ${driverProfile[0].id}`);
+      return driverProfile[0];
+    } catch (error) {
+      console.error('❌ Erro ao ativar motorista:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ativar capacidade de gestor de hotel
+   */
+  static async activateHotelManagerCapability(input: ActivateHotelManagerCapacityInput) {
+    try {
+      console.log(`🏨 Ativando capacidade de gestor de hotel para: ${input.userId}`);
+
+      // Validar se já tem perfil
+      const existing = await db
+        .select()
+        .from(hotelManagerProfiles)
+        .where(eq(hotelManagerProfiles.user_id, input.userId));
+
+      if (existing.length > 0) {
+        throw new Error('Usuário já tem perfil de gestor de hotel');
+      }
+
+      // Criar perfil
+      const hotelProfile = await db
+        .insert(hotelManagerProfiles)
+        .values({
+          user_id: input.userId,
+          business_tax_id: input.businessTaxId,
+          business_registration_number: input.businessRegistrationNumber,
+          business_legal_name: input.businessLegalName,
+          business_address: input.businessAddress,
+          business_phone: input.businessPhone,
+          business_email: input.businessEmail,
+          verification_status: 'pending',
+          created_at: sql`now()`,
+          updated_at: sql`now()`,
+        })
+        .returning();
+
+      // Ativar capacidade
+      await db.update(users)
+        .set({
+          canManageHotels: true,
+          hotelManagerVerificationStatus: 'pending',
+          updatedAt: sql`now()`,
+        })
+        .where(eq(users.id, input.userId));
+
+      // Registrar auditoria
+      await this.logCapabilityChange(
+        input.userId,
+        'can_manage_hotels',
+        false,
+        true,
+        'Usuário ativou capacidade de gestor de hotel'
+      );
+
+      console.log(`✅ Capacidade de gestor de hotel ativada: ${hotelProfile[0].id}`);
+      return hotelProfile[0];
+    } catch (error) {
+      console.error('❌ Erro ao ativar gestor de hotel:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Registrar documento de verificação
+   */
+  static async uploadVerificationDocument(
+    userId: string,
+    profileType: string,
+    documentType: string,
+    documentUrl: string,
+    documentNumber?: string,
+    expiryDate?: string
+  ) {
+    try {
+      console.log(`📄 Registrando documento para: ${userId}`);
+
+      const doc = await db
+        .insert(verificationDocuments)
+        .values({
+          user_id: userId,
+          profile_type: profileType,
+          document_type: documentType,
+          document_url: documentUrl,
+          document_number: documentNumber,
+          expiry_date: expiryDate ? expiryDate : null,
+          verification_status: 'pending',
+          created_at: sql`now()`,
+          updated_at: sql`now()`,
+        })
+        .returning();
+
+      console.log(`✅ Documento registrado: ${doc[0].id}`);
+      return doc[0];
+    } catch (error) {
+      console.error('❌ Erro ao registrar documento:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aprovar capacidade (por admin) - COM LOGGING CRÍTICO
+   */
+  static async approveCapability(
+    userId: string,
+    capability: 'driver' | 'hotel_manager',
+    approvedBy: string
+  ) {
+    try {
+      console.log(`✅ [CRITICAL] Aprovando capacidade ${capability} para: ${userId} por admin: ${approvedBy}`);
+
+      if (capability === 'driver') {
+        await db.update(users)
+          .set({
+            driverVerificationStatus: 'verified',
+            driverVerifiedAt: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(users.id, userId));
+      } else if (capability === 'hotel_manager') {
+        await db.update(users)
+          .set({
+            hotelManagerVerificationStatus: 'verified',
+            hotelManagerVerifiedAt: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(users.id, userId));
+      }
+
+      // Registrar auditoria com detalhes completos
+      await this.logCapabilityChange(
+        userId,
+        `${capability}_verification_status`,
+        false,
+        true,
+        `Capacidade ${capability} aprovada por admin ${approvedBy}`,
+        approvedBy
+      );
+
+      // Log crítico para audit trail
+      console.log(`✅ [AUDIT] CAPACIDADE APROVADA: userId=${userId}, capability=${capability}, approvedBy=${approvedBy}, timestamp=${new Date().toISOString()}`);
       
-      savedDocuments = docResult as unknown as UserCapacityDocument[];
+      // Invalidar cache
+      capabilityCache.delete(userId);
+      
+      return true;
+    } catch (error) {
+      console.error('❌ [ERROR] Erro ao aprovar capacidade:', error);
+      throw error;
     }
-    
-    return { 
-      user: convertDbUserToUser(updatedResult[0]), 
-      documents: savedDocuments 
-    };
   }
-  
-  // ========== BUSCA DE USUÁRIOS ==========
-  
-  async getUserById(id: string): Promise<User | null> {
-    const result = await db.select().from(users).where(eq(users.id, id));
-    return result[0] ? convertDbUserToUser(result[0]) : null;
-  }
-  
-  async getUserByEmail(email: string): Promise<User | null> {
-    const result = await db.select().from(users).where(eq(users.email, email));
-    return result[0] ? convertDbUserToUser(result[0]) : null;
-  }
-  
-  async getUserWithCapabilities(id: string): Promise<any> {
-    const userResult = await db.select().from(users).where(eq(users.id, id));
-    if (!userResult[0]) return null;
-    
-    // Buscar documentos de capacidade
-    const documentsResult = await db.select()
-      .from(userCapacityDocuments)
-      .where(eq(userCapacityDocuments.userId, id));
-    
-    return {
-      ...convertDbUserToUser(userResult[0]),
-      capacityDocuments: documentsResult as unknown as UserCapacityDocument[],
-    };
-  }
-  
-  // ========== ESQUECI MINHA SENHA - CORRIGIDO COM EMAIL SERVICE ==========
-  
-  async initiatePasswordReset(data: ForgotPasswordData): Promise<{ success: boolean; message: string }> {
-    const { email } = data;
-    
-    // Verificar se usuário existe
-    const user = await this.getUserByEmail(email);
-    if (!user) {
-      // Por segurança, não revelamos se o email existe
-      return {
-        success: true,
-        message: 'Se o email existir, você receberá instruções para redefinir sua senha'
+
+  /**
+   * Rejeitar capacidade (por admin) - COM LOGGING CRÍTICO
+   */
+  static async rejectCapability(
+    userId: string,
+    capability: 'driver' | 'hotel_manager',
+    reason: string,
+    rejectedBy: string
+  ) {
+    try {
+      console.log(`❌ [CRITICAL] Rejeitando capacidade ${capability} para: ${userId} por admin: ${rejectedBy}. Razão: ${reason}`);
+
+      const capabilityMap: Record<string, any> = {
+        driver: {
+          statusField: 'driver_verification_status',
+          profileTable: driverProfiles,
+          profileField: 'verification_status',
+        },
+        hotel_manager: {
+          statusField: 'hotel_manager_verification_status',
+          profileTable: hotelManagerProfiles,
+          profileField: 'verification_status',
+        },
       };
+
+      const config = capabilityMap[capability];
+      if (!config) throw new Error('Capacidade inválida');
+
+      // Atualizar status no users
+      const updateData: any = { updatedAt: sql`now()` };
+      if (capability === 'driver') {
+        updateData.driverVerificationStatus = 'rejected';
+      } else if (capability === 'hotel_manager') {
+        updateData.hotelManagerVerificationStatus = 'rejected';
+      }
+
+      await db.update(users)
+        .set(updateData)
+        .where(eq(users.id, userId));
+
+      // Registrar razão na auditoria
+      await this.logCapabilityChange(
+        userId,
+        `${capability}_rejected`,
+        false,
+        false,
+        reason,
+        rejectedBy
+      );
+
+      // Log crítico para audit trail
+      console.log(`❌ [AUDIT] CAPACIDADE REJEITADA: userId=${userId}, capability=${capability}, reason=${reason}, rejectedBy=${rejectedBy}, timestamp=${new Date().toISOString()}`);
+      
+      // Invalidar cache
+      capabilityCache.delete(userId);
+
+      return true;
+    } catch (error) {
+      console.error('❌ [ERROR] Erro ao rejeitar capacidade:', error);
+      throw error;
     }
-    
-    // Gerar token de reset (simplificado - em produção usar JWT com expiração)
-    const resetToken = uuidv4();
-    
-    // Enviar email de reset
-    const emailSent = await emailService.sendPasswordResetEmail(
-      email,
-      user.firstName || 'Usuário',
-      resetToken
-    );
-    
-    if (!emailSent) {
-      console.error('Falha ao enviar email de reset para:', email);
-      return {
-        success: false,
-        message: 'Erro ao enviar email de recuperação. Tente novamente mais tarde.'
+  }
+
+  /**
+   * Obter capacidades do usuário - COM CACHE TTL
+   */
+  static async getCapabilities(userId: string) {
+    try {
+      // Verificar cache
+      const cachedCapabilities = capabilityCache.get(userId);
+      const now = Date.now();
+      
+      if (cachedCapabilities && (now - cachedCapabilities.timestamp) < CAPABILITY_CACHE_TTL) {
+        console.log(`⚡ [CACHE HIT] Capacidades obtidas do cache para: ${userId}`);
+        return cachedCapabilities.data;
+      }
+
+      console.log(`📊 [CACHE MISS] Buscando capacidades do DB para: ${userId}`);
+      
+      const user = await this.getUserById(userId);
+
+      if (!user) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      const capabilities = {
+        canBookServices: user.canBookServices ?? true,
+        canDrive: user.canDrive ?? false,
+        driverVerificationStatus: user.driverVerificationStatus,
+        canManageHotels: user.canManageHotels ?? false,
+        hotelManagerVerificationStatus: user.hotelManagerVerificationStatus,
+        isAdmin: user.isAdmin ?? false,
       };
+      
+      // Armazenar no cache
+      capabilityCache.set(userId, {
+        data: capabilities,
+        timestamp: now
+      });
+      
+      return capabilities;
+    } catch (error) {
+      console.error('❌ Erro ao obter capacidades:', error);
+      throw error;
     }
-    
-    console.log(`📧 Email de reset enviado para: ${email}`);
-    
-    return {
-      success: true,
-      message: 'Instruções de recuperação enviadas para seu email'
-    };
   }
-  
-  // ========== VERIFICAÇÃO DE CAPACIDADES ==========
-  
-  async verifyCapacity(userId: string, capacity: 'drive' | 'hotel_manager', status: 'verified' | 'rejected', notes?: string): Promise<User> {
-    const userResult = await db.select().from(users).where(eq(users.id, userId));
-    if (!userResult[0]) {
-      throw new Error('Usuário não encontrado');
+
+  /**
+   * Registrar mudança de capacidade (auditoria)
+   */
+  private static async logCapabilityChange(
+    userId: string,
+    capability: string,
+    oldValue: boolean | null,
+    newValue: boolean | null,
+    reason: string,
+    changedBy?: string
+  ) {
+    try {
+      await db
+        .insert(capabilityChangesLog)
+        .values({
+          user_id: userId,
+          capability,
+          old_value: oldValue,
+          new_value: newValue,
+          reason,
+          changed_by: changedBy,
+          created_at: sql`now()`,
+        });
+    } catch (error) {
+      console.error('❌ Erro ao registrar auditoria:', error);
+      // Não falhar a operação por causa do log
     }
-    
-    const updateData: any = {
-      capabilitiesUpdatedAt: sql`now()`,
-    };
-    
-    if (capacity === 'drive') {
-      updateData.driverVerificationStatus = status;
-      updateData.driverVerifiedAt = status === 'verified' ? sql`now()` : null;
-      if (notes) updateData.driverVerificationNotes = notes;
-    } else if (capacity === 'hotel_manager') {
-      updateData.hotelManagerVerificationStatus = status;
-      updateData.hotelManagerVerifiedAt = status === 'verified' ? sql`now()` : null;
-      if (notes) updateData.hotelManagerVerificationNotes = notes;
-    }
-    
-    const updatedResult = await db.update(users)
-      .set(updateData)
-      .where(eq(users.id, userId))
-      .returning();
-    
-    return convertDbUserToUser(updatedResult[0]);
-  }
-  
-  // ========== LISTAGEM PARA ADMIN ==========
-  
-  async getUsersByCapacity(capacity: 'drive' | 'hotel_manager', status?: string): Promise<User[]> {
-    let query = db.select().from(users);
-    
-    if (capacity === 'drive') {
-      query = query.where(eq(users.canDrive, true)) as any;
-      if (status) {
-        query = query.where(sql`${users.driverVerificationStatus} = ${status}`) as any;
-      }
-    } else if (capacity === 'hotel_manager') {
-      query = query.where(eq(users.canManageHotels, true)) as any;
-      if (status) {
-        query = query.where(sql`${users.hotelManagerVerificationStatus} = ${status}`) as any;
-      }
-    }
-    
-    const result = await query;
-    return convertDbUsersToUsers(result);
-  }
-  
-  async getPendingVerifications(): Promise<{ drivers: User[]; hotelManagers: User[] }> {
-    const driversResult = await db.select()
-      .from(users)
-      .where(and(
-        eq(users.canDrive, true),
-        sql`${users.driverVerificationStatus} = 'pending'`
-      )) as any;
-    
-    const hotelManagersResult = await db.select()
-      .from(users)
-      .where(and(
-        eq(users.canManageHotels, true),
-        sql`${users.hotelManagerVerificationStatus} = 'pending'`
-      )) as any;
-    
-    return { 
-      drivers: convertDbUsersToUsers(driversResult), 
-      hotelManagers: convertDbUsersToUsers(hotelManagersResult) 
-    };
   }
 }
 
-// Export singleton
-export const authService = new AuthService();
+export const authService = AuthService;

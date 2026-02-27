@@ -11,6 +11,8 @@ import Partnerships from "./pages/partnerships";
 import Chat from "./pages/chat";
 // ✅ ADICIONAR IMPORT DA PÁGINA DE VEÍCULOS
 import VehiclesPage from "./pages/vehicles";
+// ✅ ADICIONAR IMPORT DA PÁGINA DE PAGAMENTOS/COMISSÕES
+import ProviderPaymentsDashboard from "../provider-app/pages/payments";
 // ✅ ADICIONADO: AppGuard para verificar capacidades
 import { DriversAppGuard } from "./components/AppGuard";
 
@@ -32,6 +34,8 @@ export default function DriversApp() {
               <Route path="/drivers/chat" component={Chat} />
               {/* ✅ ADICIONAR ROTA DE VEÍCULOS */}
               <Route path="/drivers/vehicles" component={VehiclesPage} />
+              {/* ✅ ADICIONAR ROTA DE PAGAMENTOS/COMISSÕES */}
+              <Route path="/drivers/payments" component={ProviderPaymentsDashboard} />
               <Route component={NotFound} />
             </Switch>
           </main>

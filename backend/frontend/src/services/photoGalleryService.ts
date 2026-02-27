@@ -77,7 +77,7 @@ export const photoGalleryService = {
         }
       }
 
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('firebaseToken');
       console.log('📸 [DEBUG] Token presente:', !!token);
       if (token) {
         console.log('📸 [DEBUG] Token (primeiros 20 chars):', token.substring(0, 20) + '...');

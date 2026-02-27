@@ -634,7 +634,6 @@ class ApiService {
           const freshToken = await auth.currentUser.getIdToken();
           if (freshToken && typeof freshToken === 'string' && freshToken.trim().length > 0) {
             token = freshToken;
-            localStorage.setItem('token', token);
             localStorage.setItem('firebaseToken', token);
           }
         } catch (firebaseError) {

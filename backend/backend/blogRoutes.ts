@@ -1,7 +1,7 @@
 /// <reference path="./src/types/express/index.d.ts" />
 import { Router, Response } from "express";
-import { verifyFirebaseToken } from "@/shared/firebaseAuth";
-import { AuthenticatedRequest } from "@/shared/types";
+import { verifyFirebaseToken } from "./src/shared/firebaseAuth.js";
+import type { AuthenticatedRequest } from "./shared/types.js";
 import { storage } from "./storage";
 
 const router = Router();

@@ -1,10 +1,10 @@
 // middleware/role-auth.ts - VERSÃO CORRIGIDA
 import { Request, Response, NextFunction } from 'express';
 import { 
-  AuthenticatedRequest, 
-  verifyFirebaseToken as firebaseVerifyToken, // ✅ Importar do firebaseAuth
+  verifyFirebaseToken as firebaseVerifyToken,
   UserCapabilities 
-} from '../src/shared/firebaseAuth';
+} from '../src/shared/firebaseAuth.js';
+import type { AuthenticatedRequest } from '../shared/types.js';
 import { authStorage } from '../src/shared/authStorage';
 
 // ✅ IMPORTAR APENAS OS MIDDLEWARES DE CAPACIDADES

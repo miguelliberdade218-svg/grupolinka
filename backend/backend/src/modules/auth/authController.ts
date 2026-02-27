@@ -1,7 +1,8 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { authStorage } from "../../shared/authStorage";
-import { type AuthenticatedRequest, verifyFirebaseToken } from "../../../src/shared/firebaseAuth";
-import { db } from "../../../db";
+import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
+import type { AuthenticatedRequest } from "../../../shared/types.js";
+import { db } from "../../../db.js";
 import { sql } from "drizzle-orm";
 
 const router = Router();

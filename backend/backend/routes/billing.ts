@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { billingService } from '../services/billingService';
 import { calculateDistance, getLocationCoordinates, calculateSuggestedPrice } from '../services/distanceService';
-import { type AuthenticatedRequest } from '../src/shared/firebaseAuth';
+import type { AuthenticatedRequest } from '../shared/types.js';
+import { verifyFirebaseToken } from '../middleware/role-auth';
 
 const router = Router();
 

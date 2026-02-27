@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Link } from "wouter";
-import { Users, Car, Building2, ArrowRight, CheckCircle } from "lucide-react";
+import { Users, Car, Building2, Building, ArrowRight, CheckCircle } from "lucide-react";
 
 interface SignupOption {
   title: string;
@@ -16,17 +16,32 @@ interface SignupOption {
 export default function SignupOptions() {
   const signupOptions: SignupOption[] = [
     {
-      title: "🧳 Cliente",
+      title: "🧳 Cliente Individual",
       description: "Para reservar viagens, hotéis e eventos",
       icon: <Users className="h-6 w-6" />,
       color: "bg-blue-100 text-blue-600",
       buttonText: "Criar Conta de Cliente",
-      link: "/signup",
+      link: "/signup?type=individual",
       features: [
         "Reserve transportes com segurança",
         "Encontre os melhores hotéis",
         "Compre bilhetes para eventos",
         "Acesso a ofertas exclusivas"
+      ]
+    },
+    {
+      title: "🏢 Cliente Empresa",
+      description: "Para empresas que contratam serviços",
+      icon: <Building className="h-6 w-6" />,
+      color: "bg-purple-100 text-purple-600",
+      buttonText: "Criar Conta Empresa",
+      link: "/signup?type=company",
+      features: [
+        "Contratação em volume",
+        "Gestão de departamento",
+        "Faturação empresarial",
+        "Suporte dedicado",
+        "Análise de gastos"
       ]
     },
     {
@@ -71,7 +86,7 @@ export default function SignupOptions() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {signupOptions.map((option, index) => (
             <Card 
               key={index} 
@@ -83,54 +98,51 @@ export default function SignupOptions() {
                   <div className={`p-3 rounded-full ${option.color}`}>
                     {option.icon}
                   </div>
-                  <span className="text-sm font-medium px-3 py-1 rounded-full bg-gray-100 text-gray-700">
-                    {index === 0 ? "Mais Popular" : "Oportunidade"}
+                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                    {index === 0 ? "Popular" : index === 1 ? "Novo" : "Oportunidade"}
                   </span>
                 </div>
-                <CardTitle className="text-xl">{option.title}</CardTitle>
-                <CardDescription>{option.description}</CardDescription>
+                <CardTitle className="text-lg">{option.title}</CardTitle>
+                <CardDescription className="text-sm">{option.description}</CardDescription>
               </CardHeader>
               
               <CardContent className="flex-grow">
-                <ul className="space-y-3 mb-6">
+                <ul className="space-y-2 mb-6">
                   {option.features.map((feature, idx) => (
-                    <li key={idx} className="flex items-start text-sm text-gray-700">
+                    <li key={idx} className="flex items-start text-xs text-gray-700">
                       <CheckCircle className="h-4 w-4 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
                       <span>{feature}</span>
                     </li>
                   ))}
                 </ul>
-                
-                <div className="mt-auto pt-4 border-t border-gray-100">
-                  <Link href={option.link}>
-                    <Button className="w-full flex items-center justify-center gap-2">
-                      {option.buttonText}
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  
-                  <p className="text-xs text-gray-500 text-center mt-3">
-                    {index === 0 ? "Sem custo de adesão" : "Verificação de documentos necessária"}
-                  </p>
-                </div>
+                <Link href={option.link}>
+                  <Button 
+                    className="w-full" 
+                    size="sm"
+                    variant={index === 0 || index === 1 ? "default" : "outline"}
+                  >
+                    {option.buttonText}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           ))}
         </div>
+      </div>
 
-        <div className="mt-10 text-center">
-          <div className="inline-flex items-center gap-2 text-gray-600">
-            <div className="h-px w-8 bg-gray-300"></div>
-            <span className="text-sm">Já tem conta?</span>
-            <div className="h-px w-8 bg-gray-300"></div>
-          </div>
-          <div className="mt-4">
-            <Link href="/login">
-              <Button variant="outline" className="gap-2">
-                Fazer Login
-              </Button>
-            </Link>
-          </div>
+      <div className="mt-10 text-center">
+        <div className="inline-flex items-center gap-2 text-gray-600">
+          <div className="h-px w-8 bg-gray-300"></div>
+          <span className="text-sm">Já tem conta?</span>
+          <div className="h-px w-8 bg-gray-300"></div>
+        </div>
+        <div className="mt-4">
+          <Link href="/login">
+            <Button variant="outline" className="gap-2">
+              Fazer Login
+            </Button>
+          </Link>
         </div>
       </div>
     </div>

@@ -2,7 +2,8 @@
 // Rotas REST para Reviews
 
 import { Router, Request, Response } from 'express';
-import { verifyFirebaseToken, type AuthenticatedRequest } from '../../../src/shared/firebaseAuth';
+import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
+import type { AuthenticatedRequest } from '../../../shared/types.js';
 import { z } from 'zod';
 import {
   createHotelReview,
