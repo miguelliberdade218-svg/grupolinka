@@ -500,7 +500,8 @@ export default function RideCreateModal({ initialParams, onClose }: RideCreateMo
           <h4 className="font-semibold mb-2">Resumo da Viagem</h4>
           <div className="space-y-1 text-sm">
             <p><strong>Rota:</strong> {rideData.fromLocation || '...'} → {rideData.toLocation || '...'}</p>
-            <p><strong>Data e Hora:</strong> {rideData.departureDate ? new Date(rideData.departureDate).toLocaleDateString('pt-PT') : '...'} às {rideData.departureTime || '...'}</p>
+
+            <p><strong>Data e Hora:</strong> {rideData.departureDate ? formatDateOnly(rideData.departureDate) : '...'} às {rideData.departureTime || '...'}</p>
             <p><strong>Assentos:</strong> {rideData.availableSeats} disponíveis</p>
             <p><strong>Preço:</strong> {rideData.pricePerSeat} MT por pessoa</p>
             <p><strong>Veículo:</strong> {vehicles.find(v => v.id === rideData.vehicleId) ? `${vehicles.find(v => v.id === rideData.vehicleId)?.make} ${vehicles.find(v => v.id === rideData.vehicleId)?.model}` : 'Não selecionado'}</p>

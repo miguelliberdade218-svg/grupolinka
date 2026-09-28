@@ -35,6 +35,7 @@ import { eventSpaceService } from '@/services/eventSpaceService';
 import { useToast } from '@/shared/hooks/use-toast';
 import ModalOverlay from '@/shared/components/ModalOverlay';
 import { EventSpace } from '@/shared/types/event-spaces';
+import { formatDateOnly } from '@/utils/dateFormatter';
 
 interface EventSpaceDetailModalProps {
   spaceId: string;
@@ -323,7 +324,7 @@ export default function EventSpaceDetailModal({
                           <span className="text-sm">Data do evento</span>
                         </div>
                         <span className="font-medium">
-                          {date ? new Date(date).toLocaleDateString('pt-MZ') : 'Selecionar data'}
+                          {date ? formatDateOnly(date) : 'Selecionar data'}
                         </span>
                       </div>
                       

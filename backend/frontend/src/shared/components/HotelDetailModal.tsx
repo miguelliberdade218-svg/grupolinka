@@ -30,6 +30,7 @@ import {
 import { hotelService, Hotel, RoomType } from '@/services/hotelService';
 import { useToast } from '@/shared/hooks/use-toast';
 import ModalOverlay from '@/shared/components/ModalOverlay';
+import { formatDateOnly } from '@/utils/dateFormatter';
 
 interface HotelDetailModalProps {
   hotelId: string;
@@ -293,7 +294,6 @@ export default function HotelDetailModal({
                           <Calendar className="w-4 h-4 text-gray-500" />
                           <span className="text-sm">Check-out</span>
                         </div>
-                        <span className="font-medium">
                           {checkOut ? new Date(checkOut).toLocaleDateString('pt-MZ') : 'Selecionar data'}
                         </span>
                       </div>
