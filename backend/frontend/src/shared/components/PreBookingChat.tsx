@@ -67,10 +67,11 @@ export default function PreBookingChat({
       senderName: "Você",
       senderType: 'user',
       message: newMessage,
-      timestamp: new Date().toLocaleTimeString('pt-BR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }),
+      timestamp: new Date().toLocaleTimeString('pt-PT', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+              }),
       isRead: false
     };
     
@@ -94,9 +95,10 @@ export default function PreBookingChat({
         senderName: recipientName,
         senderType: recipientType,
         message: responses[Math.floor(Math.random() * responses.length)],
-        timestamp: new Date().toLocaleTimeString('pt-BR', { 
+        timestamp: new Date().toLocaleTimeString('pt-PT', { 
           hour: '2-digit', 
-          minute: '2-digit' 
+          minute: '2-digit',
+          hour12: false 
         }),
         isRead: true
       };

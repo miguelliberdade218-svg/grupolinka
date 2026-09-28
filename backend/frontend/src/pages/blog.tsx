@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import { formatDateOnly } from "@/utils/dateFormatter";
 import Header from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
@@ -144,14 +145,7 @@ export default function Blog() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-MZ', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
-    });
-  };
+  const formatDate = (dateString: string) => formatDateOnly(dateString);
 
   return (
     <div className="min-h-screen bg-gray-50">

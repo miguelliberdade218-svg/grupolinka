@@ -14,6 +14,7 @@ import { ActiveHotelProvider, useActiveHotel } from '@/contexts/ActiveHotelConte
 import { ActiveEventSpaceProvider } from '@/contexts/ActiveEventSpaceContext';
 import { Button } from '@/shared/components/ui/button';
 import HotelsHeader from './components/HotelsHeader';
+import HotelsSidebar from './components/HotelsSidebar';
 import HotelManagerDashboard from './pages/hotel-management/HotelManagerDashboard';
 import CreateHotelForm from './components/CreateHotelForm';
 import EventSpacesManagementModern from './components/event-spaces/EventSpacesManagementModern';
@@ -47,9 +48,17 @@ function AppContent() {
   const location = useLocation()[0];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <HotelsHeader />
-      <main className="flex-1 pb-20 md:pb-4">
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <HotelsSidebar />
+      
+      <div className="flex-1 flex flex-col">
+        {/* Header - Hidden on Desktop when using Sidebar */}
+        <div className="hidden md:block">
+          <HotelsHeader />
+        </div>
+        
+        <main className="flex-1 pb-20 md:pb-4">
         <Switch>
           {/* Gestão de hotéis */}
           <Route path="/hotels-app/manage" component={HotelManagerDashboard} />
@@ -198,19 +207,20 @@ function AppContent() {
           {/* Default - fallback */}
           <Route component={HotelManagerDashboard} />
         </Switch>
-      </main>
-      <SonnerToaster 
-        richColors 
-        position="top-center"
-        duration={10000}
-        expand={true}
-        visibleToasts={3}
-        closeButton
-        toastOptions={{
-          className: 'text-lg',
-          descriptionClassName: 'text-base',
-        }}
-      />
+        </main>
+        <SonnerToaster 
+          richColors 
+          position="top-center"
+          duration={10000}
+          expand={true}
+          visibleToasts={3}
+          closeButton
+          toastOptions={{
+            className: 'text-lg',
+            descriptionClassName: 'text-base',
+          }}
+        />
+      </div>
     </div>
   );
 }

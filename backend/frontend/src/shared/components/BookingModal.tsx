@@ -141,7 +141,7 @@ export default function BookingModal({ type, item, searchParams, isOpen, onClose
                 <p>De: <span className="text-dark">{searchParams.from}</span></p>
                 <p>Para: <span className="text-dark">{searchParams.to}</span></p>
                 <p>Quando: <span className="text-dark">
-                  {new Date(searchParams.when).toLocaleString()}
+                  {formatDateTimeFriendly(searchParams.when)}
                 </span></p>
                 {ride?.estimatedDistance && (
                   <p>Distância: <span className="text-dark">{ride.estimatedDistance} km</span></p>

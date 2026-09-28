@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAdminStore } from '@/store/adminStore';
+import { ComplaintsList } from '@/components/ComplaintsList';
 import { toast } from 'react-toastify';
 import { Loader, Search, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';

@@ -1,0 +1,257 @@
+/* src/components/PaymentPolicyDisplay.css */
+/* Estilos para exibição de políticas de pagamento */
+
+.payment-policy {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.payment-policy.loading {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+.payment-policy.error {
+  padding: 16px;
+  background-color: #ffebee;
+  border: 1px solid #ef5350;
+  border-radius: 8px;
+  color: #c62828;
+  font-size: 14px;
+}
+
+.payment-policy.no-policy {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+}
+
+/* Compact Display */
+.payment-policy.compact {
+  display: inline-block;
+}
+
+.policy-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge.deposit {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.badge.advance {
+  background-color: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #bbdefb;
+}
+
+.badge.location {
+  background-color: #fcf8e3;
+  color: #8a6d3b;
+  border: 1px solid #faefb8;
+}
+
+.badge.refund {
+  background-color: #f3e5f5;
+  color: #6a1b9a;
+  border: 1px solid #e1bee7;
+}
+
+/* Detailed Display */
+.payment-policy.detailed {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.policy-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+}
+
+.policy-header h4 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.policy-header p {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.policy-content {
+  padding: 20px;
+}
+
+.policy-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  border-left: 4px solid #667eea;
+}
+
+.policy-section:last-child {
+  margin-bottom: 0;
+}
+
+.policy-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.policy-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.policy-item .label {
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+}
+
+.policy-item .value {
+  color: #666;
+  font-size: 14px;
+  text-align: right;
+  font-weight: 500;
+}
+
+/* Subsection */
+.policy-subsection {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.subsection-title {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.refund-terms {
+  margin: 0;
+  padding-left: 20px;
+  list-style: none;
+}
+
+.refund-terms li {
+  padding: 8px 0;
+  font-size: 13px;
+  color: #555;
+  position: relative;
+  padding-left: 20px;
+}
+
+.refund-terms li:before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.refund-terms li strong {
+  color: #333;
+}
+
+/* Footer */
+.policy-footer {
+  padding: 12px 20px;
+  background-color: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+}
+
+.disclaimer {
+  margin: 0;
+  font-size: 12px;
+  color: #877;
+  line-height: 1.4;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .policy-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .policy-item .value {
+    text-align: left;
+  }
+
+  .policy-badges {
+    gap: 6px;
+  }
+
+  .badge {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .payment-policy.detailed {
+    border-radius: 8px;
+  }
+
+  .policy-header {
+    padding: 16px;
+  }
+
+  .policy-header h4 {
+    font-size: 14px;
+  }
+
+  .policy-content {
+    padding: 16px;
+  }
+
+  .policy-section {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .policy-item {
+    padding: 10px 0;
+  }
+
+  .badge {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  .policy-badges {
+    gap: 4px;
+  }
+}

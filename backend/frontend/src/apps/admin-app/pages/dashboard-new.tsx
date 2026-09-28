@@ -125,11 +125,11 @@ export default function AdminDashboard() {
           subtext="Ativos na plataforma"
           color="bg-purple-100"
         />
-        <StatCard
+                <StatCard
           icon={Calendar}
-          label="Espaços para Eventos"
+          label="Reservas de Eventos"
           value={stats?.total_event_bookings || 0}
-          subtext="Registados"
+          subtext="Total de bookings"
           color="bg-yellow-100"
         />
 
@@ -140,12 +140,19 @@ export default function AdminDashboard() {
           subtext={`Total: R$ ${(stats?.pending_amount || 0).toLocaleString('pt-PT', { minimumFractionDigits: 2 })}`}
           color="bg-blue-100"
         />
-        <StatCard
+                <StatCard
           icon={TrendingUp}
           label="Total de Corridas"
           value={stats?.total_rides || 0}
           subtext="Todas as épocas"
           color="bg-indigo-100"
+        />
+        <StatCard
+          icon={Car}
+          label="Reservas de Corridas"
+          value={stats?.total_ride_bookings || 0}
+          subtext="Total de bookings"
+          color="bg-teal-100"
         />
         <StatCard
           icon={AlertTriangle}
@@ -169,7 +176,7 @@ export default function AdminDashboard() {
           <CardTitle>Informações do Sistema</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div>
               <p className="text-sm text-gray-600 mb-2">Admins do Sistema</p>
               <p className="text-2xl font-bold">{stats?.total_admins || 0}</p>
@@ -181,6 +188,10 @@ export default function AdminDashboard() {
             <div>
               <p className="text-sm text-gray-600 mb-2">Reservas de Hotéis</p>
               <p className="text-2xl font-bold">{stats?.total_hotel_bookings || 0}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-2">Reservas de Corridas</p>
+              <p className="text-2xl font-bold">{stats?.total_ride_bookings || 0}</p>
             </div>
           </div>
         </CardContent>

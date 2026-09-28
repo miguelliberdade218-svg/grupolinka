@@ -285,6 +285,50 @@ export interface UpcomingCheckIns {
   };
 }
 
+// ==================== RIDE BOOKINGS ====================
+export interface RideBooking {
+  id: string;
+  ride_id: string;
+  passenger_id: string;
+  passenger_name: string;
+  passenger_email: string;
+  passenger_phone?: string | null;
+  seats_booked: number;
+  departure_date: string;
+  departure_time: string;
+  from_address: string;
+  to_address: string;
+  total_price: string;
+  payment_status: 'pending' | 'paid' | 'cancelled' | 'refunded';
+  status: 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+  
+  // Campos adicionais de JOIN
+  driver_name?: string;
+  driver_phone?: string;
+  car_model?: string;
+  car_plate?: string;
+}
+
+export interface CreateRideBookingRequest {
+  rideId: string;
+  passengerId: string;
+  seatsBooked: number;
+  passengerName: string;
+  passengerEmail: string;
+  passengerPhone?: string;
+}
+
+export interface RideBookingFilters {
+  status?: string | string[];
+  payment_status?: string;
+  startDate?: string;
+  endDate?: string;
+  passenger_name?: string;
+  passenger_email?: string;
+}
+
 // ==================== FUNÇÕES HELPER ====================
 // Helper para converter entre camelCase e snake_case
 export function toSnakeCase<T>(obj: Record<string, any>): T {
@@ -328,4 +372,8 @@ export function adaptHotelBookingResponse(res: any): HotelBooking {
 
 export function adaptEventSpaceBookingResponse(res: any): EventSpaceBooking {
   return toCamelCase(res) as EventSpaceBooking;
+}
+
+export function adaptRideBookingResponse(res: any): RideBooking {
+  return toCamelCase(res) as RideBooking;
 }

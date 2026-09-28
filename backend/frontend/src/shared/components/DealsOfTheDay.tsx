@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
+import { formatDateOnly } from "@/utils/dateFormatter";
 
 interface Deal {
   id: string;
@@ -140,8 +141,7 @@ export default function DealsOfTheDay() {
                 
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-medium">
-                    <i className="fas fa-clock mr-1"></i>
-                    Válido até {new Date(deal.validUntil).toLocaleDateString('pt-BR')}
+                    Válido até {formatDateOnly(deal.validUntil)}
                   </span>
                 </div>
                 

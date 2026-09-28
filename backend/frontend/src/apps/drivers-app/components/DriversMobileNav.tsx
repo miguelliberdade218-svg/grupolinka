@@ -18,12 +18,6 @@ export default function DriversMobileNav() {
       label: "Publicar",
       active: location.startsWith("/drivers/publish")
     },
-    {
-      href: "/drivers/offers",
-      icon: Car,
-      label: "Ofertas",
-      active: location.startsWith("/drivers/offers")
-    },
     // ✅ ADICIONAR ITEM DE VEÍCULOS
     {
       href: "/drivers/vehicles",

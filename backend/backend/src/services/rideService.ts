@@ -6,6 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { insertRideSchema } from "../../shared/schema";
 import { z } from "zod";
 
+// 🆕 Import do serviço de comissões automáticas
+import providerPaymentService from "../modules/payments/providerPaymentService";
+
 // ✅ MAPEAMENTO PARA TIPOS DE VEÍCULO
 const VEHICLE_TYPE_DISPLAY: Record<string, { label: string; icon: string }> = {
   economy: { label: 'Económico', icon: '🚗' },
@@ -1185,6 +1188,95 @@ export class RideService {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .trim();
+  }
+
+  /**
+   * 🆕 Complete uma ride (marcar como completed) e cria comissão automaticamente
+   * - Atualiza status para 'completed'
+   * - Cria comissão via providerPaymentService.createRideCommission
+   * - Registra completed_at
+   */
+  async completeRide(rideId: string, driverId?: string): Promise<any> {
+    try {
+      console.log(`🏁 [RIDE-SERVICE] Completando ride ${rideId}...`);
+      
+      // 1. Buscar a ride
+      const rideData = await db
+        .select()
+        .from(rides)
+        .where(eq(rides.id, rideId))
+        .limit(1);
+
+      if (!rideData || rideData.length === 0) {
+        throw new Error(`Ride ${rideId} não encontrada`);
+      }
+
+      const ride = rideData[0];
+
+      // NOVO: validar dono da ride
+      if (driverId && ride.driverId !== driverId) {
+        throw new Error('Acesso negado: voce nao e o dono desta ride');
+      }
+      
+      // 2. Verificar se já está completed
+      if (ride.status === 'completed') {
+        console.log(`⚠️ [RIDE-SERVICE] Ride ${rideId} já está completed`);
+        return await this.getRideById(rideId);
+      }
+      
+      // 3. Verificar se pode ser completada (status válido para completar)
+      const validStatuses = ['in_progress', 'confirmed', 'available'];
+      if (!validStatuses.includes(ride.status || '')) {
+        throw new Error(`Ride ${rideId} com status "${ride.status}" não pode ser completada`);
+      }
+      
+      // 4. Atualizar status para completed
+      const now = new Date();
+      await db.update(rides)
+        .set({
+          status: 'completed',
+          completed_at: now,
+          updatedAt: now,
+        } as any)
+        .where(eq(rides.id, rideId));
+      
+      console.log(`✅ [RIDE-SERVICE] Ride ${rideId} marcada como completed`);
+      
+      // 5. 🆕 GANCHO AUTOMÁTICO: Criar comissão (não bloqueante)
+      console.log(`🔗 [RIDE-SERVICE] Gatilho: criando comissão para ride ${rideId}`);
+      providerPaymentService.createRideCommission(rideId).catch((error: any) => {
+        console.error('❌ [RIDE-SERVICE] Erro ao criar comissão (não crítico):', error.message);
+      });
+      
+      // 6. Retornar dados atualizados
+      return await this.getRideById(rideId);
+      
+    } catch (error: any) {
+      console.error('❌ [RIDE-SERVICE] Erro ao completar ride:', error.message || error);
+      throw error;
+    }
+  }
+  async startRide(rideId: string, driverId: string): Promise<any> {
+    const rideData = await db.select().from(rides).where(eq(rides.id, rideId)).limit(1);
+    if (!rideData || rideData.length === 0) throw new Error('Ride nao encontrada');
+    const ride = rideData[0];
+    if (ride.driverId !== driverId) throw new Error('Acesso negado');
+    if (ride.status === 'in_progress') return await this.getRideById(rideId);
+    if (!['available','confirmed'].includes(ride.status || '')) throw new Error('Status invalido para iniciar: ' + ride.status);
+    const now = new Date();
+    await db.update(rides).set({ status: 'in_progress', started_at: now, updatedAt: now } as any).where(eq(rides.id, rideId));
+    return await this.getRideById(rideId);
+  }
+
+  async cancelRide(rideId: string, driverId: string, reason?: string): Promise<any> {
+    const rideData = await db.select().from(rides).where(eq(rides.id, rideId)).limit(1);
+    if (!rideData || rideData.length === 0) throw new Error('Ride nao encontrada');
+    const ride = rideData[0];
+    if (ride.driverId !== driverId) throw new Error('Acesso negado');
+    if (ride.status === 'completed') throw new Error('Ride ja concluida');
+    const now = new Date();
+    await db.update(rides).set({ status: 'cancelled', cancelled_at: now, cancellation_reason: reason || null, updatedAt: now } as any).where(eq(rides.id, rideId));
+    return await this.getRideById(rideId);
   }
 }
 

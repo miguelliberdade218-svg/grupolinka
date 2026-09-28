@@ -505,14 +505,14 @@ export const getFinancialReport = async (
   if (hotelId) {
     conditions.push(sql`
       EXISTS (
-        SELECT 1 FROM hotel_bookings hb 
+        SELECT 1 FROM "hotelBookings" hb 
         WHERE hb.id = ${payments.hotelBookingId}
-        AND hb.hotel_id = ${hotelId}
+        AND hb."hotelId" = ${hotelId}
       ) OR
       EXISTS (
-        SELECT 1 FROM event_bookings eb 
+        SELECT 1 FROM "eventBookings" eb 
         WHERE eb.id = ${payments.eventBookingId}
-        AND eb.hotel_id = ${hotelId}
+        AND eb."hotelId" = ${hotelId}
       )
     `);
   }

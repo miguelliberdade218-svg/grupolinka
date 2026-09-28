@@ -434,7 +434,7 @@ const EventBookingsPage: React.FC<EventBookingsPageProps> = ({ hotelId: propHote
                     <span className="font-medium">Organizador:</span> {booking.organizerName}
                   </div>
                   <div>
-                    <span className="font-medium">Data:</span> {new Date(booking.startDate).toLocaleDateString('pt-BR')}
+                    <span className="font-medium">Data:</span> {formatDateOnly(booking.startDate)}
                   </div>
                   <div>
                     <span className="font-medium">Participantes:</span> {booking.expectedAttendees}

@@ -7,6 +7,7 @@ import { Separator } from "@/shared/components/ui/separator";
 import { Star, Gift, Trophy, Crown, Zap } from "lucide-react";
 import { apiRequest } from "@/shared/lib/queryClient";
 import { formatMzn } from "@/shared/lib/currency";
+import { formatDateOnly, formatDateTimeFriendly } from "@/utils/dateFormatter";
 import { useToast } from "@/shared/hooks/use-toast";
 import React from "react";
 import type { LoyaltyProgram, PointsHistory } from "@shared/schema";
@@ -278,7 +279,7 @@ export default function LoyaltyProgram({ showFullView = false }: LoyaltyProgramP
                   Nível {currentLevel.name}
                 </h2>
                 <p className="text-gray-600">
-                  Membro desde {loyaltyData.joinedAt ? new Date(loyaltyData.joinedAt).toLocaleDateString() : 'N/A'}
+                  Membro desde {loyaltyData.joinedAt ? formatDateOnly(loyaltyData.joinedAt) : 'N/A'}
                 </p>
               </div>
             </div>
@@ -377,7 +378,7 @@ export default function LoyaltyProgram({ showFullView = false }: LoyaltyProgramP
                     <div>
                       <p className="font-medium">{getActionText(entry.reason)}</p>
                       <p className="text-xs text-gray-500">
-                        {new Date(entry.createdAt).toLocaleString()}
+                        {formatDateTimeFriendly(entry.createdAt)}
                       </p>
                     </div>
                   </div>

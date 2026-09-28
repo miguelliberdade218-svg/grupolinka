@@ -291,7 +291,6 @@ export default function DocumentUploadMultiple({
                       <div>
                         <p className="text-sm font-medium truncate max-w-xs">{doc.name}</p>
                         <p className="text-xs text-gray-500">
-                          {formatFileSize(doc.size)} • {doc.uploadedAt.toLocaleDateString()}
                         </p>
                       </div>
                     </div>

@@ -3,6 +3,11 @@ import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
 import type { AuthenticatedRequest } from "../../../shared/types.js";
 import { storage } from "../../../storage";
 import { authStorage } from "../../shared/authStorage";
+import { rideService } from "../../services/rideService";
+import providerPaymentService from "../payments/providerPaymentService";
+import { db } from "../../../db";
+import { bookings, rides, users } from "../../../shared/schema";
+import { eq, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -26,7 +31,7 @@ const verifyDriver = async (req: Request, res: Response, next: Function) => {
     }
 
     // ✅ CORREÇÃO: Verificar se é motorista
-    if (userFromDb.userType !== 'driver') {
+    if (userFromDb.userType !== 'driver' && (userFromDb as any).canDrive !== true) {
       console.warn(`⚠️ [DRIVER AUTH] Acesso negado - userType: ${userFromDb.userType} (esperado: driver) para ${firebaseUid}`);
       return res.status(403).json({ message: "Acesso permitido apenas para motoristas" });
     }
@@ -440,4 +445,82 @@ function calculatePopularRoutes(bookings: any[]) {
     .map(([route, count]) => ({ route, count }));
 }
 
+// ==================== ROTAS DE RIDES (LIFECYCLE) ====================
+
+// GET /api/driver/rides/my-rides/:driverId - Listar rides do motorista
+router.get('/rides/my-rides/:driverId', verifyFirebaseToken, async (req: Request, res: Response) => {
+  try {
+    const rows = await rideService.getRidesByDriver(req.params.driverId);
+    res.json({ success: true, total: rows.length, rides: rows });
+  } catch (error: any) {
+    console.error('Erro my-rides:', error);
+    res.status(500).json({ success: false, error: error.message || 'Erro ao listar rides' });
+  }
+});
+
+// PATCH /api/driver/rides/:rideId/start - Iniciar corrida
+router.patch('/rides/:rideId/start', verifyFirebaseToken, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const driverId = authReq.user?.id || '';
+    const ride = await rideService.startRide(req.params.rideId, driverId);
+    res.json({ success: true, message: 'Corrida iniciada', ride });
+  } catch (error: any) {
+    console.error('Erro start ride:', error);
+    res.status(400).json({ success: false, error: error.message || 'Erro ao iniciar corrida' });
+  }
+});
+
+// POST /api/driver/rides/:rideId/complete - Completar corrida + criar comissao
+router.post('/rides/:rideId/complete', verifyFirebaseToken, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const driverId = authReq.user?.id || '';
+    const ride = await rideService.completeRide(req.params.rideId, driverId);
+    const commission = await providerPaymentService.createRideCommission(req.params.rideId);
+    res.json({ success: true, message: 'Corrida concluida', ride, commission });
+  } catch (error: any) {
+    console.error('Erro complete ride:', error);
+    res.status(400).json({ success: false, error: error.message || 'Erro ao concluir corrida' });
+  }
+});
+
+// PATCH /api/driver/rides/:rideId/cancel - Cancelar corrida
+router.patch('/rides/:rideId/cancel', verifyFirebaseToken, async (req: Request, res: Response) => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const driverId = authReq.user?.id || '';
+    const { reason } = req.body;
+    const ride = await rideService.cancelRide(req.params.rideId, driverId, reason);
+    res.json({ success: true, message: 'Corrida cancelada', ride });
+  } catch (error: any) {
+    console.error('Erro cancel ride:', error);
+    res.status(400).json({ success: false, error: error.message || 'Erro ao cancelar corrida' });
+  }
+});
+
+// GET /api/driver/rides/:rideId/bookings - Ver reservas da ride (somente leitura)
+router.get('/rides/:rideId/bookings', verifyFirebaseToken, async (req: Request, res: Response) => {
+  try {
+    const rows = await db
+      .select({
+        id: bookings.id,
+        seatsBooked: bookings.seatsBooked,
+        passengers: bookings.passengers,
+        status: bookings.status,
+        totalPrice: bookings.totalPrice,
+        guestName: bookings.guestName,
+        guestEmail: bookings.guestEmail,
+        guestPhone: bookings.guestPhone,
+        createdAt: bookings.createdAt,
+      })
+      .from(bookings)
+      .where(eq(bookings.rideId, req.params.rideId))
+      .orderBy(desc(bookings.createdAt));
+    res.json({ success: true, total: rows.length, bookings: rows });
+  } catch (error: any) {
+    console.error('Erro ride bookings:', error);
+    res.status(500).json({ success: false, error: error.message || 'Erro ao listar reservas' });
+  }
+});
 export default router;

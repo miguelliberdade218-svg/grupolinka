@@ -83,8 +83,8 @@ import type {
   RoomTypePhotoUploadRequest,
   RoomTypePhotoReorderRequest,
   RoomTypePhotoUpdateRequest,
-  PhotoUploadResponse,
-  PhotoListResponse,
+  HotelPhotoUploadResponse,
+  HotelPhotoListResponse,
 } from '@/shared/types/hotel-photos';
 
 // ====================== 🆕 TIPOS PARA FOTOS DE EVENT SPACES ======================
@@ -2932,6 +2932,75 @@ class ApiService {
     } catch (error) {
       return { success: false, services: {} };
     }
+  }
+
+  // ====================== 🚗 RIDES MANAGEMENT FOR DRIVERS ======================
+  
+  /**
+   * Iniciar uma corrida (muda status para in_progress)
+   */
+  async startRide(rideId: string): Promise<{ success: boolean; message: string; ride: any }> {
+    return this.request('PATCH', `/api/rides/${rideId}/start`);
+  }
+
+  /**
+   * Completar uma corrida E gerar comissão automaticamente
+   * Este método unifica "completar corrida" + "criar comissão"
+   */
+  async completeRideWithCommission(rideId: string): Promise<{ success: boolean; message: string; ride: any; commission?: any }> {
+    return this.request('POST', `/api/rides/${rideId}/complete-with-commission`);
+  }
+
+  // ====================== 💰 COMMISSIONS FOR DRIVERS ======================
+  
+  /**
+   * Obter comissões do motorista
+   */
+  async getDriverCommissions(driverId: string): Promise<{ success: boolean; data: any[] }> {
+    return this.get('/api/commissions/ride', { driverId });
+  }
+
+  /**
+   * Obter todas as comissões (admin)
+   */
+  async getAllCommissions(params?: { status?: string; driverId?: string; page?: number; limit?: number }): Promise<{ success: boolean; data: any[]; total?: number }> {
+    return this.get('/api/commissions/ride/all', params);
+  }
+
+  /**
+   * Motorista marca comissão como paga (com upload de comprovativo)
+   */
+  async markCommissionAsPaid(commissionId: string, proofFile?: File, notes?: string): Promise<{ success: boolean; message: string; data: any }> {
+    if (proofFile) {
+      const formData = new FormData();
+      formData.append('proofFile', proofFile);
+      if (notes) formData.append('notes', notes);
+      return this.post(`/api/commissions/ride/${commissionId}/pay`, formData);
+    }
+    return this.post(`/api/commissions/ride/${commissionId}/pay`, { notes });
+  }
+
+  /**
+   * Admin confirma pagamento da comissão
+   */
+  async confirmCommissionPayment(commissionId: string, notes?: string): Promise<{ success: boolean; message: string }> {
+    return this.patch(`/api/commissions/ride/${commissionId}/confirm`, { notes });
+  }
+
+  /**
+   * Admin rejeita pagamento da comissão
+   */
+  async rejectCommissionPayment(commissionId: string, reason: string): Promise<{ success: boolean; message: string }> {
+    return this.patch(`/api/commissions/ride/${commissionId}/reject`, { reason });
+  }
+
+  /**
+   * Upload de comprovativo de pagamento (para motorista)
+   */
+  async uploadPaymentProof(commissionId: string, file: File): Promise<{ success: boolean; url: string }> {
+    const formData = new FormData();
+    formData.append('proofFile', file);
+    return this.post(`/api/commissions/ride/${commissionId}/upload-proof`, formData);
   }
 }
 

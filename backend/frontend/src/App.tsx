@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/shared/components/ui/toaster';
+import { AuthProvider } from './contexts/authContext';
 import AppRouter from './AppRouter';
 
 // Criar query client
@@ -16,7 +17,9 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppRouter />
+      <AuthProvider>
+        <AppRouter />
+      </AuthProvider>
       {/* ❌ REMOVIDO: Toaster está sendo renderizado nos apps específicos */}
     </QueryClientProvider>
   );

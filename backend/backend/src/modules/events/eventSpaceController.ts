@@ -61,7 +61,6 @@ import {
   exportAvailabilityCalendar,
   checkEventSpaceCapacity,
   bulkUpdateEventSpacesStatus,
-  calculateEventPrice,
   getEventSpacesWithStats
 } from './eventSpaceService';
 
@@ -1719,31 +1718,52 @@ router.post('/spaces/:id/bookings', async (req: Request, res: Response) => {
       });
     }
 
-    // 6. Calcular preço total
-    const totalPriceCalculation = await calculateEventPrice(
-      spaceId,
-      startDate,
-      endDate,
-      validated.catering_required || false
-    );
 
-    // Extrair valores de forma segura
-    let basePrice = "0";
-    let cateringPrice = "0";
-    let totalPrice = "0";
+    // 6. Calcular preço - APENAS o preço do espaço (sem catering, sem equipamentos)
+    const durationDays = Math.max(1, Math.ceil(
+      (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)
+    ));
     
-    if (typeof totalPriceCalculation === 'object' && totalPriceCalculation !== null) {
-      const obj = totalPriceCalculation as any;
-      basePrice = obj.basePrice !== undefined ? String(obj.basePrice) : "0";
-      cateringPrice = obj.cateringPrice !== undefined ? String(obj.cateringPrice) : "0";
-      totalPrice = obj.totalPrice !== undefined ? String(obj.totalPrice) : "0";
-    } else if (typeof totalPriceCalculation === 'string' || typeof totalPriceCalculation === 'number') {
-      totalPrice = String(totalPriceCalculation);
-      const total = parseFloat(totalPrice) || 0;
-      basePrice = String(total * 0.8);
-    }
 
-    console.log(`💰 [CRIAR RESERVA] Preço calculado:`, { basePrice, cateringPrice, totalPrice });
+
+
+
+
+
+
+
+
+
+
+
+
+    const basePricePerDay = parseFloat(String(space.basePricePerDay || "0"));
+    
+
+
+    // ✅ totalPrice = APENAS basePricePerDay * durationDays (preço do espaço)
+    // ✅ catering, equipamentos, etc. são negociados fora da app
+    const totalPriceValue = basePricePerDay * durationDays;
+    
+
+
+
+
+
+    const basePrice = String(totalPriceValue);
+    const cateringPrice = "0";
+    const totalPrice = String(totalPriceValue);
+
+
+    console.log(`💰 [CRIAR RESERVA] Preço calculado (apenas espaço):`, { 
+      basePrice, 
+
+      totalPrice, 
+      durationDays,
+
+
+      basePricePerDay
+    });
 
     // 7. Obter depósito de segurança
     const securityDeposit = space.securityDeposit || "0";
@@ -1765,16 +1785,18 @@ router.post('/spaces/:id/bookings', async (req: Request, res: Response) => {
       endDate,
       expectedAttendees: validated.expected_attendees,
       specialRequests: validated.special_requests || undefined,
-      additionalServices: validated.additional_services || {},
-      cateringRequired: validated.catering_required || false,
       userId: validated.user_id || userId,
       userEmail: userEmail || validated.organizer_email,
       
       // Campos financeiros - como strings, nunca null
-      basePrice: String(basePrice),
-      cateringPrice: String(cateringPrice),
-      totalPrice: String(totalPrice),
-      securityDeposit: String(securityDeposit),
+        basePrice: String(basePrice),
+        cateringPrice: String(cateringPrice),
+        // ✅ NOVOS CAMPOS ADICIONADOS - equipmentFees, serviceFees, weekendSurcharge
+        equipmentFees: "0",
+        serviceFees: "0",
+        weekendSurcharge: "0",
+        totalPrice: String(totalPrice),
+        securityDeposit: String(securityDeposit),
       
       // Status inicial
       status: space.approvalRequired ? 'pending_approval' : 'confirmed',

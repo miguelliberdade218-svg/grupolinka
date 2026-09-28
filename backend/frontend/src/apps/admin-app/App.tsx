@@ -6,6 +6,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 // Layout
 import AdminLayout from "./pages/layout";
+import AdminSidebar from "./components/AdminSidebar";
 
 // Pages - Dashboard e Gestão Base
 import AdminDashboard from "./pages/dashboard-new";
@@ -22,6 +23,9 @@ import UserDocuments from "./pages/user-documents";
 // Legacy Pages (mantidos para compatibilidade)
 import BillingManagement from "./pages/billing-management";
 
+// ✅ Gestão de Comissões (motoristas)
+import AdminCommissionManagement from "./pages/commissions-management";
+
 // ✅ EMERGÊNCIA: Usar guard de emergência
 import AdminRouteGuardEmergency from "@/shared/components/AdminRouteGuardEmergency";
 
@@ -31,9 +35,13 @@ export default function AdminApp() {
   return (
     <AdminRouteGuardEmergency>
       <QueryClientProvider client={queryClient}>
-        <div className="min-h-screen bg-gray-50">
-          <AdminLayout>
-            <Switch>
+        <div className="min-h-screen bg-gray-50 flex">
+          {/* Sidebar */}
+          <AdminSidebar />
+          
+          <div className="flex-1 flex flex-col">
+            <AdminLayout>
+              <Switch>
               {/* Dashboard principal de admin */}
               <Route path="/admin" component={AdminDashboard} />
 
@@ -58,6 +66,9 @@ export default function AdminApp() {
               {/* Gestão de pagamentos */}
               <Route path="/admin/payments" component={AdminPayments} />
 
+              {/* Gestão de comissões dos motoristas */}
+              <Route path="/admin/commissions" component={AdminCommissionManagement} />
+
               {/* Gestão de taxas */}
               <Route path="/admin/fees" component={AdminFees} />
 
@@ -70,7 +81,8 @@ export default function AdminApp() {
               {/* Rota padrão */}
               <Route component={AdminDashboard} />
             </Switch>
-          </AdminLayout>
+            </AdminLayout>
+          </div>
         </div>
 
         <SonnerToaster

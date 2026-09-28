@@ -6,8 +6,8 @@ import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
 import type { AuthenticatedRequest } from "../../../shared/types.js";
 import { adminService } from "./adminService";
 import { db } from "../../../db";
-import { users } from "../../../shared/schema";
-import { eq } from "drizzle-orm";
+import { users, hotelBookings } from "../../../shared/schema";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -885,6 +885,52 @@ router.post(
       res.json(result);
     } catch (error) {
       console.error("Erro em confirmPayment:", error);
+      res.status(500).json({ success: false, message: (error as Error).message });
+    }
+  }
+);
+
+// ==================== PAGAMENTOS: APROVAR / REJEITAR ====================
+
+// Aprovar pagamento (alias de confirm, compatível com frontend)
+router.patch(
+  "/payments/:paymentId/approve",
+  verifyFirebaseToken,
+  adminOnly,
+  async (req: Request, res: Response) => {
+    try {
+      const { paymentId } = req.params;
+      const { notes } = req.body;
+      const admin = (req as any).admin;
+
+      const result = await adminService.confirmPayment(paymentId, admin.id, notes);
+      res.json(result);
+    } catch (error) {
+      console.error("Erro em approvePayment:", error);
+      res.status(500).json({ success: false, message: (error as Error).message });
+    }
+  }
+);
+
+// Rejeitar pagamento
+router.patch(
+  "/payments/:paymentId/reject",
+  verifyFirebaseToken,
+  adminOnly,
+  async (req: Request, res: Response) => {
+    try {
+      const { paymentId } = req.params;
+      const { reason } = req.body;
+      const admin = (req as any).admin;
+
+      if (!reason) {
+        return res.status(400).json({ success: false, message: "Motivo é obrigatório" });
+      }
+
+      const result = await adminService.rejectPayment(paymentId, admin.id, reason);
+      res.json(result);
+    } catch (error) {
+      console.error("Erro em rejectPayment:", error);
       res.status(500).json({ success: false, message: (error as Error).message });
     }
   }

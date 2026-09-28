@@ -18,7 +18,10 @@ adminAPI.interceptors.request.use((config) => {
 
 // Interceptor para tratamento de erros
 adminAPI.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // ✅ Return full response object so we can access response.data consistently
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401 || error.response?.status === 403) {
       console.warn('❌ [AdminAPI] Acesso negado:', error.response?.status === 401 ? 'Token inválido' : 'Não é administrador');

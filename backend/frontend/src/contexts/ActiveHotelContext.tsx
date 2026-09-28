@@ -270,20 +270,19 @@ export function ActiveHotelProvider({ children }: { children: ReactNode }) {
     }
     
     // 🔧 CORREÇÃO: Verificar se o hotel pertence ao usuário atual
-    const currentUserId = auth.currentUser?.uid;
-    if (currentUserId && hotel.host_id !== currentUserId) {
-      console.error('❌ [Context] Tentativa de setar hotel que não pertence ao usuário:', {
-        hotelHostId: hotel.host_id,
-        currentUserId,
-        hotelName: hotel.name
-      });
-      
-      toast.error('Você não pode selecionar um hotel que não é seu');
-      setError('Hotel não pertence à sua conta');
-      return;
-    }
+        // NOTA: O host_id no banco é um UUID numérico, diferente do uid do Firebase
+        // Confiamos que o backend já retornou apenas hotéis do usuário
+        const currentUserId = auth.currentUser?.uid;
+        if (currentUserId && hotel.host_id && hotel.host_id !== currentUserId) {
+          console.warn('⚠️ [Context] host_id difere do uid (pode ser normal, aceitando):', {
+            hotelHostId: hotel.host_id,
+            currentUserId,
+            hotelName: hotel.name
+          });
+          // 🔧 CORREÇÃO: Não bloqueia o acesso, o backend já validou
+        }
     
-    // Se já temos um hotel, compara IDs antes de atualizar
+        // Se já temos um hotel, compara IDs antes de atualizar
     if (activeHotelRaw?.id === hotel.id) {
       console.log('⚠️ [Context] Tentativa de setar mesmo hotel, ignorando...');
       return;

@@ -994,7 +994,7 @@ export const getEventDashboardStats = async (
       .select({
         total_reservas: sql<number>`COUNT(*)`,
         total_revenue: sql<number>`COALESCE(SUM(total_price::numeric), 0)`,
-        paid_reservas: sql<number>`COUNT(CASE WHEN payment_status = 'paid' THEN 1 END)`,
+        paid_reservas: sql<number>`COUNT(CASE WHEN "paymentStatus" = 'paid' THEN 1 END)`,
         confirmed_reservas: sql<number>`COUNT(CASE WHEN status IN ('confirmed', 'pending') THEN 1 END)`
       })
       .from(eventBookings)
@@ -1018,7 +1018,7 @@ export const getEventDashboardStats = async (
       .select({
         total_paid: sql<number>`COALESCE(SUM(ep.amount::numeric), 0)`,
         pending_payments: sql<number>`COUNT(CASE WHEN ep.status = 'pending' THEN 1 END)`,
-        upcoming_payments: sql<number>`COUNT(CASE WHEN eb.payment_status IN ('partial', 'pending') THEN 1 END)`
+        upcoming_payments: sql<number>`COUNT(CASE WHEN eb."paymentStatus" IN ('partial', 'pending') THEN 1 END)`
       })
       .from(eventPayments)
       .innerJoin(eventBookings, eq(eventBookings.id, eventPayments.eventBookingId!))
@@ -1082,16 +1082,16 @@ export const getEventFinancialSummary = async (
       conditions.push(lte(eventBookings.startDate, endDateStr));
     }
 
-    const bookingsQuery = sql`
+        const bookingsQuery = sql`
       SELECT 
         COALESCE(SUM(total_price::numeric), 0) as total_revenue,
         COUNT(*) as total_events,
-        COUNT(CASE WHEN payment_status = 'paid' THEN 1 END) as paid_events
-      FROM event_bookings
-      WHERE hotel_id = ${hotelId}
+        COUNT(CASE WHEN "paymentStatus" = 'paid' THEN 1 END) as paid_events
+      FROM eventBookings
+      WHERE "hotelId" = ${hotelId}
         AND status NOT IN ('cancelled', 'rejected')
         ${startDateStr && endDateStr 
-          ? sql`AND start_date >= ${startDateStr} AND start_date <= ${endDateStr}` 
+          ? sql`AND "startDate" >= ${startDateStr} AND "startDate" <= ${endDateStr}` 
           : sql``}
     `;
 
@@ -1108,14 +1108,14 @@ export const getEventFinancialSummary = async (
       paid_events: 0 
     };
 
-    const paymentsQuery = sql`
+        const paymentsQuery = sql`
       SELECT 
         COALESCE(SUM(ep.amount::numeric), 0) as total_paid,
         COUNT(CASE WHEN ep.status = 'confirmed' THEN 1 END) as confirmed_payments,
         COUNT(CASE WHEN ep.status = 'pending' THEN 1 END) as pending_payments
       FROM event_payments ep
-      INNER JOIN event_bookings eb ON eb.id = ep.event_booking_id
-      WHERE eb.hotel_id = ${hotelId}
+      INNER JOIN eventBookings eb ON eb.id = ep."eventBookingId"
+      WHERE eb."hotelId" = ${hotelId}
         AND eb.status NOT IN ('cancelled', 'rejected')
         ${startDateStr && endDateStr 
           ? sql`AND ep.paid_at >= ${new Date(startDateStr)} AND ep.paid_at <= ${new Date(endDateStr + 'T23:59:59')}` 

@@ -18,12 +18,13 @@
       "@/*": ["./src/*"]
     },
     "typeRoots": ["./node_modules/@types", "./src/types"],
-    "types": ["express", "node"]
+    "types": ["express", "node"],
+    "ignoreDeprecations": "6.0" // ✅ SILENCIA AVISOS DE DEPRECATION do TypeScript 7.0
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    "**/*.d.ts", // ✅ ADICIONADO: Incluir arquivos de declaração
+    "**/*.d.ts",
     "shared/**/*",
     "src/types/**/*"
   ],

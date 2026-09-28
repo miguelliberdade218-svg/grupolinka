@@ -35,7 +35,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: result.commissions,
+      data: result.data,
       pagination: result.pagination,
       summary: result.summary,
     });

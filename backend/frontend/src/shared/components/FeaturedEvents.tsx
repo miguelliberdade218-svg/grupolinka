@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Calendar, MapPin, Users, Ticket, Star, Clock } from "lucide-react";
+import { formatDateOnly } from "@/utils/dateFormatter";
 
 const mockEvents = [
   {
@@ -132,7 +133,7 @@ export default function FeaturedEvents() {
             <CardContent className="space-y-3">
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <Calendar className="w-4 h-4" />
-                <span>{new Date(event.date).toLocaleDateString('pt-MZ')}</span>
+                <span>{formatDateOnly(event.date)}</span>
                 <Clock className="w-4 h-4 ml-2" />
                 <span>{event.time}</span>
               </div>

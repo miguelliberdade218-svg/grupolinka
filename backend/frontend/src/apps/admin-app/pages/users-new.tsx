@@ -1,21 +1,38 @@
 import { useEffect, useState } from 'react';
 import { useAdminStore } from '@/store/adminStore';
 import { toast } from 'react-toastify';
-import { Loader, Search, Filter } from 'lucide-react';
+import { Loader, Search, Filter, MoreVertical, Check, X, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { Input } from '@/shared/components/ui/input';
 
 export default function AdminUsers() {
-  const { users, usersPagination, loading, fetchUsers, error, clearError } = useAdminStore();
+  const {
+    users,
+    usersPagination,
+    loading,
+    fetchUsers,
+    approveDriver,
+    rejectDriver,
+    suspendDriver,
+    approveHotelManager,
+    rejectHotelManager,
+    error,
+    clearError,
+  } = useAdminStore();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [type, setType] = useState<string>('');
   const [status, setStatus] = useState<string>('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [actionReason, setActionReason] = useState('');
+  const [actionType, setActionType] = useState<'approve' | 'reject' | 'suspend' | null>(null);
+  const [isActing, setIsActing] = useState(false);
 
   useEffect(() => {
+    console.log('[Users Page] Mounting, loading users...');
     loadUsers();
   }, []);
 
@@ -28,8 +45,10 @@ export default function AdminUsers() {
 
   const loadUsers = async () => {
     try {
+      console.log('[Users Page] Fetching users with filters:', { page, search, type, status });
       await fetchUsers(page, 20, { search, type, status });
     } catch (error: any) {
+      console.error('[Users Page] Error:', error);
       toast.error(error.message || 'Erro ao carregar usuários');
     }
   };
@@ -38,6 +57,39 @@ export default function AdminUsers() {
     e.preventDefault();
     setPage(1);
     loadUsers();
+  };
+
+  const handleUserAction = async () => {
+    if (!selectedUser || !actionType) return;
+
+    setIsActing(true);
+    try {
+      if (selectedUser.canDrive) {
+        if (actionType === 'approve') {
+          await approveDriver(selectedUser.id, actionReason);
+        } else if (actionType === 'reject') {
+          await rejectDriver(selectedUser.id, actionReason || 'Rejeitado pelo admin');
+        } else if (actionType === 'suspend') {
+          await suspendDriver(selectedUser.id, actionReason || 'Suspenso pelo admin');
+        }
+      } else if (selectedUser.canManageHotels) {
+        if (actionType === 'approve') {
+          await approveHotelManager(selectedUser.id, actionReason);
+        } else if (actionType === 'reject') {
+          await rejectHotelManager(selectedUser.id, actionReason || 'Rejeitado pelo admin');
+        }
+      }
+
+      toast.success('✅ Ação executada com sucesso!');
+      setSelectedUser(null);
+      setActionType(null);
+      setActionReason('');
+      loadUsers();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao executar ação');
+    } finally {
+      setIsActing(false);
+    }
   };
 
   const getTypeColor = (type: string) => {
@@ -160,6 +212,9 @@ export default function AdminUsers() {
                   <th className="px-6 py-3 text-left font-medium text-gray-600 uppercase text-xs">
                     Criado
                   </th>
+                  <th className="px-6 py-3 text-right font-medium text-gray-600 uppercase text-xs">
+                    Ações
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -214,6 +269,18 @@ export default function AdminUsers() {
                     <td className="px-6 py-4 text-gray-600">
                       {new Date(user.createdAt).toLocaleDateString('pt-PT')}
                     </td>
+                    <td className="px-6 py-4 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setSelectedUser(user)}
+                        className="flex items-center gap-1"
+                        title="Gerenciar usuário"
+                      >
+                        <MoreVertical size={14} />
+                        Ações
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -258,6 +325,130 @@ export default function AdminUsers() {
           >
             Próximo
           </Button>
+        </div>
+      )}
+
+      {/* Modal de Ações do Usuário */}
+      {selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>
+                Gerenciar Usuário: {selectedUser.fullName || selectedUser.firstName}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600"><strong>Email:</strong> {selectedUser.email}</p>
+                <p className="text-sm text-gray-600">
+                  <strong>Tipo:</strong> {selectedUser.canDrive ? '🚗 Motorista' : selectedUser.canManageHotels ? '🏨 Gestor Hotel' : '📅 Cliente'}
+                </p>
+              </div>
+
+              {!actionType ? (
+                <div className="space-y-2">
+                  {selectedUser.canDrive && (
+                    <>
+                      {selectedUser.driverVerificationStatus !== 'verified' && (
+                        <Button
+                          onClick={() => setActionType('approve')}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                        >
+                          <Check size={16} />
+                          Aprovar como Motorista
+                        </Button>
+                      )}
+                      {selectedUser.driverVerificationStatus !== 'rejected' && (
+                        <Button
+                          onClick={() => setActionType('reject')}
+                          className="w-full bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+                        >
+                          <X size={16} />
+                          Rejeitar
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => setActionType('suspend')}
+                        variant={selectedUser.driverVerificationStatus === 'suspended' ? 'outline' : 'destructive'}
+                        className="w-full flex items-center gap-2"
+                      >
+                        <AlertTriangle size={16} />
+                        {selectedUser.driverVerificationStatus === 'suspended' ? 'Reativar' : 'Suspender'}
+                      </Button>
+                    </>
+                  )}
+
+                  {selectedUser.canManageHotels && (
+                    <>
+                      {selectedUser.hotelManagerVerificationStatus !== 'verified' && (
+                        <Button
+                          onClick={() => setActionType('approve')}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                        >
+                          <Check size={16} />
+                          Aprovar Gestor Hotel
+                        </Button>
+                      )}
+                      {selectedUser.hotelManagerVerificationStatus !== 'rejected' && (
+                        <Button
+                          onClick={() => setActionType('reject')}
+                          className="w-full bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+                        >
+                          <X size={16} />
+                          Rejeitar Hotel Manager
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Motivo / Notas (opcional)
+                    </label>
+                    <Input
+                      type="text"
+                      placeholder="Explique a razão desta ação..."
+                      value={actionReason}
+                      onChange={(e) => setActionReason(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        setActionType(null);
+                        setActionReason('');
+                      }}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleUserAction}
+                      disabled={isActing}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {isActing ? 'Processando...' : 'Confirmar Ação'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!actionType && (
+                <Button
+                  onClick={() => setSelectedUser(null)}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Fechar
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

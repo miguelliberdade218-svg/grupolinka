@@ -18,3 +18,26 @@ backup_*
 *.pgsql
 *.pgdump
 
+
+# Backups manuais
+*.bak
+*.bak.*
+*.old
+*.orig
+
+# Dumps / migrações temporárias
+*.sql.gz
+backup_linka2_*
+*.dump
+migration_0020_completa.sql
+migration_0020_final.sql
+
+# Env
+.env
+.env.local
+.env.production
+!.env.example
+
+# Node
+node_modules/
+*/node_modules/

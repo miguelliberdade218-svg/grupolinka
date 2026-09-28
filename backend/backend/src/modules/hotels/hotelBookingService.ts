@@ -21,6 +21,9 @@ import {
   releaseAvailabilityAfterCancellation 
 } from "./roomTypeService";
 
+// 🆕 Import do serviço de comissões automáticas
+import providerPaymentService from "../payments/providerPaymentService";
+
 // ==================== TIPOS ====================
 export type HotelBooking = typeof hotelBookings.$inferSelect;
 export type HotelBookingInsert = typeof hotelBookings.$inferInsert;
@@ -490,6 +493,12 @@ export const checkOutBooking = async (
           performedBy: performedBy || 'system'
         }
       );
+
+      // 🆕 GANCHO AUTOMATICO: Criar comissao para o hotel (nao bloqueante)
+      console.log(`🔗 [HOTEL-BOOKING] Gatilho: criando comissao para hotel booking ${bookingId}`);
+      providerPaymentService.createHotelCommission(bookingId).catch((error: any) => {
+        console.error('❌ [HOTEL-BOOKING] Erro ao criar comissao (nao critico):', error.message);
+      });
       
       return updated;
     }

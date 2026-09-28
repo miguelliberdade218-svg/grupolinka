@@ -14,6 +14,7 @@ export interface AdminStats {
   total_rides?: number;
   total_hotel_bookings?: number;
   total_event_bookings?: number;
+  total_ride_bookings?: number; // ✅ ADICIONADO
 }
 
 export interface AdminUser {
@@ -41,6 +42,13 @@ export interface PaginationInfo {
   limit: number;
   total: number;
   totalPages: number;
+}
+
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
 }
 
 interface AdminStore {
@@ -117,12 +125,28 @@ export const useAdminStore = create<AdminStore>((set) => ({
   error: null,
   success: null,
 
-  // Ações de fetch
-  fetchDashboardStats: async () => {
+    // Ações de fetch
+    fetchDashboardStats: async () => {
     set({ loading: true, error: null });
     try {
       const response = await adminService.getDashboardStats();
-      set({ stats: response.data.data, loading: false });
+      // Extrair dados da resposta de forma segura
+      const responseData = response?.data;
+      let statsData: AdminStats = {};
+      
+      if (responseData) {
+        // Tentar diferentes formatos de resposta
+        if (responseData.data && typeof responseData.data === 'object') {
+          statsData = responseData.data;
+        } else if (responseData.stats && typeof responseData.stats === 'object') {
+          statsData = responseData.stats;
+        } else if (typeof responseData === 'object') {
+          // Se a resposta já for os stats diretamente
+          statsData = responseData;
+        }
+      }
+      
+      set({ stats: statsData, loading: false });
     } catch (error: any) {
       const errorMsg = error.response?.data?.message || 'Erro ao carregar dashboard';
       set({ error: errorMsg, loading: false });
@@ -130,17 +154,37 @@ export const useAdminStore = create<AdminStore>((set) => ({
     }
   },
 
-  fetchUsers: async (page = 1, limit = 20, filters = {}) => {
+    fetchUsers: async (page = 1, limit = 20, filters = {}) => {
     set({ loading: true, error: null });
     try {
       const response = await adminService.listUsers(page, limit, filters);
+      const responseData = response?.data;
+      let usersData: AdminUser[] = [];
+      let paginationData: PaginationInfo | null = null;
+      
+      if (responseData) {
+        // Extrair dados de usuários
+        if (Array.isArray(responseData.data)) {
+          usersData = responseData.data;
+        } else if (Array.isArray(responseData)) {
+          usersData = responseData;
+        }
+        
+        // Extrair paginação
+        if (responseData.pagination && typeof responseData.pagination === 'object') {
+          paginationData = responseData.pagination;
+        }
+      }
+      
+      console.log('[AdminStore] Users loaded:', { count: usersData.length, pagination: paginationData });
       set({
-        users: response.data.data || [],
-        usersPagination: response.data.pagination,
+        users: usersData,
+        usersPagination: paginationData,
         loading: false,
       });
     } catch (error: any) {
       const errorMsg = error.response?.data?.message || 'Erro ao listar usuários';
+      console.error('[AdminStore] Error fetching users:', errorMsg);
       set({ error: errorMsg, loading: false });
       throw error;
     }
@@ -206,13 +250,17 @@ export const useAdminStore = create<AdminStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const response = await adminService.listPaymentReferences(page, limit, filters);
+      const data = response?.data?.data || response?.data || [];
+      const pagination = response?.data?.pagination;
+      console.log('[AdminStore] Payments loaded:', { count: Array.isArray(data) ? data.length : 0 });
       set({
-        payments: response.data.data || [],
-        paymentsPagination: response.data.pagination,
+        payments: Array.isArray(data) ? data : [],
+        paymentsPagination: pagination,
         loading: false,
       });
     } catch (error: any) {
       const errorMsg = error.response?.data?.message || 'Erro ao listar pagamentos';
+      console.error('[AdminStore] Error fetching payments:', errorMsg);
       set({ error: errorMsg, loading: false });
       throw error;
     }

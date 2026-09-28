@@ -277,16 +277,16 @@ export const calculateRequiredDeposit = async (bookingId: string) => {
   try {
     const bookingResult = await db.execute(sql`
       SELECT 
-        hb.total_price,
-        hb.hotel_id,
+        hb."totalPrice" as total_price,
+        hb."hotelId" as hotel_id,
         po.deposit_enabled,
         po.deposit_percentage,
         po.deposit_due_days,
         po.advance_payment_enabled,
         po.advance_payment_required_percentage,
         po.advance_payment_due_days
-      FROM hotel_bookings hb
-      LEFT JOIN payment_options po ON po.hotel_id = hb.hotel_id
+      FROM "hotelBookings" hb
+      LEFT JOIN payment_options po ON po.hotel_id = hb."hotelId"::text
       WHERE hb.id = ${bookingId}::uuid
     `);
     
@@ -356,13 +356,13 @@ export const getRecentPaymentsByHotel = async (hotelId: string, limit: number = 
         hp.status,
         hp.paid_at,
         hp.created_at,
-        hb.guest_name,
-        hb.check_in,
-        hb.check_out,
-        hb.total_price
+        hb."guestName" as guest_name,
+        hb."checkIn" as check_in,
+        hb."checkOut" as check_out,
+        hb."totalPrice" as total_price
       FROM hotel_payments hp
-      INNER JOIN hotel_bookings hb ON hb.id = hp.booking_id
-      WHERE hb.hotel_id = ${hotelId}::uuid
+      INNER JOIN "hotelBookings" hb ON hb.id = hp.booking_id
+      WHERE hb."hotelId" = ${hotelId}::uuid
         AND hp.status IN ('paid', 'completed', 'confirmed')
       ORDER BY hp.paid_at DESC
       LIMIT ${limit}
@@ -409,8 +409,8 @@ export const getHotelFinancialSummary = async (
           THEN hb.id 
         END) as paid_bookings
       FROM hotel_payments hp
-      INNER JOIN hotel_bookings hb ON hb.id = hp.booking_id
-      WHERE hb.hotel_id = ${hotelId}::uuid
+      INNER JOIN "hotelBookings" hb ON hb.id = hp.booking_id
+      WHERE hb."hotelId" = ${hotelId}::uuid
         AND hp.status IS NOT NULL
     `;
 
@@ -427,18 +427,18 @@ export const getHotelFinancialSummary = async (
     // Query para pagamentos pendentes
     let pendingQuery = sql`
       SELECT 
-        COALESCE(SUM(total_price::numeric), 0) as pending_amount,
+        COALESCE(SUM("totalPrice"::numeric), 0) as pending_amount,
         COUNT(*) as pending_bookings
-      FROM hotel_bookings
-      WHERE hotel_id = ${hotelId}::uuid
-        AND payment_status = 'pending'
+      FROM "hotelBookings"
+      WHERE "hotelId" = ${hotelId}::uuid
+        AND "paymentStatus" = 'pending'
     `;
 
     if (startDate) {
-      pendingQuery = sql`${pendingQuery} AND created_at >= ${startDate}::date`;
+      pendingQuery = sql`${pendingQuery} AND "createdAt" >= ${startDate}::date`;
     }
     if (endDate) {
-      pendingQuery = sql`${pendingQuery} AND created_at <= ${endDate}::date`;
+      pendingQuery = sql`${pendingQuery} AND "createdAt" <= ${endDate}::date`;
     }
 
     const pendingResult = await db.execute(pendingQuery);
@@ -481,15 +481,15 @@ export const getPendingPayments = async (limit: number = 50, offset: number = 0)
     const result = await db.execute(sql`
       SELECT 
         hp.*,
-        hb.guest_name,
-        hb.guest_email,
-        hb.total_price,
-        hb.hotel_id,
+        hb."guestName" as guest_name,
+        hb."guestEmail" as guest_email,
+        hb."totalPrice" as total_price,
+        hb."hotelId" as hotel_id,
         i.id as invoice_id,
         i.invoice_number,
         i.due_date
       FROM hotel_payments hp
-      INNER JOIN hotel_bookings hb ON hb.id = hp.booking_id
+      INNER JOIN "hotelBookings" hb ON hb.id = hp.booking_id
       LEFT JOIN invoices i ON i.hotel_booking_id = hb.id
       WHERE hp.status = 'pending'
         AND hp.amount > 0
@@ -614,10 +614,10 @@ export const refreshInvoiceStatus = async (invoiceId: string): Promise<any> => {
     // Atualizar booking também
     if (invoice.hotel_booking_id) {
       await db.execute(sql`
-        UPDATE hotel_bookings
+        UPDATE "hotelBookings"
         SET 
-          payment_status = ${newStatus}::text,
-          updated_at = CURRENT_TIMESTAMP
+          "paymentStatus" = ${newStatus}::text,
+          "updatedAt" = CURRENT_TIMESTAMP
         WHERE id = ${invoice.hotel_booking_id}::uuid
       `);
     }
@@ -652,17 +652,17 @@ export const getInvoiceDetails = async (invoiceId: string) => {
     const result = await db.execute(sql`
       SELECT 
         i.*,
-        hb.guest_name,
-        hb.guest_email,
-        hb.total_price as booking_total,
-        hb.payment_status as booking_payment_status,
+        hb."guestName" as guest_name,
+        hb."guestEmail" as guest_email,
+        hb."totalPrice" as booking_total,
+        hb."paymentStatus" as booking_payment_status,
         COALESCE(SUM(hp.amount), 0) as total_paid
       FROM invoices i
-      INNER JOIN hotel_bookings hb ON hb.id = i.hotel_booking_id
+      INNER JOIN "hotelBookings" hb ON hb.id = i.hotel_booking_id
       LEFT JOIN hotel_payments hp ON hp.booking_id = i.hotel_booking_id 
         AND hp.status = 'paid'
       WHERE i.id = ${invoiceId}::uuid
-      GROUP BY i.id, hb.guest_name, hb.guest_email, hb.total_price, hb.payment_status
+      GROUP BY i.id, hb."guestName", hb."guestEmail", hb."totalPrice", hb."paymentStatus"
     `);
     
     const invoice = result[0] as any;

@@ -297,7 +297,7 @@ export default function UserRatings({
                           <div className="flex items-center gap-2">
                             {renderStars(rating.rating)}
                             <span className="text-sm text-gray-medium">
-                              {new Date(rating.date).toLocaleDateString('pt-BR')}
+                              {formatDateOnly(rating.date)}
                             </span>
                           </div>
                         </div>
@@ -314,7 +314,8 @@ export default function UserRatings({
                           <p className="text-sm font-medium mb-1">Resposta do {getTypeLabel(userProfile.type)}:</p>
                           <p className="text-sm text-gray-700">{rating.response.text}</p>
                           <p className="text-xs text-gray-medium mt-1">
-                            {new Date(rating.response.date).toLocaleDateString('pt-BR')}
+
+                            {formatDateOnly(rating.response.date)}
                           </p>
                         </div>
                       )}

@@ -1,101 +1,88 @@
-import { useState } from "react";
-import { useAuth } from "@/shared/hooks/useAuth";
-import { Link } from "wouter";
-import { Button } from "@/shared/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
-import { Badge } from "@/shared/components/ui/badge";
-import { MapPin, Calendar, Users, DollarSign, Plus, Car, MessageCircle, TrendingUp } from "lucide-react";
+import React from 'react';
+import { useDriverData } from '../hooks/useDriverData';
+import { useAuth } from '@/contexts/authContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
+import { Button } from '@/shared/components/ui/button';
+import {
+  MapPin,
+  Plus,
+  Star,
+  DollarSign,
+  TrendingUp,
+  Users,
+  Navigation,
+  Clock,
+  AlertCircle,
+} from 'lucide-react';
 
 export default function Dashboard() {
   const { user } = useAuth();
-  
-  // Mock data para o dashboard
-  const driverStats = {
-    activeRoutes: 3,
-    totalEarnings: 45600,
-    monthlyEarnings: 12300,
-    completedTrips: 84,
-    rating: 4.8,
-    totalPassengers: 256
-  };
+  const { driverData, routes, earnings, loading } = useDriverData();
 
-  const activeRoutes = [
-    {
-      id: 1,
-      from: "Maputo",
-      to: "Beira",
-      date: "2024-01-20",
-      time: "08:00",
-      price: 1500,
-      availableSeats: 2,
-      totalSeats: 4,
-      requests: 3,
-      status: "active"
-    },
-    {
-      id: 2,
-      from: "Nampula",
-      to: "Nacala",
-      date: "2024-01-22",
-      time: "14:00",
-      price: 800,
-      availableSeats: 1,
-      totalSeats: 3,
-      requests: 1,
-      status: "active"
-    }
-  ];
-
-  const partnershipOpportunities = [
-    {
-      id: 1,
-      hotel: "Hotel Marisol",
-      location: "Beira",
-      offer: "10% comissão por cliente levado",
-      type: "Comissão",
-      posted: "2 dias",
-      interested: 5
-    },
-    {
-      id: 2,
-      hotel: "Lodge Safari",
-      location: "Gorongosa",
-      offer: "Estadia grátis + 500 MZN por grupo",
-      type: "Pacote",
-      posted: "1 semana",
-      interested: 12
-    }
-  ];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Motoristas</h1>
-          <p className="text-gray-600">Gerir suas rotas e propostas</p>
-        </div>
+    <div className="p-4 md:p-6 pb-24 md:pb-6">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">
+          Bem-vindo, {user?.name}! 👋
+        </h1>
+        <p className="text-gray-600 mt-2">
+          {driverData?.verified ? '✅ Verificado' : '⏳ Verificação Pendente'}
+        </p>
+      </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      {/* KPI Cards */}
+      {driverData && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Rotas Ativas</p>
-                  <p className="text-2xl font-bold">{driverStats.activeRoutes}</p>
+                  <p className="text-gray-600 text-sm">Rating</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-1">
+                    {driverData.rating.toFixed(1)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">de {driverData.totalRides} viagens</p>
                 </div>
-                <Car className="w-8 h-8 text-orange-600" />
+                <Star className="w-8 h-8 text-yellow-500 fill-yellow-500" />
               </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Este Mês</p>
-                  <p className="text-2xl font-bold">{driverStats.monthlyEarnings.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">MZN</p>
+                  <p className="text-gray-600 text-sm">Rotas Ativas</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-1">
+                    {driverData.activeRoutes}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">publicadas</p>
+                </div>
+                <MapPin className="w-8 h-8 text-blue-600" />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-gray-600 text-sm">Ganhos Mês</p>
+                  <p className="text-3xl font-bold text-green-600 mt-1">
+                    {earnings?.earningsThisMonth.toLocaleString('pt-MZ', {
+                      style: 'currency',
+                      currency: 'MZN',
+                    })}
+                  </p>
                 </div>
                 <DollarSign className="w-8 h-8 text-green-600" />
               </div>
@@ -103,167 +90,177 @@ export default function Dashboard() {
           </Card>
 
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Total Ganho</p>
-                  <p className="text-2xl font-bold">{driverStats.totalEarnings.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">MZN</p>
+                  <p className="text-gray-600 text-sm">Total Viagens</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-1">
+                    {driverData.totalRides}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {earnings?.ridesToday} hoje
+                  </p>
                 </div>
-                <TrendingUp className="w-8 h-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Viagens</p>
-                  <p className="text-2xl font-bold">{driverStats.completedTrips}</p>
-                </div>
-                <MapPin className="w-8 h-8 text-purple-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Passageiros</p>
-                  <p className="text-2xl font-bold">{driverStats.totalPassengers}</p>
-                </div>
-                <Users className="w-8 h-8 text-indigo-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Avaliação</p>
-                  <p className="text-2xl font-bold">{driverStats.rating}</p>
-                  <p className="text-xs text-gray-500">⭐ de 5</p>
-                </div>
-                <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <span className="text-yellow-600 font-bold">★</span>
-                </div>
+                <Users className="w-8 h-8 text-purple-600" />
               </div>
             </CardContent>
           </Card>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Rotas Ativas */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Minhas Rotas Ativas</CardTitle>
-              <Button asChild size="sm">
-                <Link href="/drivers/publish" data-testid="button-add-route">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Publicar Rota
-                </Link>
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {activeRoutes.map((route) => (
-                  <Card key={route.id} className="border-l-4 border-l-orange-500">
-                    <CardContent className="pt-4">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-semibold">{route.from} → {route.to}</h3>
-                          <p className="text-sm text-gray-600">
-                            📅 {route.date} às {route.time}
-                          </p>
-                        </div>
-                        <Badge className="bg-green-100 text-green-800">
-                          {route.price} MZN
-                        </Badge>
-                      </div>
-                      
-                      <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
-                        <span>💺 {route.availableSeats} de {route.totalSeats} lugares</span>
-                        <span>📝 {route.requests} solicitações</span>
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" data-testid={`button-manage-${route.id}`}>
-                          Gerir
-                        </Button>
-                        <Button size="sm" variant="outline" data-testid={`button-chat-${route.id}`}>
-                          <MessageCircle className="w-4 h-4 mr-1" />
-                          Chat
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-                
-                {activeRoutes.length === 0 && (
-                  <div className="text-center py-6">
-                    <Car className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                    <p className="text-gray-600">Nenhuma rota ativa</p>
-                    <Button asChild className="mt-2">
-                      <Link href="/drivers/publish">Publicar primeira rota</Link>
-                    </Button>
-                  </div>
-                )}
+      {/* Alerts */}
+      {!driverData?.verified && (
+        <Card className="bg-yellow-50 border-yellow-200 mb-6">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-6 h-6 text-yellow-600 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold text-yellow-900">Verificação Pendente</p>
+                <p className="text-sm text-yellow-800 mt-1">
+                  Finalize a verificação para começar a aceitar passageiros.
+                </p>
+                <Button className="mt-2 bg-yellow-600 hover:bg-yellow-700">
+                  Completar Verificação
+                </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Oportunidades de Parceria */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Oportunidades de Parceria</CardTitle>
-              <p className="text-sm text-gray-600">
-                Posts de alojamentos oferecendo parcerias
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {partnershipOpportunities.map((opportunity) => (
-                  <Card key={opportunity.id} className="border-l-4 border-l-blue-500">
-                    <CardContent className="pt-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-semibold">{opportunity.hotel}</h3>
-                          <p className="text-sm text-gray-600">📍 {opportunity.location}</p>
-                        </div>
-                        <Badge variant="outline">{opportunity.type}</Badge>
-                      </div>
-                      
-                      <p className="text-sm mb-3 p-2 bg-blue-50 rounded">
-                        💡 {opportunity.offer}
-                      </p>
-                      
-                      <div className="flex justify-between items-center text-xs text-gray-500 mb-3">
-                        <span>Publicado há {opportunity.posted}</span>
-                        <span>{opportunity.interested} interessados</span>
-                      </div>
-                      
-                      <Button size="sm" className="w-full" data-testid={`button-interest-${opportunity.id}`}>
-                        Demonstrar Interesse
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-                
-                <div className="text-center">
-                  <Button asChild variant="outline">
-                    <Link href="/drivers/partnerships" data-testid="button-view-all-partnerships">
-                      Ver Todas as Parcerias
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      {/* Quick Actions */}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Button className="bg-blue-600 hover:bg-blue-700 h-12 text-base">
+          <Plus className="w-5 h-5 mr-2" />
+          Publicar Nova Rota
+        </Button>
+        <Button variant="outline" className="h-12 text-base">
+          <Navigation className="w-5 h-5 mr-2" />
+          Ver Oportunidades
+        </Button>
       </div>
+
+      {/* Active Routes */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Minhas Rotas Ativas</span>
+            <Button size="sm" className="bg-green-600 hover:bg-green-700">
+              Nova Rota
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {routes && routes.length > 0 ? (
+            <div className="space-y-3">
+              {routes
+                .filter((r) => r.status === 'active')
+                .slice(0, 5)
+                .map((route) => (
+                  <div
+                    key={route.id}
+                    className="p-4 border rounded-lg hover:shadow-lg transition"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-5 h-5 text-blue-600" />
+                        <span className="font-semibold text-gray-900">
+                          {route.from} → {route.to}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-green-600">
+                        {route.pricePerSeat.toLocaleString('pt-MZ', {
+                          style: 'currency',
+                          currency: 'MZN',
+                        })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {new Date(route.departureTime).toLocaleString('pt-MZ')}
+                      </span>
+                      <span>
+                        {route.availableSeats} de {route.totalSeats} lugares
+                      </span>
+                      <span className="text-blue-600 font-semibold">
+                        {route.requests} solicitações
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline">
+                        Gerenciar
+                      </Button>
+                      <Button size="sm" variant="outline">
+                        💬 Chat ({route.requests})
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-600">
+              <p>Nenhuma rota ativa no momento</p>
+              <Button className="mt-4 bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Publicar Primeira Rota
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Earnings Summary */}
+      {earnings && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              Resumo de Ganhos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-600">Este Mês</p>
+                <p className="text-lg font-bold text-gray-900 mt-1">
+                  {earnings.earningsThisMonth.toLocaleString('pt-MZ', {
+                    style: 'currency',
+                    currency: 'MZN',
+                  })}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-600">Mês Passado</p>
+                <p className="text-lg font-bold text-gray-900 mt-1">
+                  {earnings.earningsLastMonth.toLocaleString('pt-MZ', {
+                    style: 'currency',
+                    currency: 'MZN',
+                  })}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-600">Média/Rota</p>
+                <p className="text-lg font-bold text-gray-900 mt-1">
+                  {earnings.averagePerRide.toLocaleString('pt-MZ', {
+                    style: 'currency',
+                    currency: 'MZN',
+                  })}
+                </p>
+              </div>
+              <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                <p className="text-xs text-yellow-900">Pendente Saque</p>
+                <p className="text-lg font-bold text-yellow-900 mt-1">
+                  {earnings.pending.toLocaleString('pt-MZ', {
+                    style: 'currency',
+                    currency: 'MZN',
+                  })}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

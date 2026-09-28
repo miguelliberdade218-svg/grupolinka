@@ -145,7 +145,7 @@ export default function UserDocuments() {
                             <div>
                               <p className="font-semibold text-sm">{doc.document_type}</p>
                               <p className="text-xs text-gray-600">{doc.file_name}</p>
-                              <p className="text-xs text-gray-500 mt-1">Enviado em {new Date(doc.created_at).toLocaleDateString('pt-BR')}</p>
+                              <p className="text-xs text-gray-500 mt-1">Enviado em {formatDateOnly(doc.created_at)}</p>
                             </div>
                           </div>
                           <div className="flex gap-2">

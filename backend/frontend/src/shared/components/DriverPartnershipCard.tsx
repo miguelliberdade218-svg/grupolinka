@@ -190,7 +190,7 @@ export default function DriverPartnershipCard({
           {validUntilDate && (
             <p className={`flex items-center ${isExpired ? "text-red-500" : ""}`}>
               <Calendar className="w-3 h-3 mr-1" />
-              Válido até {validUntilDate.toLocaleDateString('pt-PT')}
+              Válido até {formatDateOnly(validUntilDate)}
               {isExpired && " (Expirado)"}
             </p>
           )}
@@ -208,4 +208,5 @@ export default function DriverPartnershipCard({
       </CardContent>
     </Card>
   );
+}
 }

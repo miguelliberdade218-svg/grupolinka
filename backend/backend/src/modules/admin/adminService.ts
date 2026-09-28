@@ -9,6 +9,7 @@ import {
   hotelBookings,
   eventSpaces,
   eventBookings,
+  bookings, // ✅ ADICIONADO: Tabela de reservas de rides
   complaints,
   paymentReferences,
   platformFeeConfig,
@@ -36,49 +37,60 @@ export class AdminService {
   
   async getDashboardStats() {
     try {
-      const [
+                  const [
         totalUsersResult,
         totalAdminsResult,
         totalDriversResult,
-        totalHotelManagersResult,
+        totalHotelsResult, // ✅ CORREÇÃO: Contar hotéis, não gestores de hotel
         totalClientsResult,
         pendingVerificationsResult,
         newComplaintsResult,
         pendingPaymentsResult,
         totalRidesResult,
         totalHotelBookingsResult,
-        totalEventBookingsResult
+        totalEventBookingsResult,
+        totalRideBookingsResult // ✅ ADICIONADO: Reservas de rides
       ] = await Promise.all([
         db.select({ count: count() }).from(users),
         db.select({ count: count() }).from(users).where(eq(users.isAdmin, true)),
         db.select({ count: count() }).from(users).where(eq(users.canDrive, true)),
-        db.select({ count: count() }).from(users).where(eq(users.canManageHotels, true)),
+        db.select({ count: count() }).from(hotels), // ✅ CORREÇÃO: Contar TODOS os hotéis
         db.select({ count: count() }).from(users).where(eq(users.canBookServices, true)),
-        db.select({ count: count() }).from(users).where(eq(users.verificationStatus, 'pending')),
+
+                                // Verificações pendentes de capacidade (motoristas + gestores de hotel)
+        db.select({ count: sql<number>`COUNT(DISTINCT id)` }).from(users).where(
+          sql`driver_verification_status = 'pending' OR hotel_manager_verification_status = 'pending'`
+        ),
         db.select({ count: count() }).from(complaints).where(eq(complaints.status, 'new')),
         db.select({ count: count() }).from(paymentReferences).where(eq(paymentReferences.status, 'pending')),
         db.select({ count: count() }).from(rides),
         db.select({ count: count() }).from(hotelBookings),
-        db.select({ count: count() }).from(eventBookings)
+        db.select({ count: count() }).from(eventBookings),
+        db.select({ count: count() }).from(bookings) // ✅ ADICIONADO: Contar reservas de rides
       ]);
 
-      const pendingAmount = await db.select({
-        total: sql<number>`COALESCE(SUM(CAST(gross_amount AS DECIMAL)), 0)`
+                        // Primeiro, verificar se há pagamentos pendentes
+      const pendingPaymentsCheck = await db.select({
+        count: count(),
+        total: sql<number>`COALESCE(SUM(gross_amount), 0)`
       }).from(paymentReferences).where(eq(paymentReferences.status, 'pending'));
+      
+      const pendingAmount = pendingPaymentsCheck[0];
 
-      return {
+            return {
         total_users: totalUsersResult[0].count,
         total_admins: totalAdminsResult[0].count,
         total_drivers: totalDriversResult[0].count,
-        total_hotel_managers: totalHotelManagersResult[0].count,
+        total_hotels: totalHotelsResult[0].count,
         total_clients: totalClientsResult[0].count,
         pending_verifications: pendingVerificationsResult[0].count,
         new_complaints: newComplaintsResult[0].count,
         pending_payments: pendingPaymentsResult[0].count,
-        pending_amount: parseFloat(pendingAmount[0].total?.toString() || '0'),
+        pending_amount: parseFloat(pendingAmount?.total?.toString() || '0'),
         total_rides: totalRidesResult[0].count,
         total_hotel_bookings: totalHotelBookingsResult[0].count,
-        total_event_bookings: totalEventBookingsResult[0].count
+        total_event_bookings: totalEventBookingsResult[0].count,
+        total_ride_bookings: totalRideBookingsResult[0].count // ✅ ADICIONADO: Estatística de reservas de rides
       };
     } catch (error) {
       console.error('Erro no getDashboardStats:', error);
@@ -711,15 +723,27 @@ export class AdminService {
 
   // ==================== GESTÃO DE PAGAMENTOS ====================
 
-  async getPaymentStats() {
+    async getPaymentStats() {
     try {
       const stats = await db.select({
         total_transactions: count(),
         total_gross: sql<number>`COALESCE(SUM(CAST(gross_amount AS DECIMAL)), 0)`,
         total_fees: sql<number>`COALESCE(SUM(CAST(fee_amount AS DECIMAL)), 0)`,
         total_net: sql<number>`COALESCE(SUM(CAST(net_amount AS DECIMAL)), 0)`,
+        // pending = aguarda pagamento pelo provedor
         pending_count: sql<number>`COUNT(CASE WHEN status = 'pending' THEN 1 END)`,
-        pending_amount: sql<number>`COALESCE(SUM(CASE WHEN status = 'pending' THEN CAST(gross_amount AS DECIMAL) ELSE 0 END), 0)`
+        pending_amount: sql<number>`COALESCE(SUM(CASE WHEN status = 'pending' THEN CAST(fee_amount AS DECIMAL) ELSE 0 END), 0)`,
+        // proof_uploaded = comprovativo enviado, aguarda confirmação do admin
+        proof_uploaded_count: sql<number>`COUNT(CASE WHEN status = 'proof_uploaded' THEN 1 END)`,
+        proof_uploaded_amount: sql<number>`COALESCE(SUM(CASE WHEN status = 'proof_uploaded' THEN CAST(fee_amount AS DECIMAL) ELSE 0 END), 0)`,
+        // paid = confirmado
+        paid_count: sql<number>`COUNT(CASE WHEN status = 'paid' THEN 1 END)`,
+        paid_amount: sql<number>`COALESCE(SUM(CASE WHEN status = 'paid' THEN CAST(fee_amount AS DECIMAL) ELSE 0 END), 0)`,
+        // rejected
+        rejected_count: sql<number>`COUNT(CASE WHEN status = 'rejected' THEN 1 END)`,
+        // overdue = pending/proof_uploaded com due_date no passado
+        overdue_count: sql<number>`COUNT(CASE WHEN status IN ('pending','proof_uploaded') AND due_date < CURRENT_DATE THEN 1 END)`,
+        overdue_amount: sql<number>`COALESCE(SUM(CASE WHEN status IN ('pending','proof_uploaded') AND due_date < CURRENT_DATE THEN CAST(fee_amount AS DECIMAL) ELSE 0 END), 0)`
       })
         .from(paymentReferences);
 
@@ -803,7 +827,7 @@ export class AdminService {
         })
         .where(eq(paymentReferences.id, paymentId));
 
-      await this.logAdminAction(adminId, 'confirm_payment', paymentId, {
+            await this.logAdminAction(adminId, 'confirm_payment', paymentId, {
         reference: payment[0].reference_number,
         notes
       });
@@ -811,6 +835,42 @@ export class AdminService {
       return { success: true, message: 'Pagamento confirmado' };
     } catch (error) {
       console.error('Erro ao confirmar pagamento:', error);
+      throw error;
+    }
+  }
+
+  async rejectPayment(paymentId: string, adminId: string, reason: string) {
+    try {
+      if (!reason) {
+        throw new Error('Motivo da rejeição é obrigatório');
+      }
+
+      const payment = await db.select()
+        .from(paymentReferences)
+        .where(eq(paymentReferences.id, paymentId))
+        .limit(1);
+
+      if (!payment.length) {
+        throw new Error('Pagamento não encontrado');
+      }
+
+      await db.update(paymentReferences)
+        .set({
+          status: 'rejected',
+          confirmed_by: adminId,
+          notes: reason,
+          updated_at: new Date()
+        })
+        .where(eq(paymentReferences.id, paymentId));
+
+      await this.logAdminAction(adminId, 'reject_payment', paymentId, {
+        reference: payment[0].reference_number,
+        reason
+      });
+
+      return { success: true, message: 'Pagamento rejeitado' };
+    } catch (error) {
+      console.error('Erro ao rejeitar pagamento:', error);
       throw error;
     }
   }

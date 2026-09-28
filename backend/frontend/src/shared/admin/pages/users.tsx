@@ -10,6 +10,7 @@ import {
   Eye, Ban, CheckCircle, X, Mail, Phone, Calendar,
   Car, Hotel, Shield
 } from "lucide-react";
+import { formatDateOnly } from "@/utils/dateFormatter";
 
 export default function AdminUsers() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -254,7 +255,7 @@ export default function AdminUsers() {
                             </p>
                             <p className="flex items-center gap-2">
                               <Calendar className="w-3 h-3" />
-                              Membro desde {user.joinDate}
+                              Membro desde {formatDateOnly(user.joinDate)}
                             </p>
                           </div>
                         </div>

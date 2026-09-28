@@ -48,10 +48,18 @@ import rideController from '../src/modules/rides/rideController';
 import driverController from '../src/modules/drivers/driverController';
 import vehicleRoutes from './provider/vehicles';
 
+// ===== ROTAS DE REVIEWS E PAYMENT POLICIES (27/02/2026) =====
+import rideReviewController from '../src/modules/reviews/rideReviewController';
+import paymentPolicyRoutes from '../src/modules/payments/paymentPolicyRoutes';
+
 // ===== ROTAS DE PAGAMENTOS / COMISSÕES =====
 import providerPaymentsRoutes from './provider-payments';
 import rideCompletionRoutes from './ride-completion';
 import hotelCheckoutRoutes from './hotel-checkout';
+
+// ===== SISTEMA DE COMISSÕES =====
+import commissionRoutes from '../src/modules/commissions/commissionRoutes';
+import driverAppRoutes from '../src/modules/drivers/driverAppRoutes';
 
 // ===== ROTAS DE PARCERIAS =====
 import { partnershipRoutes } from '../src/modules/partnerships/partnershipRoutes';
@@ -501,8 +509,15 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   app.use('/api/provider/payments', providerPaymentsRoutes);
   console.log('✅ Rotas de pagamentos do provider registradas');
   
+  // ===== SISTEMA DE COMISSÕES =====
+  app.use('/api', commissionRoutes);
+  console.log('💰 Sistema de Comissões registrado');
+  
   app.use('/api/rides', rideController);
-  app.use('/api/rides', rideCompletionRoutes);
+  // DESATIVADO: migrado para driverController. Nao montar para evitar duplicacao.
+  // app.use('/api/rides', rideCompletionRoutes);
+  app.use('/api/ride-reviews', rideReviewController);
+  app.use('/api/payment-policies', paymentPolicyRoutes);
   app.use('/api/hotel-bookings', hotelCheckoutRoutes);
   app.use('/api/driver', driverController);
   app.use('/api/vehicles', vehicleRoutes);

@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from "@/shared/components/ui/alert";
 import { Switch } from "@/shared/components/ui/switch";
 import { Slider } from "@/shared/components/ui/slider";
 import { formatMzn } from "@/lib/currency";
+import { formatDateOnly } from "@/utils/dateFormatter";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/shared/hooks/use-toast";
 
@@ -451,7 +452,7 @@ export default function AdminPanel() {
                           <div>
                             <h4 className="font-semibold text-lg">{priceRule.rideType}</h4>
                             <p className="text-sm text-gray-medium">
-                              Última atualização: {new Date(priceRule.lastUpdated).toLocaleDateString('pt-BR')}
+                              Última atualização: {formatDateOnly(priceRule.lastUpdated)}
                             </p>
                           </div>
                           <Switch
