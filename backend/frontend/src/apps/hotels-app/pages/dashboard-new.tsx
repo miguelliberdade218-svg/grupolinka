@@ -1,5 +1,6 @@
 import React from 'react';
 import { useHotelData } from '../hooks/useHotelData';
+import { formatDateOnly } from '@/utils/dateFormatter';
 import { useAuth } from '@/contexts/authContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
@@ -201,9 +202,9 @@ export default function HotelsDashboard() {
                   <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
                     <span className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
-                      {new Date(reservation.checkIn).toLocaleDateString('pt-MZ')}
+                      {formatDateOnly(reservation.checkIn)}
                       {' → '}
-                      {new Date(reservation.checkOut).toLocaleDateString('pt-MZ')}
+                      {formatDateOnly(reservation.checkOut)}
                     </span>
                     <span className="font-semibold text-gray-900">
                       {reservation.totalNights} noite(s)

@@ -18,6 +18,7 @@ import {
   CheckCircle
 } from "lucide-react";
 import { companyClientApi } from "@/api/companyClient";
+import { formatDateOnly } from "@/utils/dateFormatter";
 import type { AuthenticatedRequest } from "@/shared/types";
 
 interface CompanyProfile {
@@ -212,7 +213,7 @@ export default function CompanyClientDashboard() {
                 <p className="font-semibold">Conta Suspensa</p>
                 <p className="text-sm mt-1">{profile.suspensionReason}</p>
                 {profile.suspensionEndDate && (
-                  <p className="text-sm mt-2">Data de levantamento prevista: {new Date(profile.suspensionEndDate).toLocaleDateString('pt-PT')}</p>
+                  <p className="text-sm mt-2">Data de levantamento prevista: {formatDateOnly(profile.suspensionEndDate)}</p>
                 )}
               </div>
             </div>

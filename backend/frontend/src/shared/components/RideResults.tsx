@@ -18,7 +18,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 
 // ✅ Importar a função normalizeRide do serviço API
 import { normalizeRide, formatPrice } from "@/services/api";
-import { formatLongDate } from "../../utils/dateFormatter";
+import { formatLongDate, formatDateTimeFriendly } from "../../utils/dateFormatter";
 
 // ✅✅✅ INTERFACE RIDE COMPLETAMENTE CORRIGIDA - COMPATÍVEL COM get_rides_smart_final
 interface Ride {
@@ -150,7 +150,7 @@ const enhanceRidesWithDateInfo = (rides: Ride[], searchDate: string): RideWithDa
       ...ride,
       _isExactDate: isExactDate,
       _dateDifferenceDays: dateDifferenceDays,
-      _formattedDate: format(rideDate, 'dd/MM/yyyy, HH:mm'),
+      _formattedDate: format(rideDate, "dd/MM/yyyy 'às' HH:mm"),
       _isBeforeSearch: isBeforeSearch
     };
   });
@@ -465,13 +465,7 @@ const RideCard = ({
             color: ride._isExactDate ? '#7c2d12' : '#9a3412',
             marginBottom: '4px'
           }}>
-            {ride._formattedDate || (ride.departuredate ? new Date(ride.departuredate).toLocaleDateString('pt-MZ', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            }) : 'Data não disponível')}
+            {ride._formattedDate || formatDateTimeFriendly(ride.departuredate)}
           </div>
           {!ride._isExactDate && searchDate && (
             <div style={{

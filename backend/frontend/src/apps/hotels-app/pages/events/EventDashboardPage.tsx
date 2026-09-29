@@ -38,6 +38,7 @@ import { hotelService } from '@/services/hotelService';
 import { EventSpaceSelector } from '../../components/event-spaces/EventSpaceSelector';
 import { useActiveEventSpace } from '@/contexts/ActiveEventSpaceContext';
 import { useActiveHotel } from '@/contexts/ActiveHotelContext';
+import { formatDateOnly } from '@/utils/dateFormatter';
 
 interface EventDashboardPageProps {
   hotelId?: string;
@@ -457,12 +458,7 @@ const EventDashboardPage: React.FC<EventDashboardPageProps> = ({
 
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('pt-MZ', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      });
+      return formatDateOnly(dateString);
     } catch {
       return dateString;
     }
