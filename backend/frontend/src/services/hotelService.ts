@@ -11,6 +11,7 @@
 // ✅ CORREÇÃO APLICADA: Método getBookingById unificado com parâmetro opcional
 // ✅ CORREÇÃO APLICADA: Normalização de status no método getHotelBookings
 // ✅ ADIÇÃO APLICADA: Função confirmBooking adicionada
+// ✅ CORREÇÃO APLICADA: normalizeBooking para corrigir página de confirmação (datas/preço/hóspede a 0)
 
 import { apiService } from './api';
 import moment from 'moment';
@@ -112,6 +113,45 @@ function denormalizeHotelBookingStatus(backendStatus: string | undefined): strin
   }
   
   return 'pending_confirmation';
+}
+
+// ✅ NOVO: Normaliza booking do backend (camelCase) para o formato que a UI espera (snake_case)
+//    Resolve o bug da página de confirmação (datas/preço/hóspede a 0/vazios)
+function normalizeBooking(raw: any): any {
+  if (!raw) return raw;
+
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') return raw[k];
+    }
+    return undefined;
+  };
+
+  return {
+    ...raw,
+    id: pick('id'),
+    hotel_id: pick('hotelId', 'hotel_id'),
+    room_type_id: pick('roomTypeId', 'room_type_id'),
+    guest_name: pick('guestName', 'guest_name'),
+    guest_email: pick('guestEmail', 'guest_email'),
+    guest_phone: pick('guestPhone', 'guest_phone'),
+    check_in: pick('checkIn', 'check_in'),
+    check_out: pick('checkOut', 'check_out'),
+    adults: pick('adults'),
+    children: pick('children'),
+    units: pick('units'),
+    nights: pick('nights'),
+    total_price: pick('totalPrice', 'total_price'),
+    base_price: pick('basePrice', 'base_price'),
+    taxes: pick('taxes'),
+    special_requests: pick('specialRequests', 'special_requests'),
+    status: pick('status'),
+    payment_status: pick('paymentStatus', 'payment_status'),
+    promo_code: pick('promoCode', 'promo_code'),
+    user_id: pick('userId', 'user_id'),
+    created_at: pick('createdAt', 'created_at'),
+    updated_at: pick('updatedAt', 'updated_at'),
+  };
 }
 
 // ==================== TIPOS ====================
@@ -922,17 +962,23 @@ class HotelService {
    * ✅ CORREÇÃO UNIFICADA: Buscar reserva por ID (com hotelId opcional)
    * Para BookingConfirmationPage: hotelService.getBookingById(bookingId)
    * Para outros usos: hotelService.getBookingById(bookingId, hotelId)
+   * ✅ AGORA NORMALIZA camelCase → snake_case (resolve datas/preço a 0)
    */
   async getBookingById(bookingId: string, hotelId?: string): Promise<ApiResponse<any>> {
     try {
       // Se hotelId for fornecido, usa rota específica
       if (hotelId) {
-        return await apiService.get<ApiResponse<any>>(`/api/hotels/${hotelId}/bookings/${bookingId}`);
+        const r = await apiService.get<ApiResponse<any>>(`/api/hotels/${hotelId}/bookings/${bookingId}`);
+        if (r.success && r.data) {
+          r.data = normalizeBooking(r.data);
+        }
+        return r;
       }
       
       // Caso contrário, tenta rota global
       const response = await apiService.get<ApiResponse<any>>(`/api/hotels/bookings/${bookingId}`);
-      if (response.success) {
+      if (response.success && response.data) {
+        response.data = normalizeBooking(response.data);
         return response;
       }
       
@@ -942,11 +988,11 @@ class HotelService {
         for (const hotel of myHotels.data) {
           try {
             const hotelResponse = await apiService.get<ApiResponse<any>>(`/api/hotels/${hotel.id}/bookings/${bookingId}`);
-            if (hotelResponse.success) {
+            if (hotelResponse.success && hotelResponse.data) {
               return {
                 ...hotelResponse,
                 data: {
-                  ...hotelResponse.data,
+                  ...normalizeBooking(hotelResponse.data),
                   hotel: hotel
                 }
               };

@@ -18,6 +18,17 @@ interface BookingReference {
   description?: string;
 }
 
+// ✅ Helper: construir URL absoluta do comprovativo.
+//    Se o backend devolver "/uploads/commission-proofs/xxx.pdf" (relativo),
+//    prefixamos com VITE_API_URL para o browser abrir a porta CORRETA do backend
+//    em vez da porta da app admin (que não serve /uploads).
+const API_BASE = import.meta.env.VITE_API_URL || '';
+const buildProofUrl = (url?: string): string => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${API_BASE}${url}`;
+};
+
 export default function AdminPayments() {
   const {
     payments,
@@ -128,26 +139,29 @@ export default function AdminPayments() {
     }
   };
 
-  // Mock function - em produção virá da API
-  const getBookingReferences = (paymentId: string): BookingReference[] => {
+  // ✅ Dados REAIS a partir do próprio payment (já não é mock)
+  const getBookingReferences = (payment: any): BookingReference[] => {
+    if (!payment) return [];
+    const type: BookingReference['type'] =
+      payment.booking_type === 'ride' ? 'ride'
+      : payment.booking_type === 'hotel' ? 'hotel'
+      : 'event_space';
+
+    const iconLabel =
+      type === 'ride' ? 'Corrida' : type === 'hotel' ? 'Hotel' : 'Evento';
+
+    const createdAt =
+      payment.created_at || payment.service_date || payment.due_date || null;
+
     return [
       {
-        id: 'ref-1',
-        type: 'ride',
-        reference: `RIDE-${paymentId.substring(0, 8)}`,
-        amount: selectedPayment?.gross_amount * 0.6 || 0,
-        userName: selectedPayment?.user_name,
-        date: selectedPayment?.created_at,
-        description: 'Corrida entre Maputo e Gaza',
-      },
-      {
-        id: 'ref-2',
-        type: 'hotel',
-        reference: `HOTEL-${paymentId.substring(0, 8)}`,
-        amount: selectedPayment?.gross_amount * 0.4 || 0,
-        userName: selectedPayment?.user_name,
-        date: selectedPayment?.created_at,
-        description: 'Hotel Polana - 2 noites',
+        id: payment.id,
+        type,
+        reference: payment.reference_number || `REF-${String(payment.id).slice(0, 8)}`,
+        amount: parseFloat(payment.gross_amount || 0) || 0,
+        userName: payment.user_name,
+        date: createdAt,
+        description: `${iconLabel} • ${payment.provider_entity_code || 'Provedor'}`,
       },
     ];
   };
@@ -332,7 +346,7 @@ export default function AdminPayments() {
                         )}
                         {payment.payment_proof_url && (
                           <a
-                            href={payment.payment_proof_url}
+                            href={buildProofUrl(payment.payment_proof_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center px-2 py-1 text-xs border rounded hover:bg-gray-50"
@@ -358,7 +372,7 @@ export default function AdminPayments() {
                           <div>
                             <h4 className="font-semibold text-gray-900 mb-3">📋 Referências de Reservas Associadas</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {getBookingReferences(payment.id).map((ref) => (
+                              {getBookingReferences(payment).map((ref) => (
                                 <Card key={ref.id} className="border-l-4 border-l-blue-500">
                                   <CardContent className="p-3">
                                     <div className="flex justify-between items-start mb-2">
@@ -369,7 +383,9 @@ export default function AdminPayments() {
                                       <Badge className="bg-blue-100 text-blue-800">MZN {ref.amount.toLocaleString('pt-PT', { minimumFractionDigits: 2 })}</Badge>
                                     </div>
                                     <p className="text-xs text-gray-600">
-                                      📅 {new Date(ref.date).toLocaleDateString('pt-PT')}
+                                      📅 {ref.date && !isNaN(new Date(ref.date).getTime())
+                                        ? new Date(ref.date).toLocaleDateString('pt-PT')
+                                        : '—'}
                                     </p>
                                   </CardContent>
                                 </Card>

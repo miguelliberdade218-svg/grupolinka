@@ -188,25 +188,35 @@ export async function registerRoutes(app: express.Express): Promise<void> {
   }));
   console.log('CORS configurado com sucesso');
 
-  // ✅ CORREÇÃO DEFINITIVA: Usar o caminho absoluto que sabemos que funciona
-  const uploadsPath = '/mnt/c/Users/User/Downloads/LinkA/linka-fullstack-mainzip/linka-fullstack-main/backend/backend/public/uploads';
-  console.log('📁 Servindo arquivos estáticos de:', uploadsPath);
+  // ✅✅✅ CORREÇÃO CRÍTICA: usar process.cwd() para COINCIDIR com onde o multer grava
+  //    - provider-payments.ts grava em path.join(process.cwd(), 'uploads', 'commission-proofs')
+  //    - commissionRoutes.ts grava em 'uploads/commission-proofs' (relativo ao cwd)
+  //    Se servir de um caminho diferente (ex: public/uploads), dará 404.
+  const uploadsPath = path.join(process.cwd(), 'uploads');
+  console.log('📁 Servindo arquivos estáticos de (process.cwd()/uploads):', uploadsPath);
+
+  // ✅ Garantir que a pasta raiz de uploads existe
+  if (!fs.existsSync(uploadsPath)) {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+    console.log(`📁 Diretório uploads criado: ${uploadsPath}`);
+  }
   
-  // ✅ DEBUG: Verificar se o diretório existe
+  // ✅ DEBUG: Verificar subdiretórios importantes
   try {
     if (fs.existsSync(uploadsPath)) {
       console.log('✅ Diretório uploads encontrado!');
       
+      // Subdiretório de hotéis
       const hotelsPath = path.join(uploadsPath, 'hotels');
       if (fs.existsSync(hotelsPath)) {
         const hotelFiles = fs.readdirSync(hotelsPath);
         console.log('📁 Arquivos em uploads/hotels:', hotelFiles.length);
         console.log('📁 Exemplos:', hotelFiles.slice(0, 3));
       } else {
-        console.log('❌ Subdiretório hotels não encontrado em:', hotelsPath);
+        console.log('⚠️ Subdiretório hotels não existe ainda (será criado quando necessário):', hotelsPath);
       }
 
-      // ✅ NOVO: Verificar diretório de event spaces
+      // Subdiretório de event-spaces
       const eventSpacesPath = path.join(uploadsPath, 'event-spaces');
       if (!fs.existsSync(eventSpacesPath)) {
         console.log('📁 Criando diretório event-spaces...');
@@ -217,6 +227,17 @@ export async function registerRoutes(app: express.Express): Promise<void> {
         const eventSpaceFiles = fs.readdirSync(eventSpacesPath);
         console.log('📁 Arquivos em uploads/event-spaces:', eventSpaceFiles.length);
       }
+
+      // ✅✅✅ Subdiretório de commission-proofs (o bug que estamos a resolver)
+      const commissionProofsPath = path.join(uploadsPath, 'commission-proofs');
+      if (!fs.existsSync(commissionProofsPath)) {
+        console.log('📁 Criando diretório commission-proofs...');
+        fs.mkdirSync(commissionProofsPath, { recursive: true });
+        console.log('✅ Diretório commission-proofs criado!');
+      } else {
+        const proofFiles = fs.readdirSync(commissionProofsPath);
+        console.log('✅ Diretório commission-proofs existe. Ficheiros:', proofFiles.length);
+      }
     } else {
       console.log('❌ Diretório uploads NÃO encontrado em:', uploadsPath);
     }
@@ -224,7 +245,7 @@ export async function registerRoutes(app: express.Express): Promise<void> {
     console.error('❌ Erro ao ler diretório uploads:', err);
   }
 
-  // ✅ CORREÇÃO: Configurar servidor estático
+  // ✅ Configurar servidor estático para /uploads
   app.use('/uploads', express.static(uploadsPath, {
     setHeaders: (res, filePath) => {
       res.setHeader('Cache-Control', 'public, max-age=31557600');
@@ -242,13 +263,17 @@ export async function registerRoutes(app: express.Express): Promise<void> {
       message: 'Rota de uploads configurada',
       uploadsPath,
       exists: fs.existsSync(uploadsPath),
+      cwd: process.cwd(),
       hotelsPath: path.join(uploadsPath, 'hotels'),
       hotelsExists: fs.existsSync(path.join(uploadsPath, 'hotels')),
       eventSpacesPath: path.join(uploadsPath, 'event-spaces'),
       eventSpacesExists: fs.existsSync(path.join(uploadsPath, 'event-spaces')),
+      commissionProofsPath: path.join(uploadsPath, 'commission-proofs'),
+      commissionProofsExists: fs.existsSync(path.join(uploadsPath, 'commission-proofs')),
       files: fs.existsSync(uploadsPath) ? fs.readdirSync(uploadsPath) : [],
       hotelFiles: fs.existsSync(path.join(uploadsPath, 'hotels')) ? fs.readdirSync(path.join(uploadsPath, 'hotels')) : [],
-      eventSpaceFiles: fs.existsSync(path.join(uploadsPath, 'event-spaces')) ? fs.readdirSync(path.join(uploadsPath, 'event-spaces')) : []
+      eventSpaceFiles: fs.existsSync(path.join(uploadsPath, 'event-spaces')) ? fs.readdirSync(path.join(uploadsPath, 'event-spaces')) : [],
+      commissionProofFiles: fs.existsSync(path.join(uploadsPath, 'commission-proofs')) ? fs.readdirSync(path.join(uploadsPath, 'commission-proofs')) : []
     });
   });
 

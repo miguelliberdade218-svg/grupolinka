@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   ChevronRight,
+  DollarSign, // ✅ NOVO
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -30,6 +31,7 @@ export default function HotelsSidebar() {
     { label: 'Dashboard', path: '/hotels-app', icon: <LayoutDashboard className="w-5 h-5" /> },
     { label: 'Reservas', path: '/hotels-app/reservations', icon: <Calendar className="w-5 h-5" /> },
     { label: 'Quartos', path: '/hotels-app/rooms', icon: <DoorOpen className="w-5 h-5" /> },
+    { label: 'Comissões', path: '/hotels-app/payments', icon: <DollarSign className="w-5 h-5" /> }, // ✅ NOVO
     { label: 'Avaliações', path: '/hotels-app/reviews', icon: <Star className="w-5 h-5" /> },
     { label: 'Ganhos', path: '/hotels-app/earnings', icon: <TrendingUp className="w-5 h-5" /> },
   ];

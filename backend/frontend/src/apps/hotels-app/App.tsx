@@ -2,6 +2,7 @@
  * src/apps/hotels-app/App.tsx
  * Entry point principal da app Hotels - VERSÃO ATUALIZADA COM GESTÃO DE RESERVAS
  * ✅ ADICIONADO: Página de gestão de reservas de hotéis
+ * ✅ ALTERADO: Página de comissões dedicada (hotéis + eventos)
  */
 
 import React from 'react';
@@ -28,8 +29,8 @@ import EventDashboardWithSpace from './components/event-spaces/EventDashboardWit
 // ✅ ADICIONADO: Import da página de gestão de reservas
 import HotelBookingsPage from './pages/bookings/HotelBookingsPage';
 
-// ✅ ADICIONADO: Import da página de pagamentos/comissões
-import ProviderPaymentsDashboard from '../provider-app/pages/payments';
+// ✅ NOVO: Página de comissões dedicada (hotéis + eventos)
+import CommissionsPage from './pages/CommissionsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,8 +67,8 @@ function AppContent() {
           {/* ✅ ADICIONADO: Gestão de reservas de hotéis */}
           <Route path="/hotels-app/bookings" component={HotelBookingsPage} />
           
-          {/* ✅ ADICIONADO: Pagamentos e Comissões */}
-          <Route path="/hotels-app/payments" component={ProviderPaymentsDashboard} />
+          {/* ✅ ALTERADO: Página de comissões dedicada (hotéis + eventos) */}
+          <Route path="/hotels-app/payments" component={CommissionsPage} />
           
           {/* Detalhes de reserva específica */}
           <Route path="/hotels-app/bookings/:bookingId">

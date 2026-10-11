@@ -12,6 +12,16 @@ import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, X, Maximize2, Star } from 'lucide-react';
 import type { RoomTypePhoto, HotelPhoto } from '@/shared/types/hotel-photos';
 
+// ✅ Helper: resolve a URL da imagem SEM hardcode de host.
+//    O photoGalleryService já devolve URLs absolutas; aqui só tratamos relativas.
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+const resolvePhotoUrl = (url: string): string => {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;          // já absoluta
+  if (url.startsWith('/')) return `${API_BASE}${url}`; // relativa → prefixa com API
+  return `${API_BASE}/${url}`;
+};
+
 // ✅ Tipo união para aceitar ambos os tipos de foto
 type AnyHotelPhoto = RoomTypePhoto | HotelPhoto;
 
@@ -58,10 +68,7 @@ const GridMode: React.FC<HotelPhotoGalleryProps> = ({
     if (imageErrors[photo.id]) {
       return generateFallbackImage('Imagem não disponível');
     }
-    if (photo.url.startsWith('/')) {
-      return `http://localhost:8000${photo.url}`;
-    }
-    return photo.url;
+    return resolvePhotoUrl(photo.url);
   };
 
   return (
@@ -142,10 +149,7 @@ const PreviewMode: React.FC<HotelPhotoGalleryProps> = ({
     if (imageError) {
       return generateFallbackImage(title || 'Hotel');
     }
-    if (mainPhoto.url.startsWith('/')) {
-      return `http://localhost:8000${mainPhoto.url}`;
-    }
-    return mainPhoto.url;
+    return resolvePhotoUrl(mainPhoto.url);
   };
 
   return (
@@ -235,10 +239,7 @@ const FullMode: React.FC<HotelPhotoGalleryProps> = ({
     if (imageErrors[index]) {
       return generateFallbackImage(title || 'Imagem');
     }
-    if (photo.url.startsWith('/')) {
-      return `http://localhost:8000${photo.url}`;
-    }
-    return photo.url;
+    return resolvePhotoUrl(photo.url);
   };
 
   const currentPhoto = photos[currentIndex];
@@ -365,10 +366,7 @@ const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     if (imageErrors[index]) {
       return generateFallbackImage(title || 'Imagem');
     }
-    if (photo.url.startsWith('/')) {
-      return `http://localhost:8000${photo.url}`;
-    }
-    return photo.url;
+    return resolvePhotoUrl(photo.url);
   };
 
   const currentPhoto = photos[currentIndex];

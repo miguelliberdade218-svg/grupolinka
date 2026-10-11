@@ -10,6 +10,7 @@ import { Calendar, MapPin, Users, Star, Car, ArrowRight, Zap } from 'lucide-reac
 import LocationAutocomplete from '@/shared/components/LocationAutocomplete';
 import { useToast } from '@/shared/hooks/use-toast';
 import { useBookings } from '@/shared/hooks/useBookings';
+import { useAuth } from '@/shared/hooks/useAuth';
 
 // ✅ CORREÇÃO: Importar do ApiService atualizado
 import { apiService, type Ride, type RideSearchResponse } from '@/services/api';
@@ -165,6 +166,7 @@ export default function RideSearchModal({
   initialParams,
   onShowAllResults 
 }: RideSearchModalProps) {
+  const { user } = useAuth();
   // ✅ CORREÇÃO: State atualizado para usar LocationOption
   const [searchParams, setSearchParams] = useState<SearchParams>({
     from: initialParams?.fromOption || { label: '', city: '', district: '' },
@@ -311,6 +313,14 @@ export default function RideSearchModal({
   };
 
   const handleBookRide = (ride: Ride) => {
+    if (!user) {
+      toast({
+        title: '🔐 Login Necessário',
+        description: 'Para reservar uma viagem, você precisa estar logado. Faça login para continuar.',
+        variant: 'destructive'
+      });
+      return;
+    }
     setSelectedRide(ride);
     setShowBookingModal(true);
   };
@@ -659,11 +669,22 @@ function BookingModal({ isOpen, onClose, ride, passengers, onBookingComplete, cr
   const [guestInfo, setGuestInfo] = useState({ name: '', email: '', phone: '' });
   const [isBooking, setIsBooking] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const totalAmount = (ride.price || ride.pricePerSeat || 0) * passengers;
 
   // ✅ CORREÇÃO: Corrigir a função handleBooking para usar createBooking corretamente
   const handleBooking = async () => {
+    // ✅ Guard de autenticação: só utilizadores logados podem reservar
+    if (!user) {
+      toast({
+        title: '🔐 Login Necessário',
+        description: 'Para confirmar a reserva, você precisa estar logado. Faça login para continuar.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     if (!guestInfo.name.trim() || !guestInfo.email.trim() || !guestInfo.phone.trim()) {
       toast({
         title: "Campos obrigatórios",

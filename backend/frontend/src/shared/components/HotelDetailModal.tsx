@@ -293,9 +293,10 @@ export default function HotelDetailModal({
                         <div className="flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-gray-500" />
                           <span className="text-sm">Check-out</span>
-                        </div>
-                          {checkOut ? new Date(checkOut).toLocaleDateString('pt-MZ') : 'Selecionar data'}
-                        </span>
+                                                  </div>
+                                                  <span className="font-medium">
+                                                    {checkOut ? new Date(checkOut).toLocaleDateString('pt-MZ') : 'Selecionar data'}
+                                                  </span>
                       </div>
                       
                       <div className="flex items-center justify-between">

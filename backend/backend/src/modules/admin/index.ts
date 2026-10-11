@@ -5,6 +5,7 @@ import { Router, Request, Response } from "express";
 import { verifyFirebaseToken } from "../../shared/firebaseAuth.js";
 import type { AuthenticatedRequest } from "../../../shared/types.js";
 import { adminService } from "./adminService";
+import adminRidesRouter from "./adminRidesController"; // ✅ FASE 4 — Rides admin
 import { db } from "../../../db";
 import { users, hotelBookings } from "../../../shared/schema";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
@@ -59,6 +60,17 @@ const adminOnly = async (req: Request, res: Response, next: Function) => {
     res.status(401).json({ success: false, message: "Erro na autenticação", code: "AUTH_ERROR" });
   }
 };
+
+// ==================== FASE 4 — RIDES ADMIN ====================
+// Lista TODAS as rides (incl. canceladas + motivo) com motorista e veículo.
+//   GET /api/admin/rides        → lista (filtros: status, driverId, limit, offset)
+//   GET /api/admin/rides/stats   → contagem por status
+router.use(
+  "/rides",
+  verifyFirebaseToken,
+  adminOnly as any,
+  adminRidesRouter
+);
 
 // ==================== DEBUG & STATUS ====================
 

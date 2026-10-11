@@ -1006,10 +1006,18 @@ export default function RideSearchPage() {
   const handleBookRide = (ride: RideWithMatch) => {
     if (!user) {
       toast({
-        title: "Login necessário",
-        description: "Por favor, faça login para reservar uma viagem.",
+        title: "🔐 Login Necessário",
+        description: "Para reservar uma viagem, você precisa estar logado. Use o botão para fazer login ou criar uma conta.",
         variant: "destructive",
         duration: 4000,
+        action: (
+          <button
+            onClick={() => setLocation('/login')}
+            className="px-3 py-1.5 rounded-md bg-white text-red-700 text-sm font-semibold"
+          >
+            Fazer Login
+          </button>
+        ),
       });
       return;
     }
@@ -1076,10 +1084,18 @@ export default function RideSearchPage() {
     
     if (!user) {
       toast({
-        title: "Login necessário",
-        description: "Por favor, faça login para confirmar a reserva.",
+        title: "🔐 Login Necessário",
+        description: "Para confirmar a reserva, você precisa estar logado. Use o botão para fazer login ou criar uma conta.",
         variant: "destructive",
         duration: 4000,
+        action: (
+          <button
+            onClick={() => setLocation('/login')}
+            className="px-3 py-1.5 rounded-md bg-white text-red-700 text-sm font-semibold"
+          >
+            Fazer Login
+          </button>
+        ),
       });
       return;
     }

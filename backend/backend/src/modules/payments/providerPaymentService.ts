@@ -18,6 +18,13 @@ import { eq, and, desc, sql } from 'drizzle-orm';
  */
 
 export class ProviderPaymentService {
+  // ✅ Camada 1: trava em memória contra duplo disparo concorrente (por processo)
+  //    Protege contra race conditions quando o mesmo endpoint é chamado 2x em paralelo
+  //    (ex: duplo clique no botão "Completar Corrida").
+  //    NOTA: só funciona dentro do mesmo processo Node. Se correres múltiplas réplicas
+  //    (Railway/K8s), precisas também da Camada 3 (constraint UNIQUE no DB).
+  private _inflight = new Set<string>();
+
   /**
    * Lê a taxa de comissão ativa para um tipo de serviço.
    * Fonte: platformFeeConfig (dinâmico). Fallback: 12%.
@@ -107,6 +114,14 @@ export class ProviderPaymentService {
    * Taxa lida de platformFeeConfig. Vencimento: 30 dias (default schema).
    */
   async createRideCommission(rideId: string) {
+    // ✅ Camada 1: chave única de processamento — evita duplo disparo concorrente
+    const lockKey = `ride:${rideId}`;
+    if (this._inflight.has(lockKey)) {
+      console.warn(`⚠️ [LOCK] Comissão para ride ${rideId} já está em processamento. Ignorando duplicado.`);
+      return { success: true, message: 'Comissão já está a ser criada', skipped: true };
+    }
+    this._inflight.add(lockKey);
+
     try {
       console.log(`💳 Criando comissão para ride ${rideId}...`);
 
@@ -134,7 +149,52 @@ export class ProviderPaymentService {
       }
 
       const feePercentage = await this.getFeePercentage('ride');
-      const grossAmount = parseFloat((ride as any).price_per_seat?.toString() || '0') * ((ride as any).passenger_count || 1);
+
+      // ✅ Preço por lugar — aceita todos os nomes possíveis e remove símbolos
+      const rawPrice =
+        (ride as any).pricePerSeat ??
+        (ride as any).priceperseat ??
+        (ride as any).price_per_seat ??
+        '0';
+      const pricePerSeat = parseFloat(String(rawPrice).replace(/[^\d.,-]/g, '').replace(',', '.')) || 0;
+
+      // ✅ 1) Soma de lugares reservados + soma REAL paga nas bookings desta ride
+      //    Usamos "seatsBooked" e "totalPrice" (camelCase com quotes = schema real)
+      const bookedRes = await db.execute(sql`
+        SELECT
+          COALESCE(SUM("seatsBooked"), 0) AS seats,
+          COALESCE(SUM(CAST("totalPrice" AS DECIMAL)), 0) AS total
+        FROM bookings
+        WHERE "rideId" = ${rideId}
+          AND status NOT IN ('cancelled', 'rejected')
+      `);
+      const bookedRows: any[] = Array.isArray(bookedRes) ? bookedRes : ((bookedRes as any)?.rows || []);
+      const bookedSeats = Number(bookedRows[0]?.seats || 0);
+      const bookedTotal = Number(bookedRows[0]?.total || 0);
+
+      const availableSeats = Number((ride as any).availableSeats ?? (ride as any).available_seats ?? 0) || 0;
+
+      // ✅ Estratégia de cálculo (da mais fiável para a menos fiável):
+      //   A) Se há bookings pagos → usa o VALOR REAL pago (bookedTotal)
+      //   B) Senão, pricePerSeat × lugares reservados
+      //   C) Senão, pricePerSeat × lugares oferecidos
+      let grossAmount = 0;
+      if (bookedTotal > 0) {
+        grossAmount = bookedTotal;
+      } else if (pricePerSeat > 0 && bookedSeats > 0) {
+        grossAmount = pricePerSeat * bookedSeats;
+      } else if (pricePerSeat > 0 && availableSeats > 0) {
+        grossAmount = pricePerSeat * availableSeats;
+      } else {
+        // ✅ Fallback final: se ainda for 0, NÃO criamos comissão de valor 0
+        console.warn(`⚠️ Ride ${rideId}: não foi possível calcular gross_amount (price=${pricePerSeat}, booked=${bookedSeats}, avail=${availableSeats}). Ignorando criação.`);
+        return {
+          success: false,
+          message: 'Não foi possível calcular o valor da comissão (sem preço ou reservas).',
+          skipped: true,
+        };
+      }
+
       const feeAmount = (grossAmount * feePercentage) / 100;
       const netAmount = grossAmount - feeAmount;
 
@@ -142,19 +202,30 @@ export class ProviderPaymentService {
       const referenceNumber = `LINKA-RIDE-${timestamp}-${rideId.substring(0, 10)}`;
       const entityCode = await this.ensureEntityCode(driverId, 'DRIVER', 'driver');
 
-      await db.insert(paymentReferences).values({
-        reference_number: referenceNumber,
-        booking_id: rideId as any,
-        booking_type: 'ride',
-        provider_user_id: driverId,
-        provider_entity_code: entityCode,
-        gross_amount: grossAmount.toString() as any,
-        fee_percentage: feePercentage.toString() as any,
-        status: 'pending',
-        service_date: new Date(),
-        created_at: new Date(),
-        updated_at: new Date(),
-      } as any);
+      // ⚠️ NÃO enviamos fee_amount / net_amount — a BD calcula via colunas GENERATED STORED
+      try {
+        await db.insert(paymentReferences).values({
+          reference_number: referenceNumber,
+          booking_id: rideId as any,
+          booking_type: 'ride',
+          provider_user_id: driverId,
+          provider_entity_code: entityCode,
+          gross_amount: grossAmount.toString() as any,
+          fee_percentage: feePercentage.toString() as any,
+          status: 'pending',
+          service_date: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        } as any);
+      } catch (insertErr: any) {
+        // ✅ Se a constraint disparou, outra chamada já criou a comissão → sucesso idempotente
+        if (String(insertErr?.message || '').includes('payment_references_booking_unique') ||
+            String(insertErr?.code) === '23505') {
+          console.warn(`⚠️ [UNIQUE] Comissão já criada concorrentemente para ride ${rideId}. Ignorando.`);
+          return { success: true, message: 'Comissão já criada (concorrência)', skipped: true };
+        }
+        throw insertErr;
+      }
 
       console.log(`✅ Comissão criada: ${referenceNumber} | ${feeAmount.toFixed(2)} MZN (${feePercentage}%)`);
 
@@ -171,6 +242,9 @@ export class ProviderPaymentService {
     } catch (error) {
       console.error('❌ Erro ao criar comissão de ride:', error);
       throw error;
+    } finally {
+      // ✅ Liberta o lock SEMPRE (mesmo em erro) para não bloquear futuras tentativas
+      this._inflight.delete(lockKey);
     }
   }
 
@@ -222,6 +296,7 @@ export class ProviderPaymentService {
 
       const entityCode = await this.ensureEntityCode(providerUserId, 'HOTEL', 'hotel_manager');
 
+      // ⚠️ NOTA: NÃO enviamos fee_amount / net_amount — a BD calcula via colunas GENERATED STORED
       await db.insert(paymentReferences).values({
         reference_number: referenceNumber,
         booking_id: bookingId as any,
@@ -288,6 +363,7 @@ export class ProviderPaymentService {
       const referenceNumber = `LINKA-EVENT-${timestamp}-${bookingId.substring(0, 10)}`;
       const entityCode = await this.ensureEntityCode(hotelId, 'HOTEL', 'hotel_manager');
 
+      // ⚠️ NOTA: NÃO enviamos fee_amount / net_amount — a BD calcula via colunas GENERATED STORED
       await db.insert(paymentReferences).values({
         reference_number: referenceNumber,
         booking_id: bookingId,

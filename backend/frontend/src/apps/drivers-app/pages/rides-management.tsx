@@ -13,6 +13,7 @@ import {
   Calendar,
   Clock,
   Users,
+  User,           // ✅ NOVO — para mostrar o nome do motorista
   DollarSign,
   Play,
   CheckCircle2,
@@ -46,6 +47,14 @@ const formatRideVehicle = (ride: any): { plate: string; model: string } => {
     plate: plate || '—',
     model: [make, model].filter(Boolean).join(' ') || (ride?.vehicleType || 'Veículo'),
   };
+};
+
+// ✅✅✅ ALTERAÇÃO 3 (Fase 2.4): Nome do motorista com fallback seguro
+// Prioriza nome real vindo do JOIN; se não existir ou for o placeholder "Motorista", mostra "Motorista"
+const formatRideDriver = (ride: any): string => {
+  const name = ride?.driverName ?? ride?.driver_name ?? ride?.driver_user_name;
+  if (!name || name === 'Motorista') return 'Motorista';
+  return name;
 };
 
 // Obter badge de status
@@ -351,7 +360,10 @@ export default function RidesManagement() {
                             <div className="flex items-center gap-1 text-gray-600">
                               <Users className="w-4 h-4" />
                               <span>
-                                {ride.availableSeats}/{ride.maxPassengers} lugares
+                                {/* ✅ Lugares: reservados / total quando há reservas; senão disponíveis / total */}
+                                {ride.maxPassengers - ride.availableSeats > 0
+                                  ? `${ride.maxPassengers - ride.availableSeats}/${ride.maxPassengers} lugares`
+                                  : `${ride.availableSeats}/${ride.maxPassengers} lugares`}
                               </span>
                             </div>
                             <div className="flex items-center gap-1 text-gray-600">
@@ -363,13 +375,21 @@ export default function RidesManagement() {
                           </div>
 
                           {/* Veículo: Matrícula em destaque + Modelo/Marca */}
-                          <div className="flex items-center gap-2 mb-4">
+                          <div className="flex items-center gap-2 mb-2">
                             <Car className="w-4 h-4 text-gray-500" />
                             <span className="inline-flex items-center rounded border border-gray-400 bg-gray-100 px-2 py-0.5 font-mono text-xs font-bold tracking-widest text-gray-800">
                               {formatRideVehicle(ride).plate}
                             </span>
                             <span className="text-sm text-gray-600">
                               {formatRideVehicle(ride).model}
+                            </span>
+                          </div>
+
+                          {/* ✅✅✅ NOVO — Motorista (Fase 2.4) */}
+                          <div className="flex items-center gap-2 mb-4">
+                            <User className="w-4 h-4 text-gray-500" />
+                            <span className="text-sm text-gray-700">
+                              {formatRideDriver(ride)}
                             </span>
                           </div>
 

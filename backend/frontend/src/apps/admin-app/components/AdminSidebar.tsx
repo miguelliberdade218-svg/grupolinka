@@ -11,9 +11,10 @@ import {
   LogOut,
   Menu,
   X,
-  ChevronRight,
+    ChevronRight,
   FileText,
   Lock,
+  Car,
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -34,10 +35,15 @@ export default function AdminSidebar() {
       path: '/admin',
       icon: <BarChart3 className="w-5 h-5" />,
     },
-    {
+        {
       label: 'Usuários',
       path: '/admin/users',
       icon: <Users className="w-5 h-5" />,
+    },
+    {
+      label: 'Rides',
+      path: '/admin/rides',
+      icon: <Car className="w-5 h-5" />,
     },
     {
       label: 'Disputas',

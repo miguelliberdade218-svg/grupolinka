@@ -5,13 +5,19 @@ import { requireAuth, requireAdminAuth } from '../../shared/middleware/auth';
 import CommissionService from './commissionService';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs'; // ✅ ADICIONADO: necessário para garantir que a pasta de uploads existe
 
 const router = express.Router();
 
 // Configuração do multer para upload de arquivos
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/commission-proofs/');
+    // ✅ Usa a mesma pasta base do provider-payments.ts
+    //    Ambos gravam em process.cwd()/uploads/commission-proofs
+    //    para coincidir com o express.static em index.ts
+    const dir = path.join(process.cwd(), 'uploads', 'commission-proofs');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);

@@ -8,6 +8,15 @@ import { ChevronLeft, ChevronRight, Trash2, Star, Eye, Upload, Loader2 } from 'l
 import { eventSpacePhotoService } from '@/services/eventSpacePhotoService';
 import type { EventSpacePhoto } from '@/services/eventSpacePhotoService';
 
+// ✅ Helper: resolve URL sem hardcode de host
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+const resolvePhotoUrl = (url: string): string => {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/')) return `${API_BASE}${url}`;
+  return `${API_BASE}/${url}`;
+};
+
 interface EventSpacePhotoGalleryEditorProps {
   eventSpaceId: string;
   onPhotosUpdated?: (photos: EventSpacePhoto[]) => void;
@@ -169,12 +178,7 @@ export const EventSpacePhotoGalleryEditor: React.FC<EventSpacePhotoGalleryEditor
     if (imageErrors[photo.id]) {
       return 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'800\' height=\'600\' viewBox=\'0 0 800 600\'%3E%3Crect width=\'800\' height=\'600\' fill=\'%23f3f4f6\'/%3E%3Ctext x=\'400\' y=\'300\' font-family=\'system-ui, sans-serif\' font-size=\'24\' fill=\'%236b7280\' text-anchor=\'middle\' dominant-baseline=\'middle\'%3EImagem n%C3%A3o dispon%C3%ADvel%3C/text%3E%3C/svg%3E';
     }
-    
-    if (photo.url.startsWith('/')) {
-      return `http://localhost:8000${photo.url}`;
-    }
-    
-    return photo.url;
+    return resolvePhotoUrl(photo.url);
   };
 
   const handleDrag = (e: React.DragEvent) => {

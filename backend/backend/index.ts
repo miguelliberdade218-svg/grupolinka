@@ -97,6 +97,62 @@ if (fs.existsSync(staticPath)) {
 }
 app.use(express.static(staticPath));
 
+// ✅✅✅ CORREÇÃO: servir /uploads a partir de MÚLTIPLAS pastas possíveis.
+//    Motivo: diferentes controllers gravam em sítios diferentes:
+//      - hotelController.ts        → public/uploads/hotels
+//      - eventSpacePhotoController → public/uploads/event-spaces
+//      - provider-payments.ts      → cwd/uploads/commission-proofs
+//    Servimos TODAS para que imagens antigas E novas funcionem.
+const uploadsCandidates = [
+  path.join(process.cwd(), 'uploads'),              // uploads/ (commission-proofs, etc.)
+  path.join(__dirname, 'uploads'),                  // uploads/ (relativo ao ficheiro)
+  path.join(process.cwd(), 'public', 'uploads'),    // public/uploads/ (hotels, event-spaces)
+  path.join(__dirname, 'public', 'uploads'),        // public/uploads/ (relativo ao ficheiro)
+];
+
+// Garantir que a pasta base existe
+const primaryUploads = uploadsCandidates[0];
+if (!fs.existsSync(primaryUploads)) {
+  fs.mkdirSync(primaryUploads, { recursive: true });
+  console.log(`📁 Diretório uploads criado: ${primaryUploads}`);
+}
+
+// ✅ Servir cada pasta existente sob /uploads (a primeira que tiver o ficheiro ganha)
+for (const dir of uploadsCandidates) {
+  if (fs.existsSync(dir)) {
+    console.log('📁 Servindo /uploads de:', dir);
+    app.use('/uploads', express.static(dir, {
+      setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'public, max-age=31557600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      },
+      fallthrough: true, // ✅ deixa tentar a próxima pasta se não encontrar aqui
+    }));
+  } else {
+    console.log('⚠️ Pasta de uploads não existe (ignorada):', dir);
+  }
+}
+
+// Rota de diagnóstico (útil para confirmar)
+app.get('/uploads-test', (req, res) => {
+  const info: any = { cwd: process.cwd(), __dirname, candidates: [] };
+  for (const dir of uploadsCandidates) {
+    const exists = fs.existsSync(dir);
+    info.candidates.push({
+      dir,
+      exists,
+      hotels: exists && fs.existsSync(path.join(dir, 'hotels'))
+        ? fs.readdirSync(path.join(dir, 'hotels')).length : 0,
+      eventSpaces: exists && fs.existsSync(path.join(dir, 'event-spaces'))
+        ? fs.readdirSync(path.join(dir, 'event-spaces')).length : 0,
+      commissionProofs: exists && fs.existsSync(path.join(dir, 'commission-proofs'))
+        ? fs.readdirSync(path.join(dir, 'commission-proofs')).length : 0,
+    });
+  }
+  res.json({ success: true, ...info });
+});
+
 // API Health check
 app.get("/api/health", (req, res) => {
   res.json({
@@ -319,4 +375,4 @@ async function startServer() {
 // Iniciar servidor
 startServer();
 
-// Não exportar app antes das rotas serem registradas
+// Não exportar app antes das rotas serem registadas

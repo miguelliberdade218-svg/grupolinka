@@ -105,8 +105,17 @@ export const adminService = {
     adminAPI.post(`/payments/${paymentId}/confirm`, { notes }),
 
   // ===== AUDITORIA =====
-  getAdminLogs: (page = 1, limit = 50, filters: any = {}) =>
-    adminAPI.get('/audit/logs', { params: { page, limit, ...filters } }),
-};
+    getAdminLogs: (page = 1, limit = 50, filters: any = {}) =>
+      adminAPI.get('/audit/logs', { params: { page, limit, ...filters } }),
+
+    // ===== RIDES (FASE 4) =====
+    // Lista todas as rides, incluindo canceladas + motivo do cancelamento.
+    // filters: { status, driverId }
+    listRides: (page = 1, limit = 20, filters: any = {}) =>
+      adminAPI.get('/rides', { params: { limit, offset: (page - 1) * limit, ...filters } }),
+
+    // Contagem de rides por status (badges dos filtros)
+    getRideStats: () => adminAPI.get('/rides/stats'),
+  };
 
 export default adminService;

@@ -26,8 +26,22 @@ function formatDateTime(date: Date | string): string {
   return `${formatDateOnly(d)} ${formatTimeOnly(d)}`;
 }
 
-// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO CORRIGIDA - PREÇOS SEMPRE COMO NUMBER E SEM CAMPOS INEXISTENTES
+// ✅✅✅ FUNÇÃO DE NORMALIZAÇÃO CORRIGIDA - TOLERANTE A TODOS OS CASES + PREÇOS SEMPRE NUMBER
 function normalizeDbRideToDto(raw: any) {
+  // ✅ HELPER: lê um campo aceitando TODOS os cases possíveis
+  //    (camelCase, snake_case, lowercase) — resolve o bug de 0 values
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') return raw[k];
+    }
+    return undefined;
+  };
+
+  const toNum = (v: any, fallback = 0) => {
+    const n = Number(v);
+    return isNaN(n) ? fallback : n;
+  };
+
   // ✅ Função para formatar matrícula moçambicana
   const formatVehiclePlate = (plate: string) => {
     if (!plate) return null;
@@ -35,115 +49,141 @@ function normalizeDbRideToDto(raw: any) {
     return plate.replace(/-/g, ' ').toUpperCase();
   };
 
-  // ✅ CORREÇÃO CRÍTICA: Garantir que preços sejam sempre números
-  const pricePerSeatValue = Number(raw.priceperseat) || 0;
-  const availableSeatsValue = Number(raw.availableseats) || 0;
-  const maxPassengersValue = Number(raw.max_passengers) || 4;
-  const driverRatingValue = raw.driver_rating ? Number(raw.driver_rating) : 
-                           raw.driverRating ? Number(raw.driverRating) : null;
+  // ✅ VALORES — agora aceitam "availableSeats" E "availableseats"
+  const pricePerSeatValue = toNum(pick('pricePerSeat', 'priceperseat', 'price_per_seat'), 0);
+  const availableSeatsValue = toNum(pick('availableSeats', 'availableseats', 'available_seats'), 0);
+  const maxPassengersValue = toNum(pick('maxPassengers', 'max_passengers', 'maxpassengers'), 4);
+  const driverRatingValue = pick('driver_rating', 'driverRating') != null
+    ? toNum(pick('driver_rating', 'driverRating'))
+    : null;
+
+  // ✅ DATAS — aceitam "departureDate" E "departuredate"
+  const rawDepartureDate = pick('departureDate', 'departuredate', 'departure_date');
+  const rawDepartureTime = pick('departureTime', 'departuretime', 'departure_time');
+  const rawCreatedAt = pick('createdAt', 'createdat', 'created_at');
+  const rawUpdatedAt = pick('updatedAt', 'updatedat', 'updated_at');
+
+  // ✅✅✅ BUG X: combinar data (dia) + hora (texto "HH:mm") num único Date
+  //    departureDate vem como timestamp a 00:00; a hora real está em departureTime.
+  let departureDateTime: Date | null = null;
+  if (rawDepartureDate) {
+    const base = new Date(rawDepartureDate);
+    if (!isNaN(base.getTime())) {
+      if (rawDepartureTime && /^\d{1,2}:\d{2}/.test(String(rawDepartureTime))) {
+        const [h, m] = String(rawDepartureTime).split(':').map(Number);
+        base.setHours(h || 0, m || 0, 0, 0);
+      }
+      departureDateTime = base;
+    }
+  }
 
   // ✅ DADOS DO VEÍCULO - CORREÇÃO: Buscar informações completas do veículo
-  const vehicleInfo = raw.vehicle_id ? {
-    id: raw.vehicle_id,
-    make: raw.vehicle_make || raw.vehicleMake || null,
-    model: raw.vehicle_model || raw.vehicleModel || null,
-    color: raw.vehicle_color || raw.vehicleColor || null,
-    plateNumber: formatVehiclePlate(raw.vehicle_plate || raw.vehiclePlate),
-    plateNumberRaw: raw.vehicle_plate || raw.vehiclePlate,
-    type: raw.vehicle_type || raw.vehicleType || null,
-    typeDisplay: VEHICLE_TYPE_DISPLAY[raw.vehicle_type || raw.vehicleType]?.label || 'Veículo',
-    maxPassengers: raw.vehicle_max_passengers || maxPassengersValue
+  const vehicleInfo = pick('vehicle_id', 'vehicle_uuid', 'vehicleId') ? {
+    id: pick('vehicle_id', 'vehicle_uuid', 'vehicleId'),
+    make: pick('vehicle_make', 'vehicleMake') || null,
+    model: pick('vehicle_model', 'vehicleModel') || null,
+    color: pick('vehicle_color', 'vehicleColor') || null,
+    plateNumber: formatVehiclePlate(pick('vehicle_plate', 'vehiclePlate')),
+    plateNumberRaw: pick('vehicle_plate', 'vehiclePlate') || null,
+    type: pick('vehicle_type', 'vehicleType') || null,
+    typeDisplay: VEHICLE_TYPE_DISPLAY[pick('vehicle_type', 'vehicleType')]?.label || 'Veículo',
+    maxPassengers: toNum(pick('vehicle_max_passengers', 'vehicleMaxPassengers'), maxPassengersValue)
   } : null;
 
   return {
     // Identificação
-    id: raw.ride_id || raw.id,
-    driverId: raw.driver_id || raw.driverId,
+    id: pick('ride_id', 'id'),
+    driverId: pick('driver_id', 'driverId'),
     
     // Informações do motorista
-    driverName: raw.driver_name || raw.driverName || null,
+    // ✅✅✅ ALTERAÇÃO 2 (Fase 2.4): prioriza nome real do JOIN
+    driverName: pick('driver_user_name', 'driver_name', 'driverName') || null,
     driverRating: driverRatingValue,
     
     // Localização - origem
-    fromAddress: raw.from_address || raw.fromAddress || null,
-    fromCity: raw.from_city || raw.fromCity || null,
-    fromDistrict: raw.from_district || raw.fromDistrict || null,
-    fromProvince: raw.from_province || raw.fromProvince || null,
-    fromLocality: raw.from_locality || raw.fromLocality || null,
+    fromAddress: pick('from_address', 'fromAddress') || null,
+    fromCity: pick('from_city', 'fromCity') || null,
+    fromDistrict: pick('from_district', 'fromDistrict') || null,
+    fromProvince: pick('from_province', 'fromProvince') || null,
+    fromLocality: pick('from_locality', 'fromLocality') || null,
     from_geom: raw.from_geom || null,
     
     // Localização - destino
-    toAddress: raw.to_address || raw.toAddress || null,
-    toCity: raw.to_city || raw.toCity || null,
-    toDistrict: raw.to_district || raw.toDistrict || null,
-    toProvince: raw.to_province || raw.toProvince || null,
-    toLocality: raw.to_locality || raw.toLocality || null,
+    toAddress: pick('to_address', 'toAddress') || null,
+    toCity: pick('to_city', 'toCity') || null,
+    toDistrict: pick('to_district', 'toDistrict') || null,
+    toProvince: pick('to_province', 'toProvince') || null,
+    toLocality: pick('to_locality', 'toLocality') || null,
     to_geom: raw.to_geom || null,
     
-    // ✅ DATAS FORMATADAS CORRETAMENTE (DD/MM/AAAA + 24h)
-    departureDate: raw.departuredate ? new Date(raw.departuredate).toISOString() : null,
-    departureDateFormatted: formatDateOnly(raw.departuredate), // "20/12/2025"
-    departureTimeFormatted: formatTimeOnly(raw.departuredate), // "14:30" (24h)
-    departureDateTimeFormatted: formatDateTime(raw.departuredate), // "20/12/2025 14:30"
-    departureLongDate: formatLongDate(raw.departuredate), // "Sexta-feira, 20 de Dezembro de 2025"
-    departureWeekday: formatWeekday(raw.departuredate), // "Sexta-feira"
-    departureTime: raw.departuretime || raw.departureTime || null,
+    // ✅ DATAS FORMATADAS — agora com data+hora combinadas e guarda contra Invalid Date
+    departureDate: departureDateTime ? departureDateTime.toISOString() : null,
+    departureDateFormatted: departureDateTime ? formatDateOnly(departureDateTime) : null, // "20/12/2025"
+    departureTimeFormatted: departureDateTime ? formatTimeOnly(departureDateTime) : null, // "14:30" (24h)
+    departureDateTimeFormatted: departureDateTime ? formatDateTime(departureDateTime) : null, // "20/12/2025 14:30"
+    departureLongDate: departureDateTime ? formatLongDate(departureDateTime) : null, // "Sexta-feira, 20 de Dezembro de 2025"
+    departureWeekday: departureDateTime ? formatWeekday(departureDateTime) : null, // "Sexta-feira"
+    departureTime: rawDepartureTime || null,
     
     // ✅ INFORMAÇÕES COMPLETAS DO VEÍCULO COM MATRÍCULA
-    vehicle_uuid: raw.vehicle_id || raw.vehicleId || null,
+    vehicle_uuid: pick('vehicle_uuid', 'vehicle_id', 'vehicleId') || null,
     vehicleInfo: vehicleInfo,
-    vehicle: `${raw.vehicle_make || ''} ${raw.vehicle_model || ''}`.trim() || null,
-    vehicleType: raw.vehicle_type || raw.vehicleType || null,
-    vehiclePlate: formatVehiclePlate(raw.vehicle_plate || raw.vehiclePlate), // "MAT 123 AB"
-    vehiclePlateRaw: raw.vehicle_plate || raw.vehiclePlate, // Original: "MAT-123-AB"
-    vehicleColor: raw.vehicle_color || raw.vehicleColor || null,
-    vehicleMake: raw.vehicle_make || raw.vehicleMake || null,
-    vehicleModel: raw.vehicle_model || raw.vehicleModel || null,
+    vehicle: `${pick('vehicle_make', 'vehicleMake') || ''} ${pick('vehicle_model', 'vehicleModel') || ''}`.trim() || null,
+    vehicleType: pick('vehicle_type', 'vehicleType') || null,
+    vehiclePlate: formatVehiclePlate(pick('vehicle_plate', 'vehiclePlate')), // "MAT 123 AB"
+    vehiclePlateRaw: pick('vehicle_plate', 'vehiclePlate') || null, // Original: "MAT-123-AB"
+    vehicleColor: pick('vehicle_color', 'vehicleColor') || null,
+    vehicleMake: pick('vehicle_make', 'vehicleMake') || null,
+    vehicleModel: pick('vehicle_model', 'vehicleModel') || null,
     maxPassengers: maxPassengersValue,
     
     // ✅✅✅ CORREÇÃO: Disponibilidade e preço SEMPRE como number
     availableSeats: availableSeatsValue,
     pricePerSeat: pricePerSeatValue, // ← AGORA SEMPRE number (nunca null)
+
+    // ✅ Lugares reservados / total (para a UI mostrar "X reservados")
+    bookedSeats: toNum(pick('bookedSeats', 'bookedseats', 'booked_seats'), 0),
+    bookingsCount: toNum(pick('bookingsCount', 'bookingscount', 'bookings_count'), 0),
     
     // Campos adicionais do schema
-    additionalInfo: raw.additionalinfo || raw.additionalInfo || null,
-    distance_real_km: raw.distance_real_km ? Number(raw.distance_real_km) : null,
+    additionalInfo: pick('additionalInfo', 'additionalinfo', 'additional_info') || null,
+    distance_real_km: pick('distance_real_km') != null ? toNum(pick('distance_real_km')) : null,
     polyline: raw.polyline || null,
     type: raw.type || 'regular',
     
     // Metadados
-    distanceFromUserKm: raw.distance_from_city_km ? Number(raw.distance_from_city_km) : null,
-    matchType: raw.match_type || raw.matchType || null,
+    distanceFromUserKm: pick('distance_from_city_km') != null ? toNum(pick('distance_from_city_km')) : null,
+    matchType: pick('match_type', 'matchType') || null,
     status: raw.status || 'available',
-    searchMetadata: raw.search_metadata || raw.searchMetadata || null,
+    searchMetadata: pick('search_metadata', 'searchMetadata') || null,
     
     // Timestamps
-    createdAt: raw.createdat ? new Date(raw.createdat).toISOString() : null,
-    updatedAt: raw.updatedat ? new Date(raw.updatedat).toISOString() : null,
+    createdAt: rawCreatedAt ? new Date(rawCreatedAt).toISOString() : null,
+    updatedAt: rawUpdatedAt ? new Date(rawUpdatedAt).toISOString() : null,
 
     // ✅ NOVOS CAMPOS DA FUNÇÃO get_rides_smart_final
-    ride_id: raw.ride_id,
-    driver_id: raw.driver_id,
-    driver_name: raw.driver_name,
-    driver_rating: raw.driver_rating,
-    vehicle_make: raw.vehicle_make,
-    vehicle_model: raw.vehicle_model,
-    vehicle_type: raw.vehicle_type,
-    vehicle_plate: raw.vehicle_plate,
-    vehicle_color: raw.vehicle_color,
-    max_passengers: raw.max_passengers,
-    from_city: raw.from_city,
-    to_city: raw.to_city,
-    from_lat: raw.from_lat,
-    from_lng: raw.from_lng,
-    to_lat: raw.to_lat,
-    to_lng: raw.to_lng,
-    departuredate: raw.departuredate,
-    availableseats: raw.availableseats,
-    priceperseat: raw.priceperseat,
-    distance_from_city_km: raw.distance_from_city_km,
-    distance_to_city_km: raw.distance_to_city_km,
-    direction_score: raw.direction_score
+    ride_id: pick('ride_id', 'id'),
+    driver_id: pick('driver_id', 'driverId'),
+    driver_name: pick('driver_name', 'driverName'),
+    driver_rating: pick('driver_rating', 'driverRating'),
+    vehicle_make: pick('vehicle_make', 'vehicleMake'),
+    vehicle_model: pick('vehicle_model', 'vehicleModel'),
+    vehicle_type: pick('vehicle_type', 'vehicleType'),
+    vehicle_plate: pick('vehicle_plate', 'vehiclePlate'),
+    vehicle_color: pick('vehicle_color', 'vehicleColor'),
+    max_passengers: pick('max_passengers', 'maxPassengers', 'maxpassengers'),
+    from_city: pick('from_city', 'fromCity'),
+    to_city: pick('to_city', 'toCity'),
+    from_lat: pick('from_lat', 'fromLat'),
+    from_lng: pick('from_lng', 'fromLng'),
+    to_lat: pick('to_lat', 'toLat'),
+    to_lng: pick('to_lng', 'toLng'),
+    departuredate: rawDepartureDate,
+    availableseats: pick('availableseats', 'availableSeats', 'available_seats'),
+    priceperseat: pick('priceperseat', 'pricePerSeat', 'price_per_seat'),
+    distance_from_city_km: pick('distance_from_city_km'),
+    distance_to_city_km: pick('distance_to_city_km'),
+    direction_score: pick('direction_score')
   };
 }
 
@@ -827,15 +867,18 @@ export class RideService {
     }
   }
 
-  // 🆕 MÉTODO PARA BUSCAR RIDES POR MOTORISTA - CORRIGIDO (SEM COMENTÁRIOS SQL)
+  // 🆕 MÉTODO PARA BUSCAR RIDES POR MOTORISTA - CORRIGIDO COM JOIN A USERS + bookedSeats
   async getRidesByDriver(driverId: string, status?: string): Promise<any[]> {
     try {
       // ✅ CORREÇÃO: Usar SQL direto para JOIN complexo - SEM COMENTÁRIOS
+      // ✅✅✅ ALTERAÇÃO 1 (Fase 2.4): JOIN a users + driver_user_name
+      // ✅✅✅ + bookedSeats e bookingsCount (subqueries de bookings)
       let query = sql`
         SELECT 
           r.id as ride_id,
           r."driverId" as driver_id,
           r."driverName",
+          u."firstName" || ' ' || u."lastName" AS driver_user_name,
           r."fromAddress",
           r."toAddress", 
           r."fromCity",
@@ -864,9 +907,22 @@ export class RideService {
           v."model" as vehicle_model,
           v."color" as vehicle_color,
           v."plate_number" as vehicle_plate,
-          v."max_passengers" as vehicle_max_passengers
+          v."max_passengers" as vehicle_max_passengers,
+          COALESCE((
+            SELECT SUM(b."seatsBooked")
+            FROM bookings b
+            WHERE b."rideId" = r.id
+              AND b.status NOT IN ('cancelled', 'rejected')
+          ), 0) AS "bookedSeats",
+          COALESCE((
+            SELECT COUNT(*)
+            FROM bookings b
+            WHERE b."rideId" = r.id
+              AND b.status NOT IN ('cancelled', 'rejected')
+          ), 0) AS "bookingsCount"
         FROM rides r
         LEFT JOIN vehicles v ON r."vehicle_uuid" = v.id
+        LEFT JOIN users u ON r."driverId" = u.id
         WHERE r."driverId" = ${driverId}
       `;
 
@@ -1241,13 +1297,17 @@ export class RideService {
         .where(eq(rides.id, rideId));
       
       console.log(`✅ [RIDE-SERVICE] Ride ${rideId} marcada como completed`);
-      
-      // 5. 🆕 GANCHO AUTOMÁTICO: Criar comissão (não bloqueante)
-      console.log(`🔗 [RIDE-SERVICE] Gatilho: criando comissão para ride ${rideId}`);
-      providerPaymentService.createRideCommission(rideId).catch((error: any) => {
-        console.error('❌ [RIDE-SERVICE] Erro ao criar comissão (não crítico):', error.message);
-      });
-      
+
+      // 5. 🆕 GANCHO AUTOMÁTICO: Criar comissão (aguardado — garante idempotência e reporta)
+      try {
+        console.log(`🔗 [RIDE-SERVICE] Gatilho: criando comissão para ride ${rideId}`);
+        const commission = await providerPaymentService.createRideCommission(rideId);
+        console.log(`✅ [RIDE-SERVICE] Comissão (ride ${rideId}):`, commission?.skipped ? 'já existia (skipped)' : 'criada');
+      } catch (error: any) {
+        console.error('❌ [RIDE-SERVICE] Erro ao criar comissão:', error.message);
+        // Não relançar: a ride já está completed; a comissão pode ser recriada
+      }
+
       // 6. Retornar dados atualizados
       return await this.getRideById(rideId);
       

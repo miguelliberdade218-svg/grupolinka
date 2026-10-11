@@ -2,7 +2,7 @@
 // ✅ AGORA USA HotelPhotoGallery em vez de HotelGallery
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useParams } from 'wouter';
+import { useParams, useLocation } from 'wouter';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs';
 import { HotelPhotoGallery } from '@/apps/main-app/components/HotelPhotoGallery'; // ✅ IMPORT CORRETO
 import { RoomTypeCard } from '@/shared/components/hotels/RoomTypeCard';
@@ -20,7 +20,8 @@ console.log('🔥🔥🔥 [HotelDetailsPage] ARQUIVO CARREGADO!', import.meta.ur
 
 export const HotelDetailsPage: React.FC = () => {
   const { id: hotelId } = useParams<{ id: string }>();
-  
+  const [, setLocation] = useLocation();
+
   // LOG URGENTE PARA VERIFICAR SE O COMPONENTE ESTÁ SENDO RENDERIZADO
   console.log('🔥🔥🔥 [HotelDetailsPage] COMPONENTE RENDERIZADO!', { hotelId });
   
@@ -51,8 +52,16 @@ export const HotelDetailsPage: React.FC = () => {
     loadHotelPhotos();
   }, [hotelId]);
 
+  // ✅✅✅ CORREÇÃO 3: Navegação real para a página de reserva
+  // Se não houver quarto selecionado, leva o utilizador à página para escolher
+  // Se houver, passa o roomTypeId como query param
   const handleBookNow = () => {
-    console.log('Redirecionar para página de reserva');
+    if (!selectedRoomId) {
+      // sem quarto escolhido → leva à página de reserva para o utilizador escolher
+      setLocation(`/hotels/${hotelId}/book`);
+      return;
+    }
+    setLocation(`/hotels/${hotelId}/book?roomTypeId=${selectedRoomId}`);
   };
 
   if (error) {

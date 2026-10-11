@@ -780,9 +780,33 @@ export class AdminService {
 
     const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
+    // ✅ FIX: JOIN a users para trazer user_name / user_email (o admin mostra N/A sem isto)
     const [referencesResult, totalResult] = await Promise.all([
-      db.select()
+      db.select({
+        id: paymentReferences.id,
+        reference_number: paymentReferences.reference_number,
+        booking_id: paymentReferences.booking_id,
+        booking_type: paymentReferences.booking_type,
+        provider_user_id: paymentReferences.provider_user_id,
+        provider_entity_code: paymentReferences.provider_entity_code,
+        gross_amount: paymentReferences.gross_amount,
+        fee_percentage: paymentReferences.fee_percentage,
+        fee_amount: paymentReferences.fee_amount,
+        net_amount: paymentReferences.net_amount,
+        status: paymentReferences.status,
+        service_date: paymentReferences.service_date,
+        due_date: paymentReferences.due_date,
+        paid_at: paymentReferences.paid_at,
+        payment_proof_url: paymentReferences.payment_proof_url,
+        notes: paymentReferences.notes,
+        created_at: paymentReferences.created_at,
+        updated_at: paymentReferences.updated_at,
+        // ✅ Nome do provedor via JOIN
+        user_name: users.fullName,
+        user_email: users.email,
+      })
         .from(paymentReferences)
+        .leftJoin(users, eq(paymentReferences.provider_user_id, users.id))
         .where(whereClause)
         .orderBy(desc(paymentReferences.created_at))
         .limit(limit)

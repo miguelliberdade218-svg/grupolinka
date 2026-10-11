@@ -58,9 +58,11 @@ interface AdminStore {
   verificationQueue: any[];
   hotels: any[];
   complaints: any[];
-  payments: any[];
+    payments: any[];
   fees: any[];
   logs: any[];
+  rides: any[];
+  rideStats: any | null;
   
   // Paginação
   usersPagination: PaginationInfo | null;
@@ -68,6 +70,7 @@ interface AdminStore {
   complaintsPagination: PaginationInfo | null;
   paymentsPagination: PaginationInfo | null;
   logsPagination: PaginationInfo | null;
+  ridesPagination: PaginationInfo | null;
   
   // Estado de UI
   loading: boolean;
@@ -83,7 +86,9 @@ interface AdminStore {
   fetchPaymentStats: () => Promise<void>;
   fetchPaymentReferences: (page?: number, limit?: number, filters?: any) => Promise<void>;
   fetchFees: () => Promise<void>;
-  fetchAdminLogs: (page?: number, limit?: number, filters?: any) => Promise<void>;
+    fetchAdminLogs: (page?: number, limit?: number, filters?: any) => Promise<void>;
+  fetchRides: (page?: number, limit?: number, filters?: any) => Promise<void>;
+  fetchRideStats: () => Promise<void>;
 
   // Ações de modificação
   approveDriver: (userId: string, reason?: string) => Promise<void>;
@@ -111,15 +116,18 @@ export const useAdminStore = create<AdminStore>((set) => ({
   verificationQueue: [],
   hotels: [],
   complaints: [],
-  payments: [],
+    payments: [],
   fees: [],
   logs: [],
+  rides: [],
+  rideStats: null,
   
   usersPagination: null,
   hotelsPagination: null,
   complaintsPagination: null,
   paymentsPagination: null,
   logsPagination: null,
+  ridesPagination: null,
   
   loading: false,
   error: null,
@@ -249,8 +257,12 @@ export const useAdminStore = create<AdminStore>((set) => ({
   fetchPaymentReferences: async (page = 1, limit = 20, filters = {}) => {
     set({ loading: true, error: null });
     try {
-      const response = await adminService.listPaymentReferences(page, limit, filters);
-      const data = response?.data?.data || response?.data || [];
+            const response = await adminService.listPaymentReferences(page, limit, filters);
+      // ✅ O backend devolve { references, pagination } (não { data })
+      const data =
+        response?.data?.references ??
+        response?.data?.data ??
+        (Array.isArray(response?.data) ? response.data : []);
       const pagination = response?.data?.pagination;
       console.log('[AdminStore] Payments loaded:', { count: Array.isArray(data) ? data.length : 0 });
       set({
@@ -288,8 +300,35 @@ export const useAdminStore = create<AdminStore>((set) => ({
         loading: false,
       });
     } catch (error: any) {
-      const errorMsg = error.response?.data?.message || 'Erro ao buscar logs';
+            const errorMsg = error.response?.data?.message || 'Erro ao buscar logs';
       set({ error: errorMsg, loading: false });
+      throw error;
+    }
+  },
+
+  fetchRides: async (page = 1, limit = 20, filters = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const response = await adminService.listRides(page, limit, filters);
+      set({
+        rides: response.data.data || [],
+        ridesPagination: response.data.pagination,
+        loading: false,
+      });
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || 'Erro ao listar rides';
+      set({ error: errorMsg, loading: false });
+      throw error;
+    }
+  },
+
+  fetchRideStats: async () => {
+    try {
+      const response = await adminService.getRideStats();
+      set({ rideStats: response.data.data || null });
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || 'Erro ao buscar stats de rides';
+      set({ error: errorMsg });
       throw error;
     }
   },

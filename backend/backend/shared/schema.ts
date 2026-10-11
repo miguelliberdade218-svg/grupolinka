@@ -386,6 +386,8 @@ export const paymentReferences = pgTable("payment_references", {
 }, (table) => ({
   reference_idx: index("payment_references_reference_idx").on(table.reference_number),
   booking_idx: index("payment_references_booking_idx").on(table.booking_id, table.booking_type),
+  // ✅ NOVO: idempotência — impede 2 comissões para o mesmo booking
+  bookingUniqueIdx: uniqueIndex("payment_references_booking_unique").on(table.booking_id, table.booking_type),
   provider_idx: index("payment_references_provider_idx").on(table.provider_user_id),
   status_idx: index("payment_references_status_idx").on(table.status),
   due_date_idx: index("payment_references_due_date_idx").on(table.due_date).where(sql`status = 'pending'`),

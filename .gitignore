@@ -41,3 +41,29 @@ migration_0020_final.sql
 # Node
 node_modules/
 */node_modules/
+
+# ===== Adicionado (11/10/2026) =====
+# Uploads (gerados em runtime — nunca commitar)
+uploads/
+*/uploads/
+backend/backend/uploads/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.webp
+# exceto ícones em src/
+!src/**/*.png
+!src/**/*.ico
+
+# Scripts de debug pontuais (não são código de produção)
+backend/backend/diagnostico_*.ts
+backend/backend/recalcular_*.ts
+
+# Output de comandos
+filelist.txt
+*filelist*.txt
+
+# Pasta buggy criada por engano (path/to/the_file.txt)
+# (removida agora, mas ignora se voltar a aparecer)
+path/to/

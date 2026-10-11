@@ -144,13 +144,13 @@ export class MozambiqueDateFormatter {
 
 // ✅✅✅ EXPORTAÇÕES CORRETAS E COMPLETAS
 export const formatDateTime = MozambiqueDateFormatter.formatDateTime;
-export const formatDateTimeFriendly = MozambiqueDateFormatter.formatDateTimeFriendly;
+export const formatDateTimeFriendly = MozambiqueDateFormatter.formatDateTimeFriendly.bind(MozambiqueDateFormatter);
 export const formatDateOnly = MozambiqueDateFormatter.formatDateOnly;
-export const formatDateOrFallback = MozambiqueDateFormatter.formatDateOrFallback;
+export const formatDateOrFallback = MozambiqueDateFormatter.formatDateOrFallback.bind(MozambiqueDateFormatter);
 export const formatTimeOnly = MozambiqueDateFormatter.formatTimeOnly;
 export const formatLongDate = MozambiqueDateFormatter.formatLongDate;
 export const formatWeekday = MozambiqueDateFormatter.formatWeekday;
-export const formatRelativeDate = MozambiqueDateFormatter.formatRelativeDate;
+export const formatRelativeDate = MozambiqueDateFormatter.formatRelativeDate.bind(MozambiqueDateFormatter);
 
 // ✅ Reexport de helpers de conversão de input (fonte única de verdade)
 export {

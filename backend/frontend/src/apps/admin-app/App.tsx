@@ -19,6 +19,7 @@ import AdminFees from "./pages/fees";
 import AdminAudit from "./pages/audit";
 import AdminReports from "./pages/reports-new";
 import UserDocuments from "./pages/user-documents";
+import AdminRides from "./pages/rides";
 
 // Legacy Pages (mantidos para compatibilidade)
 import BillingManagement from "./pages/billing-management";
@@ -77,6 +78,9 @@ export default function AdminApp() {
 
               {/* Gestão de faturação (legacy) */}
               <Route path="/admin/billing" component={BillingManagement} />
+
+              {/* Gestão de rides (com canceladas + motivo) */}
+              <Route path="/admin/rides" component={AdminRides} />
 
               {/* Rota padrão */}
               <Route component={AdminDashboard} />
